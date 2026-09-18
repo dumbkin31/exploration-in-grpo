@@ -1,0 +1,13 @@
+# Mixed-CUTS on MATH: 8 standard + 8 CUTS rollouts per prompt (paper defaults).
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+defaults:
+  - base_grpo
+  - _self_
+mixed_cuts:
+  enabled: true
+  n_std: 8
+  n_cuts: 8
+trainer:
+  experiment_name: math_mixed_cuts

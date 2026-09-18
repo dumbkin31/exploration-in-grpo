@@ -1,0 +1,23 @@
+# @package _global_
+# Memory plan A (default): full-parameter fine-tune, FSDP2 with CPU offload, fp16 mixed precision.
+#
+# fp32 master weights + fp32 grads + Adam moments (~27.6 GB for 1.72 B params) live in pinned
+# host RAM (FSDP2 CPUOffloadPolicy); each GPU only holds the layer being computed plus
+# activations (~5-6 GB peak with gradient checkpointing, micro-batch 1, seq 4k). See README 4.
+# NOTE: only `strategy: fsdp2` gives real CPU offload in verl v0.9.0; with `fsdp` (FSDP1) verl
+# force-disables CPUOffload for the actor.
+actor_rollout_ref:
+  model:
+    lora_rank: 0
+  actor:
+    strategy: fsdp2
+    fsdp_config:
+      strategy: fsdp2
+      offload_policy: true           # FSDP2 CPUOffloadPolicy(pin_memory=True)
+      param_offload: false           # verl's manual offload is redundant with offload_policy
+      optimizer_offload: false
+      reshard_after_forward: true
+  ref:
+    fsdp_config:
+      strategy: fsdp2
+      offload_policy: true

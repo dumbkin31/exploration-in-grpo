@@ -1,0 +1,159 @@
+# ---------------------------------------------------------------------------
+# Base GRPO config for Qwen3-1.7B on Ada (4x RTX 2080 Ti, sm_75, fp16 only).
+#
+# Layers on verl v0.9.0's `ppo_trainer` tree (found through hydra.searchpath) and picks a
+# memory plan from configs/train/memory/. Concrete experiments (smoke, math_*, dapo_*) layer
+# on this file and only change data, group composition and run length.
+#
+# Every value that exists because of the hardware is marked "# sm_75:" so a future port to
+# A100s can find and drop them. Paths are injected by slurm/run_train.sh (paths.*).
+# ---------------------------------------------------------------------------
+# NOTE: no `hydra.searchpath` here on purpose. Hydra only honours it in the *primary* config,
+# and this file is included as a default by the leaf configs (smoke, math_*, dapo_*), which
+# each declare it. slurm/run_train.sh also passes hydra.searchpath=[pkg://verl.trainer.config]
+# on the command line so `--config-name base_grpo` works directly too.
+defaults:
+  - ppo_trainer                      # verl's full default tree (via hydra.searchpath)
+  - memory: plan_a_fullft_offload    # see configs/train/memory/
+  - _self_
+
+# ---- injected at launch (slurm/run_train.sh); never hardcode cluster paths here ----
+paths:
+  run_dir: ???
+  model_dir: ???
+  data_dir: ???
+  repo_dir: ???
+
+# ---- Mixed-CUTS (paper: G=16 split 8/8, K=5, delta=0.03, T_warm=5) -------------------
+mixed_cuts:
+  enabled: true
+  n_std: 8
+  n_cuts: 8                          # must equal actor_rollout_ref.rollout.n together with n_std
+  cuts:
+    k: 5
+    delta: 0.03                      # absolute probability at temperature 1 (paper)
+    t_warm: 5                        # prefix protection: first 5 generated tokens sample normally
+    empty_set_fallback: topk         # paper rule; "argmax" is the greedy alternative
+    stats_dir: ${paths.run_dir}/cuts_stats
+  dump_samples_per_step: 4           # whole groups dumped per step for manual reading
+
+# ---- data ---------------------------------------------------------------------------------
+data:
+  train_files: ${paths.data_dir}/math_train.parquet
+  val_files: ${paths.data_dir}/math500.parquet
+  val_max_samples: 100               # training-time validation only; full eval = eval/run_eval.py
+  train_batch_size: 32               # prompts per step (paper: 128); raise after the throughput bench
+  max_prompt_length: 1024
+  max_response_length: 3072          # paper: 5000 for 1.7B; capped for the 2080 Ti KV budget
+  filter_overlong_prompts: true
+  truncation: error
+  apply_chat_template_kwargs:
+    enable_thinking: false           # Qwen3 non-thinking mode, as in the paper
+  dataloader_num_workers: 4
+
+# ---- algorithm -----------------------------------------------------------------------------
+algorithm:
+  adv_estimator: grpo
+  norm_adv_by_std_in_grpo: true
+  use_kl_in_reward: false            # KL goes into the loss (below), as in verl's GRPO recipe
+
+actor_rollout_ref:
+  model:
+    path: ${paths.model_dir}
+    use_remove_padding: false        # sm_75: verl's rmpad path needs FlashAttention-2 (sm_80)
+    enable_gradient_checkpointing: true
+    override_config:
+      attn_implementation: sdpa      # sm_75: no flash_attention_2
+
+  actor:
+    ppo_mini_batch_size: 8           # prompts; x rollout.n sequences (paper: 32 of 128)
+    ppo_micro_batch_size_per_gpu: 1  # 11 GiB cards
+    use_dynamic_bsz: false           # dynamic packing wants rmpad
+    ppo_epochs: 1
+    clip_ratio: 0.2
+    entropy_coeff: 0.0
+    use_kl_loss: true
+    kl_loss_coef: 0.001              # paper
+    kl_loss_type: low_var_kl
+    entropy_from_logits_with_chunking: true   # 152k vocab x 4k tokens in fp32 does not fit otherwise
+    entropy_checkpointing: true
+    optim:
+      lr: 1.0e-6
+      weight_decay: 0.01
+    fsdp_config:
+      dtype: float16                 # sm_75: no bf16
+      mixed_precision:
+        param_dtype: fp16
+        reduce_dtype: fp32
+        buffer_dtype: fp32
+
+  ref:
+    log_prob_micro_batch_size_per_gpu: 1
+    fsdp_config:
+      dtype: float16                 # sm_75
+      mixed_precision:
+        param_dtype: fp16
+        reduce_dtype: fp32
+        buffer_dtype: fp32
+      param_offload: true
+
+  rollout:
+    name: vllm
+    dtype: float16                   # sm_75: vLLM raises on bf16 below cc 8.0
+    temperature: 1.0                 # paper
+    top_p: 1.0
+    top_k: -1
+    n: 16                            # group size G = n_std + n_cuts
+    gpu_memory_utilization: 0.70
+    tensor_model_parallel_size: 1    # 4 independent replicas (DP over the 4 cards)
+    enforce_eager: false             # set true to debug Triton/cudagraph issues on sm_75
+    free_cache_engine: true          # sleep vLLM during training (load-bearing on 11 GiB)
+    max_model_len: 4096              # = max_prompt_length + max_response_length
+    max_num_seqs: 64
+    max_num_batched_tokens: 4096
+    enable_chunked_prefill: true
+    enable_prefix_caching: true
+    log_prob_micro_batch_size_per_gpu: 1
+    calculate_log_probs: true
+    agent:
+      num_workers: 4
+      agent_loop_manager_class: mixed_cuts.agent_loop.MixedCutsAgentLoopManagerTQ
+    engine_kwargs:
+      vllm:
+        logits_processors:
+          - cuts.vllm_logits_processor:CutsLogitsProcessor
+    val_kwargs:                      # training-time validation: Qwen3 non-thinking defaults
+      n: 4
+      do_sample: true
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+
+reward:
+  custom_reward_function:
+    path: pkg://mixed_cuts.reward    # verl's load_module accepts pkg:// module paths
+    name: compute_score
+
+trainer:
+  use_v1: true
+  v1:
+    trainer_mode: mixed_cuts_sync    # registered by mixed_cuts.trainer
+  project_name: ${oc.env:WANDB_PROJECT,mixed-cuts}
+  experiment_name: mixed_cuts
+  logger: [console, wandb]           # WANDB_MODE=offline by default (configs/ada.env.sh)
+  n_gpus_per_node: 4
+  nnodes: 1
+  total_epochs: 1000                 # bounded by total_training_steps
+  total_training_steps: 100
+  save_freq: 10
+  test_freq: 10
+  val_before_train: true
+  default_local_dir: ${paths.run_dir}/checkpoints
+  rollout_data_dir: ${paths.run_dir}/rollout_dumps
+  max_actor_ckpt_to_keep: 2
+  balance_batch: true
+
+ray_kwargs:
+  ray_init:
+    num_cpus: 40
+    object_store_memory: 16000000000  # 16 GB cap; Ray's default (30% of RAM) would collide with CPU offload

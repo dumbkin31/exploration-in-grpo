@@ -1,0 +1,15 @@
+# Vanilla GRPO on deduplicated DAPO-Math-17k (the non-saturated regime).
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+defaults:
+  - base_grpo
+  - _self_
+data:
+  train_files: ${paths.data_dir}/dapo_train.parquet
+mixed_cuts:
+  enabled: true
+  n_std: 16
+  n_cuts: 0
+trainer:
+  experiment_name: dapo_grpo

@@ -1,0 +1,15 @@
+# Mixed-CUTS on deduplicated DAPO-Math-17k: 8 standard + 8 CUTS rollouts per prompt.
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+defaults:
+  - base_grpo
+  - _self_
+data:
+  train_files: ${paths.data_dir}/dapo_train.parquet
+mixed_cuts:
+  enabled: true
+  n_std: 8
+  n_cuts: 8
+trainer:
+  experiment_name: dapo_mixed_cuts

@@ -1,0 +1,28 @@
+# @package _global_
+# Memory plan B (switch): LoRA r=64 on all linear layers of the frozen fp16 base.
+#
+# ~0.9 GB/GPU for the sharded frozen base + < 0.6 GB adapter state + activations; no CPU
+# offload. Reference log-probs come from the same model with the adapter disabled. A deviation
+# from the paper (full fine-tune); if adopted it is reported as a limitation.
+# UNVERIFIED on the cluster: the merged-weight sync (model.lora.merge) path to vLLM.
+actor_rollout_ref:
+  model:
+    lora_rank: 64
+    lora_alpha: 128
+    target_modules: all-linear
+    lora:
+      merge: true                    # sync merged full weights so vLLM serves a plain model
+  actor:
+    strategy: fsdp2
+    optim:
+      lr: 1.0e-5                     # RL + LoRA usually wants a higher LR than full FT
+    fsdp_config:
+      strategy: fsdp2
+      offload_policy: false
+      param_offload: false
+      optimizer_offload: false
+  ref:
+    fsdp_config:
+      strategy: fsdp2
+      offload_policy: false
+      param_offload: true

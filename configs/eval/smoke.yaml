@@ -1,0 +1,12 @@
+# Tiny eval to validate the harness plumbing: 2 samples on 8 problems of MATH-500.
+defaults:
+  - default
+  - _self_
+n_samples: 2
+k_values: [1, 2]
+benchmarks: [math500]
+limit: 8
+sampling:
+  max_tokens: 512
+engine:
+  max_model_len: 2048

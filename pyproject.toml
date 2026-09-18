@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mixed-cuts-rl"
+version = "0.1.0"
+description = "Mixed-CUTS (Constrained Uniform Top-K Sampling) rollouts for GRPO on verl + vLLM"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+# Deliberately empty: every version pin lives in requirements/ (see README, section "Pins").
+# `pip install --no-deps -e .` is the only supported way to install this package.
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["cuts*", "mixed_cuts*", "mc_data*", "mc_eval*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+timeout = 120
+markers = [
+    "needs_vllm: test imports vLLM (skipped when vLLM is not installed)",
+    "needs_verl: test imports verl (skipped when verl is not installed)",
+    "needs_gpu: test needs a CUDA device",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+extend-exclude = [".venv", "data", "runs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]

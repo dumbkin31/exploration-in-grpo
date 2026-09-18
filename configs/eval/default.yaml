@@ -1,0 +1,31 @@
+# Evaluation settings (eval/run_eval.py). Every number here is a choice worth revisiting:
+#   - n_samples 16 gives pass@1 as a mean over 16 samples (AIME has 30 problems; a single
+#     greedy decode is far too noisy) plus pass@16 and maj@16.
+#   - sampling defaults are Qwen3's official non-thinking recommendation (T=0.7, p=0.8, k=20).
+#     `paper_val.yaml` uses the paper's validation settings instead.
+#   - max_tokens caps the response; keep it >= the training max_response_length.
+n_samples: 16
+k_values: [1, 4, 16]
+benchmarks: [math500, aime24, aime25, amc23, gpqa_diamond]
+
+sampling:
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  max_tokens: 3072
+  seed: 0
+
+chat_template_kwargs:
+  enable_thinking: false     # Qwen3 non-thinking mode, as in the paper
+
+engine:                      # vLLM offline engine (LLM(...)) kwargs
+  dtype: float16             # sm_75: no bf16
+  gpu_memory_utilization: 0.85
+  max_model_len: 4096
+  tensor_parallel_size: 1
+  enforce_eager: false
+  seed: 0
+
+reward:
+  timeout: 30                # seconds per math-verify check (subprocess)
+  require_boxed: false
