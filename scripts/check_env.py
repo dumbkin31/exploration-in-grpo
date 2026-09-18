@@ -129,7 +129,10 @@ def check_gpu(r: Report) -> None:
         if cc == REQUIRED_CC:
             r.ok(f"gpu{i}: {name}, cc {cc[0]}.{cc[1]}, {mem_gb:.1f} GiB")
         elif cc < (7, 0):
-            r.fail(f"gpu{i}", f"{name} cc {cc} is below 7.0: unsupported by vLLM and CUDA 13 (did the job land on a 1080 Ti node? use -C 2080ti)")
+            r.fail(
+                f"gpu{i}",
+                f"{name} cc {cc} is below 7.0: unsupported by vLLM and CUDA 13 (did the job land on a 1080 Ti node? use -C 2080ti)",
+            )
         else:
             r.warn(f"gpu{i}", f"{name} cc {cc}; configs are tuned for the 2080 Ti (7.5, 11 GiB)")
     if n and torch.cuda.is_bf16_supported():
@@ -191,7 +194,9 @@ def check_storage(r: Report) -> None:
             r.facts[var] = {"path": p, "writable": False}
     home = Path.home()
     try:
-        used = subprocess.run(["du", "-sh", str(home)], capture_output=True, text=True, timeout=60).stdout.split()[0]
+        used = subprocess.run(
+            ["du", "-sh", str(home)], capture_output=True, text=True, timeout=60
+        ).stdout.split()[0]
         r.ok(f"home usage {used} (quota 25 GB; code + venv only)")
     except Exception:  # noqa: BLE001
         pass
@@ -222,10 +227,14 @@ def check_slurm(r: Report) -> None:
     if not job:
         r.warn("slurm", "not inside an allocation (fine on the login node / laptop)")
         return
-    r.ok(f"slurm job {job} on {os.environ.get('SLURMD_NODENAME', '?')}, gres={os.environ.get('SLURM_JOB_GPUS') or os.environ.get('CUDA_VISIBLE_DEVICES', '?')}")
+    r.ok(
+        f"slurm job {job} on {os.environ.get('SLURMD_NODENAME', '?')}, gres={os.environ.get('SLURM_JOB_GPUS') or os.environ.get('CUDA_VISIBLE_DEVICES', '?')}"
+    )
     part = os.environ.get("SLURM_JOB_PARTITION", "")
     try:
-        out = subprocess.run(["scontrol", "show", "partition", part], capture_output=True, text=True, timeout=20).stdout
+        out = subprocess.run(
+            ["scontrol", "show", "partition", part], capture_output=True, text=True, timeout=20
+        ).stdout
         for tok in out.split():
             if tok.startswith("MaxMemPerCPU=") or tok.startswith("DefMemPerCPU="):
                 r.ok(f"partition {part}: {tok}")
@@ -238,7 +247,9 @@ def main() -> int:
     ap.add_argument("--no-gpu", action="store_true", help="skip GPU checks (login node / laptop)")
     ap.add_argument("--no-staged", action="store_true", help="skip staged model/data checks")
     ap.add_argument("--no-pins", action="store_true", help="skip package pin checks (dev env)")
-    ap.add_argument("--facts-json", default=os.environ.get("MC_ENV_FACTS_JSON"), help="write detected facts here")
+    ap.add_argument(
+        "--facts-json", default=os.environ.get("MC_ENV_FACTS_JSON"), help="write detected facts here"
+    )
     args = ap.parse_args()
 
     r = Report()
