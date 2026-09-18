@@ -1,0 +1,40 @@
+# End-to-end plumbing test: 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS), plan A.
+# Must finish comfortably inside a 6 h interactive session on 4x 2080 Ti.
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+defaults:
+  - base_grpo
+  - _self_
+
+mixed_cuts:
+  n_std: 2
+  n_cuts: 2
+  dump_samples_per_step: 2
+
+data:
+  train_files: ${paths.data_dir}/smoke_train.parquet
+  val_files: ${paths.data_dir}/smoke_val.parquet
+  val_max_samples: 8
+  train_batch_size: 4
+  max_prompt_length: 512
+  max_response_length: 512
+
+actor_rollout_ref:
+  actor:
+    ppo_mini_batch_size: 4
+  rollout:
+    n: 4
+    max_model_len: 1536
+    max_num_batched_tokens: 2048
+    gpu_memory_utilization: 0.6
+    agent:
+      num_workers: 2
+    val_kwargs:
+      n: 2
+
+trainer:
+  experiment_name: smoke
+  total_training_steps: 2
+  test_freq: 1
+  save_freq: 2

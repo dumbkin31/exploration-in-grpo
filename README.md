@@ -10,7 +10,13 @@ candidate-set sizes), not just final accuracy.
 Phase-1 hypothesis: CUTS's benefit does not generalise beyond the saturated-data regime. So every
 config runs identically with CUTS on (`mixed_cuts.n_cuts > 0`) and off (`n_cuts: 0`, vanilla GRPO).
 
-> **Status**: scaffold. Nothing has run on the cluster yet. Sections marked **TODO(cluster)** need a
+> **Status**: scaffold, not yet run on the cluster. Verified so far, on a laptop without a GPU:
+> the CPU test suite (`make test`, 70 tests: CUTS operator, per-request state machine, mixed-group
+> scheduler, diagnostics, reward, data loaders, eval scoring/runner) and Hydra composition of every
+> training config against verl v0.9.0's config tree (`make compose-check`). NOT yet verified: anything
+> that needs a GPU or the cluster: the vLLM logits processor inside a live engine, the verl
+> subclass hooks end to end, fp16 stability, sleep mode on sm_75, throughput. The smoke test
+> (`make sbatch-smoke`) is the first thing that must pass. Sections marked **TODO(cluster)** need a
 > measurement from Ada before they are final.
 
 ---
@@ -95,7 +101,7 @@ Model facts: 28 layers, hidden 2048, 16 query / 8 KV heads x 128, vocab 151,936,
 - GPU during rollout: 4 vLLM replicas (TP=1), weights 3.44 GB + `gpu_memory_utilization 0.70` -> ~4.2 GB KV ~ 37k tokens ~ 9 concurrent 4k sequences per card.
 - Cost: CPU AdamW over 1.72 B params ~5-15 s/step; 3.44 GB weight sync per replica per step. Expected to be dwarfed by generation time.
 
-**Plan B (switch): LoRA r=64 on all linear layers** (`plan_b_lora.yaml`): sharded frozen base 0.86 GB/GPU + adapter state < 0.6 GB + activations -> ~4-5 GB; ref = adapter disabled. Faster, but a deviation from the paper (full fine-tune); if adopted it is written up as a limitation.
+**Plan B (switch): LoRA r=64 on all linear layers** (`plan_b_lora.yaml`, select with `memory=plan_b_lora`): sharded frozen base 0.86 GB/GPU + adapter state < 0.6 GB + activations -> ~4-5 GB; ref = adapter disabled. Faster, but a deviation from the paper (full fine-tune); if adopted it is written up as a limitation. **TODO(cluster)**: the merged-weight sync to vLLM (`model.lora.merge: true`) is unverified.
 
 **Plan C (fallback only)**: 2 GPUs train / 2 GPUs rollout with verl's `separate_async` mode, if vLLM sleep mode misbehaves on sm_75 in the smoke test.
 
@@ -118,29 +124,34 @@ NaN/inf in `actor/pg_loss`, and inf logits from vLLM (checked in the rollout dum
 ## 6. Quickstart on Ada
 
 ```bash
-# 0. login node: code lives on /home2
+# 0. login node: code lives on /home2. The login node is CentOS 7: it only downloads and syncs.
 git clone <this repo> ~/mixed-cuts && cd ~/mixed-cuts && cp .env.example .env   # add HF_TOKEN for GPQA
+curl -LsSf https://astral.sh/uv/install.sh | sh                                    # once, if uv is missing
 source configs/ada.env.sh
+make setup-login && make prefetch      # pure downloads -> /share1/$USER/mixed-cuts/{models,raw}
 
-# 1. build the environment ON A COMPUTE NODE (never the login node)
-make sbatch-setup            # -> slurm/setup_env.sbatch: uv venv + pins + verl@v0.9.0 + this package + preflight
-# then commit the freeze it produced:   git add requirements/lock.txt
+# 1. build the environment ON A COMPUTE NODE (never the login node); also builds the parquet data
+make sbatch-setup                      # slurm/setup_env.sbatch: venv + pins + verl@v0.9.0 + tests + `make data`
+git add requirements/lock.txt && git commit -m "lock cluster env"
 
-# 2. login node (has internet): stage model + datasets into /share1 (idempotent, checksummed)
-make prefetch && make data
+# 2. measure before committing compute
+make sbatch-bench                      # tokens/s + peak memory on 1 GPU  -> runs/<user>/bench-<job>/bench.json
+make sbatch-smoke                      # 20 MATH problems, 2 steps, n=4 (2 std + 2 CUTS), plan A
 
-# 3. measure before committing compute
-make sbatch-bench            # tokens/s + peak memory on 1 GPU
-make sbatch-smoke            # ~20 MATH problems, 2 steps, n=4 (2 std + 2 CUTS), plan A
-
-# 4. real runs
+# 3. real runs (each config also works with `make train CONFIG=...` inside an interactive allocation)
 make sbatch-train CONFIG=math_grpo          # vanilla GRPO (n_cuts=0)
 make sbatch-train CONFIG=math_mixed_cuts    # 8 std + 8 CUTS
-make sbatch-eval CKPT=/share1/$USER/mixed-cuts/runs/$USER/<jobid>/hf BENCH=math500,aime24,aime25,amc23,gpqa_diamond
+make sbatch-train CONFIG=dapo_mixed_cuts
+scripts/merge_ckpt.sh /share1/$USER/mixed-cuts/runs/$USER/math_mixed_cuts-<job>/checkpoints   # FSDP -> HF
+make sbatch-eval CKPT=/share1/$USER/mixed-cuts/runs/$USER/math_mixed_cuts-<job>/checkpoints/hf/global_step_100
 ```
 
+Validate configs without a GPU: `make compose-check` (composes every `configs/train/*.yaml` against verl's
+config tree and asserts no bf16, `n_std + n_cuts == rollout.n`, the CUTS logits processor and mixed agent
+loop are wired, `sdpa` + no remove-padding, and the `mixed_cuts_sync` trainer).
+
 Offline W&B: runs log with `WANDB_MODE=offline` into the run dir; after stage-out run
-`wandb sync /share1/$USER/mixed-cuts/runs/$USER/<jobid>/wandb/offline-run-*` from the login node. The
+`wandb sync /share1/$USER/mixed-cuts/runs/$USER/<name>-<job>/wandb/offline-run-*` from the login node. The
 primary log is always `metrics.jsonl` in the run dir (one JSON object per training step).
 
 ## 7. What gets logged (diagnostics glossary)

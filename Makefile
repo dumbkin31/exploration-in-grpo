@@ -23,7 +23,7 @@ CKPT   ?=
 BENCH  ?= math500,aime24,aime25,amc23,gpqa_diamond
 N_SAMPLES ?= 16
 
-.PHONY: help setup-dev setup lock test lint check-env prefetch data bench smoke train eval \
+.PHONY: help setup-dev setup-login setup lock test lint compose-check check-env prefetch data bench smoke train eval \
         sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup clean-cache
 
 help: ## show this help
@@ -35,6 +35,11 @@ setup-dev: ## CPU dev env (laptop / login node): venv + requirements/dev.txt + t
 	$(UV) pip install --python $(PY) -r requirements/dev.txt
 	$(UV) pip install --python $(PY) --no-deps -e .
 	@echo "dev env ready: $(VENV)"
+
+setup-login: ## tiny download-only env for `make prefetch` on the CentOS 7 login node (no torch/pyarrow)
+	$(UV) venv --python $(PYTHON_VER) .venv-login
+	$(UV) pip install --python .venv-login/bin/python -r requirements/prefetch.txt
+	@echo "login env ready: .venv-login (used automatically by make prefetch)"
 
 setup: ## FULL cluster env. Run ONLY inside a 2080 Ti allocation (sbatch slurm/setup_env.sbatch)
 	@. $(ENV_FILE); \
@@ -62,9 +67,14 @@ lint: ## ruff
 check-env: ## preflight: pins, GPU (sm_75), staged paths, /share1 mount, internet
 	@. $(ENV_FILE); $(PY) scripts/check_env.py
 
+compose-check: ## compose every training config (Hydra) and assert the sm_75/fp16/CUTS invariants
+	@for c in base_grpo smoke math_grpo math_mixed_cuts dapo_grpo dapo_mixed_cuts; do \
+	  $(PY) scripts/compose_config.py $$c --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),) || exit 1; done
+	@$(PY) scripts/compose_config.py math_mixed_cuts --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),) memory=plan_b_lora
+
 # ------------------------------------------------------------------------ data
 prefetch: ## LOGIN NODE (has internet): download model + datasets into $$MC_STAGE_ROOT (idempotent)
-	@. $(ENV_FILE); $(PY) scripts/prefetch.py
+	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --extra-model Qwen/Qwen3-1.7B-Base
 
 data: ## build parquet files in verl schema (MATH, DAPO deduped, eval sets, smoke subsets)
 	@. $(ENV_FILE); $(PY) scripts/prepare_data.py

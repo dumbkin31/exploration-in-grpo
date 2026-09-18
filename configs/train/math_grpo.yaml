@@ -1,0 +1,13 @@
+# Vanilla GRPO on MATH: identical to math_mixed_cuts except n_cuts = 0 (all 16 rollouts standard).
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+defaults:
+  - base_grpo
+  - _self_
+mixed_cuts:
+  enabled: true
+  n_std: 16
+  n_cuts: 0
+trainer:
+  experiment_name: math_grpo
