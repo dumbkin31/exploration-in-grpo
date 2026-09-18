@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.venv-*/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets / local overrides
+.env
+configs/local.env.sh
+
+# Data, models, runs, caches: NEVER commit these (they belong on /share1 or /scratch)
+data/
+models/
+runs/
+checkpoints/
+wandb/
+outputs/
+cuts_stats/
+*.parquet
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+*.jsonl
+!tests/fixtures/*.jsonl
+
+# SLURM logs
+slurm-*.out
+slurm-*.err
+logs/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
