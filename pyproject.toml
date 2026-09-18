@@ -19,6 +19,7 @@ include = ["cuts*", "mixed_cuts*", "mc_data*", "mc_eval*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 timeout = 120
 markers = [
     "needs_vllm: test imports vLLM (skipped when vLLM is not installed)",
