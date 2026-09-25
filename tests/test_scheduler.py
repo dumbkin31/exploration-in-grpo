@@ -61,12 +61,56 @@ def test_existing_extra_args_are_preserved():
 
 def test_group_size_mismatch_fails_loudly():
     cfg = MixedCutsConfig(enabled=True, n_std=8, n_cuts=8)
-    with pytest.raises(ValueError, match="n_std \\+ n_cuts"):
+    assert cfg.group_size == 16  # defaults to n_std + n_cuts
+    with pytest.raises(ValueError, match="G = n_std \\+ n_cuts"):
         plan_group(BASE, 4, cfg, uid="u", step=0)
-    with pytest.raises(ValueError, match="rollout.n"):
+    with pytest.raises(ValueError, match="budget mismatch"):
         cfg.validate_against_rollout_n(4)
     cfg.validate_against_rollout_n(16)
     MixedCutsConfig(enabled=False, n_std=8, n_cuts=8).validate_against_rollout_n(4)  # disabled: no constraint
+
+
+def test_d4_budget_assertion_exact_message():
+    """n_std + n_cuts == G always; the vanilla arm (16 + 0) costs the same as the mixed arm (8 + 8)."""
+    with pytest.raises(ValueError, match=r"^budget mismatch: 8 \+ 4 != G=16$"):
+        MixedCutsConfig(enabled=True, n_std=8, n_cuts=4, group_size=16)
+    MixedCutsConfig(enabled=True, n_std=16, n_cuts=0, group_size=16)
+    MixedCutsConfig(enabled=True, n_std=8, n_cuts=8, group_size=16)
+    MixedCutsConfig(enabled=False, n_std=8, n_cuts=4, group_size=16)  # disabled: no constraint
+
+
+def test_full_group_8_8_carries_exactly_8_cuts_payloads():
+    """Task B (CPU layer): with n_cuts=8, exactly 8 of 16 requests carry the CUTS extra_args."""
+    from mixed_cuts.diagnostics import compute_group_diagnostics
+
+    cfg = MixedCutsConfig(enabled=True, n_std=8, n_cuts=8, group_size=16)
+    specs = plan_group(BASE, 16, cfg, uid="prompt-42", step=1)
+    assert len(specs) == 16
+    with_payload = [s for s in specs if EXTRA_ARGS_KEY in (s.sampling_params.get("extra_args") or {})]
+    without = [s for s in specs if EXTRA_ARGS_KEY not in (s.sampling_params.get("extra_args") or {})]
+    assert len(with_payload) == 8 and len(without) == 8
+    assert [s.rollout_kind for s in with_payload] == [CUTS] * 8 and [s.rollout_kind for s in without] == [
+        STD
+    ] * 8
+    assert sorted(s.session_id for s in specs) == list(range(16))
+    for s in with_payload:
+        assert CutsParams.from_extra_args(s.sampling_params["extra_args"]).uid == "prompt-42"
+    # Reassembled into ONE group before advantage normalisation: all 16 rollouts share the prompt uid.
+    metrics = compute_group_diagnostics(
+        ["prompt-42"] * 16, [1.0] * 8 + [0.0] * 8, [s.rollout_kind for s in specs]
+    )
+    assert metrics["mixed_cuts/n_groups"] == 1 and metrics["mixed_cuts/group_size_mean"] == 16
+
+
+def test_cuts_sessions_force_top_p_one_and_top_k_off():
+    """D2: vLLM's top-k/top-p run after the processor and would re-narrow the uniform set."""
+    base = {**BASE, "top_p": 0.8, "top_k": 20}
+    cfg = MixedCutsConfig(enabled=True, n_std=1, n_cuts=1)
+    std, cuts = plan_group(base, 2, cfg, uid="u", step=0)
+    assert (
+        std.sampling_params["top_p"] == 0.8 and std.sampling_params["top_k"] == 20
+    )  # standard arm untouched
+    assert cuts.sampling_params["top_p"] == 1.0 and cuts.sampling_params["top_k"] == -1
 
 
 def test_config_from_omegaconf_block():
@@ -86,7 +130,13 @@ def test_config_from_omegaconf_block():
         }
     )
     cfg = MixedCutsConfig.from_mapping(block)
-    assert cfg.n == 4 and cfg.active and cfg.dump_samples_per_step == 1
+    assert cfg.n == 4 and cfg.group_size == 4 and cfg.active and cfg.dump_samples_per_step == 1
+    assert (
+        MixedCutsConfig.from_mapping({"enabled": True, "n_std": 2, "n_cuts": 2, "group_size": 4}).group_size
+        == 4
+    )
+    with pytest.raises(ValueError, match="budget mismatch: 2 \\+ 2 != G=8"):
+        MixedCutsConfig.from_mapping({"enabled": True, "n_std": 2, "n_cuts": 2, "group_size": 8})
     assert cfg.cuts == CutsParams(
         k=7, delta=0.02, t_warm=3, empty_set_fallback="argmax", stats_dir="/run/cuts_stats"
     )
