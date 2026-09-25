@@ -97,9 +97,10 @@ def run_benchmark(
                     + "\n"
                 )
             equal = _equal_fn(ds, reward_cfg)
-            is_correct = lambda a, _ds=ds, _gt=gt: (
-                reward.compute_score(_ds, f"\\boxed{{{a}}}", _gt)["score"] == 1.0
-            )  # noqa: E731
+
+            def is_correct(a: str, _ds: str = ds, _gt: str = gt) -> bool:
+                return reward.compute_score(_ds, f"\\boxed{{{a}}}", _gt)["score"] == 1.0
+
             per_problem.append(
                 summarize_problem(
                     scores, preds, gt, k_values=k_values, is_correct_answer=is_correct, equal=equal
