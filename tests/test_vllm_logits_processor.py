@@ -45,15 +45,15 @@ def test_subclasses_vllm_abc_and_handles_a_batch(tmp_path):
     assert torch.equal(same, logits), "before T_warm the processor is a no-op"
     out_ids.append(7)
     out = lp.apply(logits.clone())
-    assert int(torch.isfinite(out[0]).sum()) == 3 and torch.all(out[0][torch.isfinite(out[0])] == 0)
+    assert torch.isfinite(out).all() and int((out[0] == 0).sum()) == 3
     assert torch.equal(out[1], logits[1])
 
     lp.update_state(BatchUpdate(batch_size=2, removed=[], added=[], moved=[(0, 1, MoveDirectionality.SWAP)]))
     out = lp.apply(logits.clone())
-    assert torch.equal(out[0], logits[0]) and int(torch.isfinite(out[1]).sum()) == 3
+    assert torch.equal(out[0], logits[0]) and int((out[1] == 0).sum()) == 3
 
     lp.update_state(BatchUpdate(batch_size=1, removed=[1], added=[], moved=[]))
     assert lp.num_tracked_requests == 0
     lp.close()
-    files = list(tmp_path.glob("cuts_stats_*.jsonl"))
-    assert len(files) == 1 and '"step": 4' in files[0].read_text()
+    files = list(tmp_path.glob("cuts_stats_step4_*.jsonl"))
+    assert len(files) == 1 and '"step": 4' in files[0].read_text() and '"tp_rank": 0' in files[0].read_text()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 
-from cuts.stats import CutsStatsWriter, read_cuts_stats, summarize_cuts_stats
+from cuts.stats import CutsStatsWriter, list_stats_files, read_cuts_stats, summarize_cuts_stats
 
 
 def _rec(**kw):
@@ -28,27 +28,44 @@ def test_writer_appends_jsonl_per_pid_and_reader_filters_by_step(tmp_path):
     w.write(_rec(stats_dir=None, uid="dropped"))  # no stats_dir -> discarded
     w.close()
     files = sorted(tmp_path.glob("cuts_stats_*.jsonl"))
-    assert len(files) == 1 and files[0].name == f"cuts_stats_pid{os.getpid()}.jsonl"
-    lines = files[0].read_text().splitlines()
-    assert len(lines) == 2 and "stats_dir" not in json.loads(lines[0])
+    assert [f.name for f in files] == [
+        f"cuts_stats_step1_{w.writer_id}.jsonl",
+        f"cuts_stats_step2_{w.writer_id}.jsonl",
+    ]
+    assert w.writer_id.startswith(f"pid{os.getpid()}-")
+    rec = json.loads(files[0].read_text().splitlines()[0])
+    assert "stats_dir" not in rec and rec["tp_rank"] == 0 and rec["pid"] == os.getpid()
     assert [r["uid"] for r in read_cuts_stats(tmp_path)] == ["a", "b"]
     assert [r["uid"] for r in read_cuts_stats(tmp_path, step=2)] == ["b"]
     assert read_cuts_stats(tmp_path / "missing") == []
+    # a restarted run snapshots the stale files and ignores them
+    stale = list_stats_files(tmp_path)
+    assert stale == {f.name for f in files}
+    assert read_cuts_stats(tmp_path, step=2, ignore=stale) == []
+    w2 = CutsStatsWriter(tp_rank=0)
+    w2.write(_rec(stats_dir=str(tmp_path), step=2, uid="c"))
+    w2.close()
+    assert [r["uid"] for r in read_cuts_stats(tmp_path, step=2, ignore=stale)] == ["c"]
 
 
 def test_reader_tolerates_partial_trailing_line(tmp_path):
-    p = tmp_path / "cuts_stats_pid1.jsonl"
+    p = tmp_path / "cuts_stats_step1_pid1.jsonl"
     p.write_text(json.dumps(_rec(uid="ok")) + "\n" + '{"uid": "trunc')
     assert [r["uid"] for r in read_cuts_stats(tmp_path)] == ["ok"]
 
 
 def test_summary_is_weighted_by_cuts_steps():
     recs = [
-        _rec(n_cuts_steps=10, mean_set_size=4.0, n_singleton=0, n_fallback=0),
-        _rec(n_cuts_steps=30, mean_set_size=2.0, n_singleton=15, n_fallback=3),
+        _rec(n_cuts_steps=10, mean_set_size=4.0, n_singleton=0, n_fallback=0, set_size_hist=[0, 0, 0, 10, 0]),
+        _rec(
+            n_cuts_steps=30, mean_set_size=2.0, n_singleton=15, n_fallback=3, set_size_hist=[15, 5, 5, 5, 0]
+        ),
         _rec(n_cuts_steps=0, mean_set_size=None, n_singleton=0, n_fallback=0),  # shorter than T_warm
     ]
     s = summarize_cuts_stats(recs)
+    assert s["cuts/degenerate_to_greedy_rate"] == 15 / 40
+    assert s["cuts/set_size_hist/k=1"] == 15 / 40 and s["cuts/set_size_hist/k=4"] == 15 / 40
+    assert s["cuts/set_size_hist/k=5"] == 0.0
     assert s["cuts/n_rollouts"] == 3
     assert s["cuts/frac_rollouts_never_active"] == 1 / 3
     assert s["cuts/cuts_steps_per_rollout"] == 40 / 3

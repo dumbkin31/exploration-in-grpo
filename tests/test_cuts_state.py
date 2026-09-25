@@ -45,9 +45,10 @@ def std_request() -> FakeSamplingParams:
 
 
 def is_uniform_cuts_row(row: torch.Tensor, max_size: int) -> bool:
-    finite = torch.isfinite(row)
-    n = int(finite.sum())
-    return 1 <= n <= max_size and torch.all(row[finite] == 0).item()
+    assert torch.isfinite(row).all()
+    survivors = row > torch.finfo(row.dtype).min
+    n = int(survivors.sum())
+    return 1 <= n <= max_size and torch.all(row[survivors] == 0).item()
 
 
 def test_noop_before_t_warm_and_active_after():
@@ -101,9 +102,9 @@ def test_interleaved_requests_keep_isolated_state():
     )
     logits = torch.randn(3, 40)
     out = state.apply(logits.clone())
-    assert is_uniform_cuts_row(out[0], max_size=2) and int(torch.isfinite(out[0]).sum()) == 2
+    assert is_uniform_cuts_row(out[0], max_size=2) and int((out[0] == 0).sum()) == 2
     assert torch.equal(out[1], logits[1]), "the standard request in the middle must be untouched"
-    assert is_uniform_cuts_row(out[2], max_size=5) and int(torch.isfinite(out[2]).sum()) == 5
+    assert is_uniform_cuts_row(out[2], max_size=5) and int((out[2] == 0).sum()) == 5
 
     # request 0 finishes; a NEW standard request reuses row 0 in the same update
     state.apply_batch_update(BatchUpdate(3, removed=[0], added=[(0, std_request(), [], [])]))
@@ -137,7 +138,7 @@ def test_swap_exchanges_rows():
     state.apply_batch_update(BatchUpdate(2, moved=[(0, 1, MoveDirectionality.SWAP)]))
     assert state.get(0).params.uid == "b" and state.get(1).params.uid == "a"
     out = state.apply(torch.randn(2, 10))
-    assert int(torch.isfinite(out[0]).sum()) == 4 and int(torch.isfinite(out[1]).sum()) == 1
+    assert int((out[0] == 0).sum()) == 4 and int((out[1] == 0).sum()) == 1
     # swap with an empty row just moves the occupant
     state.apply_batch_update(BatchUpdate(3, moved=[(1, 2, MoveDirectionality.SWAP)]))
     assert 1 not in state and state.get(2).params.uid == "a"
@@ -160,6 +161,8 @@ def test_removal_flushes_stats_and_leaves_no_state_behind():
     assert rec["step"] == 7 and rec["prompt_len"] == 1 and rec["n_generated"] == 5
     assert rec["n_cuts_steps"] == 4 and rec["n_fallback"] == 4  # delta=0.99 always triggers the fallback
     assert rec["mean_set_size"] == 3.0 and rec["n_singleton"] == 0
+    assert rec["set_size_hist"] == [0, 0, 4]  # every fallback step kept the whole top-3 set
+    assert rec["stats_dir"] is None  # no stats_dir configured for this request
     # the row can be reused by a fresh CUTS request with fresh counters
     state.apply_batch_update(BatchUpdate(1, added=[(0, cuts_request(k=3, delta=0.0, t_warm=0), [], [])]))
     assert state.get(0).n_cuts_steps == 0
@@ -187,6 +190,7 @@ def test_singleton_and_argmax_fallback_stats():
         state.apply(torch.randn(1, 10))
     e = state.get(0)
     assert e.n_cuts_steps == 3 and e.n_singleton == 3 and e.n_fallback == 3 and e.sum_set_size == 3
+    assert e.set_size_hist == [3, 0, 0, 0, 0]
 
 
 def test_clear_finishes_everything():
