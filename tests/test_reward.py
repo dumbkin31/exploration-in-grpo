@@ -23,7 +23,7 @@ def _pool():
         ("\\frac{1}{2}", "so the answer is \\boxed{\\dfrac{1}{2}}", 1.0),
         ("\\left( 3, \\frac{\\pi}{2} \\right)", "\\boxed{\\left(3,\\frac{\\pi}{2}\\right)}", 1.0),
         ("x^2+1", "\\boxed{1 + x^2}", 1.0),
-        ("10", "Answer: 10", 1.0),  # DAPO-style fallback without a box
+        ("10", "Answer: 10", 0.0),  # no box -> invalid (Appendix B.4); no Answer:-line fallback for math
         ("10", "no answer here", 0.0),
         ("3", "\\boxed{2} ... \\boxed{3}", 1.0),  # last box wins
     ],
@@ -31,13 +31,23 @@ def _pool():
 def test_math_scores(gt, response, expected):
     out = reward.compute_score(DS_MATH_TRAIN, response, gt)
     assert out["score"] == expected
-    assert set(out) == {"score", "pred", "has_boxed"}
+    assert set(out) == {"score", "pred", "has_boxed", "valid"}
 
 
-def test_has_boxed_and_require_boxed():
-    assert reward.compute_score(DS_MATH500, "Answer: 7", "7")["has_boxed"] == 0.0
-    assert reward.compute_score(DS_MATH500, "Answer: 7", "7", require_boxed=True)["score"] == 0.0
-    assert reward.compute_score(DS_MATH500, "\\boxed{7}", "7", require_boxed=True)["score"] == 1.0
+def test_validity_rule_boxed_and_digit():
+    """A response is valid only if the FINAL \\boxed{} exists and its content has a digit."""
+    assert reward.compute_score(DS_MATH500, "Answer: 7", "7") == {
+        "score": 0.0,
+        "pred": "",
+        "has_boxed": 0.0,
+        "valid": 0.0,
+    }
+    out = reward.compute_score(DS_MATH500, "\\boxed{\\pi}", "\\pi")  # equivalent but digit-less -> invalid
+    assert out == {"score": 0.0, "pred": "\\pi", "has_boxed": 1.0, "valid": 0.0}
+    assert reward.compute_score(DS_MATH500, "\\boxed{}", "0")["valid"] == 0.0
+    out = reward.compute_score(DS_MATH500, "\\boxed{2\\pi}", "2\\pi")
+    assert out["valid"] == 1.0 and out["score"] == 1.0
+    assert reward.has_digit("\\frac{1}{2}") and not reward.has_digit("e") and not reward.has_digit(None)
 
 
 def test_gpqa_letters():

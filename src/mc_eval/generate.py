@@ -24,6 +24,7 @@ class VllmGenerator:
 
         self.model_path = model_path
         self.chat_template_kwargs = dict(chat_template_kwargs or {})
+        self._checked_thinking = False
         kwargs = dict(engine_cfg)
         logger.info("Starting vLLM: model=%s %s", model_path, kwargs)
         self.llm = LLM(model=model_path, **kwargs)
@@ -40,4 +41,16 @@ class VllmGenerator:
             use_tqdm=True,
             chat_template_kwargs=self.chat_template_kwargs or None,
         )
+        if not self._checked_thinking:
+            # D2: fail loudly the first time if Qwen3 ran in thinking mode (vLLM silently drops
+            # unknown chat_template_kwargs, so this is the only reliable check).
+            from mixed_cuts.thinking import check_non_thinking
+
+            check_non_thinking(
+                self.llm.get_tokenizer(),
+                [list(req.prompt_token_ids or []) for req in outputs],
+                [list(o.token_ids) for req in outputs for o in req.outputs],
+                where="in eval generation",
+            )
+            self._checked_thinking = True
         return [[o.text for o in req.outputs] for req in outputs]

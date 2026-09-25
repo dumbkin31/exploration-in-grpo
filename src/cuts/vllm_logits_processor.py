@@ -32,6 +32,7 @@ Two vLLM facts that matter for correctness:
 from __future__ import annotations
 
 import logging
+import os
 
 import torch
 
@@ -50,14 +51,36 @@ from cuts.stats import CutsStatsWriter
 logger = logging.getLogger(__name__)
 
 
+def _tensor_parallel_rank() -> int:
+    """TP rank of this engine process, or 0 when vLLM's process groups are not initialised."""
+    try:
+        from vllm.distributed.parallel_state import get_tensor_model_parallel_rank
+
+        return int(get_tensor_model_parallel_rank())
+    except Exception:  # noqa: BLE001 - not initialised (tests, single process) -> rank 0
+        return 0
+
+
 class CutsLogitsProcessor(LogitsProcessor):
-    """Applies CUTS to the rows of the persistent batch whose request asked for it."""
+    """Applies CUTS to the rows of the persistent batch whose request asked for it.
+
+    With tensor parallelism every TP rank runs the sampler (and therefore this processor) on the
+    full batch, so per-request statistics would be written once per rank. Only TP rank 0 owns a
+    writer; the other ranks track state identically but discard the records.
+    """
 
     def __init__(self, vllm_config, device: torch.device, is_pin_memory: bool) -> None:  # noqa: ARG002
         self.device = device
-        self._writer = CutsStatsWriter()
-        self._state = CutsBatchState(on_request_finished=self._writer.write)
-        logger.info("CutsLogitsProcessor initialised on %s (pid %d)", device, __import__("os").getpid())
+        self.tp_rank = _tensor_parallel_rank()
+        self._writer = CutsStatsWriter(tp_rank=self.tp_rank) if self.tp_rank == 0 else None
+        self._state = CutsBatchState(on_request_finished=self._writer.write if self._writer else None)
+        logger.info(
+            "CutsLogitsProcessor initialised on %s (pid %d, tp_rank %d, writes_stats=%s)",
+            device,
+            os.getpid(),
+            self.tp_rank,
+            self._writer is not None,
+        )
 
     # --- vLLM interface ---------------------------------------------------------------
     @classmethod
@@ -86,4 +109,5 @@ class CutsLogitsProcessor(LogitsProcessor):
 
     def close(self) -> None:
         self._state.clear()
-        self._writer.close()
+        if self._writer is not None:
+            self._writer.close()

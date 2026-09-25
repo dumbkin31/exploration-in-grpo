@@ -1,4 +1,4 @@
-# Mixed-CUTS on MATH: 8 standard + 8 CUTS rollouts per prompt (paper defaults).
+# Arm 2: Mixed-CUTS on MATH. 8 standard + 8 CUTS rollouts per prompt (paper Table 3).
 hydra:
   searchpath:
     - pkg://verl.trainer.config
@@ -7,7 +7,6 @@ defaults:
   - _self_
 mixed_cuts:
   enabled: true
+  group_size: 16
   n_std: 8
   n_cuts: 8
-trainer:
-  experiment_name: math_mixed_cuts

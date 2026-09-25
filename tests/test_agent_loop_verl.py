@@ -34,6 +34,7 @@ def _config(n: int, n_std: int, n_cuts: int, enabled: bool = True):
                 "enabled": enabled,
                 "n_std": n_std,
                 "n_cuts": n_cuts,
+                "group_size": n if enabled else None,
                 "cuts": {"k": 5, "delta": 0.03, "t_warm": 5, "stats_dir": "/tmp/cuts_stats"},
             },
         }
@@ -109,5 +110,21 @@ def test_mixed_group_tags_and_extra_args(monkeypatch):
 
 
 def test_group_size_mismatch_fails_at_init():
-    with pytest.raises(ValueError, match="rollout.n"):
+    with pytest.raises(ValueError, match="budget mismatch"):
         _bare(MixedCutsAgentLoopWorkerTQBase, _config(n=16, n_std=4, n_cuts=4))
+
+
+def test_full_group_8_8_through_the_worker(monkeypatch):
+    """Task B (mocked engine): the worker issues exactly 8 CUTS + 8 standard requests sharing the uid."""
+    monkeypatch.setattr(mc_agent_loop.tq, "async_kv_put", _noop_put)
+    worker = _bare(MixedCutsAgentLoopWorkerTQBase, _config(n=16, n_std=8, n_cuts=8))
+    calls = _run(worker, {"uid": "p1", "raw_prompt": [], "agent_name": "single_turn_agent"})
+    assert len(calls) == 16
+    cuts_calls = [(sp, kw) for sp, kw in calls if "cuts" in (sp.get("extra_args") or {})]
+    std_calls = [(sp, kw) for sp, kw in calls if "cuts" not in (sp.get("extra_args") or {})]
+    assert len(cuts_calls) == 8 and len(std_calls) == 8
+    assert all(kw["uid"] == "p1" for _, kw in calls), "all 16 sessions share the prompt uid (one GRPO group)"
+    assert all(kw["rollout_kind"] == "cuts" for _, kw in cuts_calls)
+    assert all(kw["rollout_kind"] == "std" for _, kw in std_calls)
+    assert all(sp["top_p"] == 1.0 and sp["top_k"] == -1 for sp, _ in cuts_calls)
+    assert sorted(kw["session_id"] for _, kw in calls) == list(range(16))

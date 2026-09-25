@@ -32,6 +32,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# The repo's src/ must be importable even when the package is not installed (login node, fresh venv).
+_REPO_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(_REPO_SRC))
+
 # Expected pins: keep in sync with requirements/base.txt and the README table.
 EXPECTED_VERSIONS = {
     "vllm": "0.24.0",
@@ -189,8 +194,7 @@ def check_storage(r: Report) -> None:
             r.ok(f"{var}={p} writable, {free_gb:.0f} GiB free")
             r.facts[var] = {"path": p, "writable": True, "free_gib": round(free_gb)}
         except OSError as e:
-            level = r.fail if var == "MC_SCRATCH_ROOT" else r.warn
-            level(var, f"{p} not writable here ({e}); on compute nodes /share1 may be master-only")
+            r.fail(var, f"{p} not writable here ({e}); outputs and checkpoints must land on /share1")
             r.facts[var] = {"path": p, "writable": False}
     home = Path.home()
     try:
@@ -242,17 +246,200 @@ def check_slurm(r: Report) -> None:
         pass
 
 
+def check_single_node(r: Report) -> None:
+    """The 4 GPUs must be on one node: rollout TP=4 and FSDP over 4 ranks assume one NCCL host."""
+    n = os.environ.get("SLURM_JOB_NUM_NODES")
+    if n is None:
+        r.warn("single node", "SLURM_JOB_NUM_NODES unset (not inside a SLURM job)")
+    elif int(n) == 1:
+        r.ok("single node allocation (SLURM_JOB_NUM_NODES=1)")
+    else:
+        r.fail("single node", f"SLURM_JOB_NUM_NODES={n}; add '#SBATCH -N 1' (the configs assume one node)")
+    vis = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if vis is not None:
+        n_vis = len([x for x in vis.split(",") if x.strip()])
+        (r.ok if n_vis == 4 else r.warn)(
+            f"visible GPUs: {n_vis} ({vis})", "training configs expect 4 (rollout TP=4)"
+        )
+
+
+def check_vllm_engine(r: Report) -> None:
+    """vLLM 0.24.0: the V0 engine is gone; the risk is Model Runner V2, which custom logits processors force back to V1."""
+    try:
+        import vllm.engine.llm_engine as legacy
+        import vllm.v1.engine.llm_engine as v1
+    except Exception as e:  # noqa: BLE001
+        r.fail("vllm engine import", f"{type(e).__name__}: {e}")
+        return
+    if getattr(legacy, "LLMEngine", None) is v1.LLMEngine:
+        r.ok("vLLM V1 engine (vllm.engine.llm_engine.LLMEngine is the V1 class; no V0 engine exists)")
+    else:
+        r.fail(
+            "vLLM engine version",
+            "vllm.engine.llm_engine.LLMEngine is not the V1 class; the logits-processor interface would differ",
+        )
+    for var in ("VLLM_USE_V1", "VLLM_USE_V2_MODEL_RUNNER"):
+        if os.environ.get(var) not in (None, ""):
+            r.fail(
+                var,
+                f"must be unset (set to {os.environ[var]!r}); custom logits processors need Model Runner V1",
+            )
+    try:
+        from vllm.config.vllm import VllmConfig
+        from vllm.v1.sample.logits_processor import LogitsProcessor
+
+        from cuts.vllm_logits_processor import CutsLogitsProcessor
+
+        if not issubclass(CutsLogitsProcessor, LogitsProcessor):
+            r.fail("CutsLogitsProcessor", "does not subclass vllm.v1.sample.logits_processor.LogitsProcessor")
+        elif not hasattr(VllmConfig, "_get_v2_model_runner_unsupported_features"):
+            r.fail(
+                "Model Runner V2 fallback",
+                "VllmConfig._get_v2_model_runner_unsupported_features missing; cannot rely on the V1 fallback",
+            )
+        else:
+            r.ok(
+                "CutsLogitsProcessor implements the V1 interface; vLLM falls back to Model Runner V1 for custom processors"
+            )
+    except Exception as e:  # noqa: BLE001
+        r.fail("logits processor interface", f"{type(e).__name__}: {e}")
+
+
+def check_attention_backend(r: Report) -> None:
+    """Which V1 attention backend vLLM will pick for this GPU (expected TRITON_ATTN on sm_75)."""
+    try:
+        import torch
+        from vllm.platforms.interface import DeviceCapability
+        from vllm.v1.attention.backends.registry import AttentionBackendEnum
+    except Exception as e:  # noqa: BLE001
+        r.warn("attention backend probe", f"{type(e).__name__}: {e}")
+        return
+    if not torch.cuda.is_available():
+        return
+    cc = DeviceCapability(*torch.cuda.get_device_capability(0))
+    supported = []
+    for name in ("FLASH_ATTN", "FLASHINFER", "TRITON_ATTN", "FLEX_ATTENTION"):
+        try:
+            ok = bool(AttentionBackendEnum[name].get_class().supports_compute_capability(cc))
+        except Exception as e:  # noqa: BLE001
+            ok = False
+            r.warn(f"backend {name}", f"probe failed: {type(e).__name__}")
+        (supported if ok else []).append(name)
+    r.facts["attention_backends_supporting_cc"] = supported
+    if supported and supported[0] == "TRITON_ATTN":
+        r.ok(
+            f"attention backend for cc {cc.major}.{cc.minor}: TRITON_ATTN (first in priority among {supported})"
+        )
+    elif supported:
+        r.warn("attention backend", f"first supported backend is {supported[0]}, configs pin TRITON_ATTN")
+    else:
+        r.fail("attention backend", f"no V1 attention backend supports cc {cc.major}.{cc.minor}")
+
+
+def check_chat_template(r: Report, model_dir: str | None) -> None:
+    """Tokenizer-only proof that enable_thinking=False is honoured and the system prompt is rendered."""
+    model_dir = model_dir or os.environ.get("MC_MODEL_DIR")
+    if not model_dir or not Path(model_dir, "tokenizer_config.json").exists():
+        r.warn("chat template", f"tokenizer not found under {model_dir}; skipped")
+        return
+    try:
+        from transformers import AutoTokenizer
+
+        from mc_data.schema import SYSTEM_PROMPT, build_messages
+        from mixed_cuts.thinking import EMPTY_THINK_BLOCK, think_token_ids
+
+        tok = AutoTokenizer.from_pretrained(model_dir)
+        msgs = build_messages("What is 1+1?")
+        off = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        on = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True, enable_thinking=True)
+    except Exception as e:  # noqa: BLE001
+        r.fail("chat template", f"{type(e).__name__}: {e}")
+        return
+    if off.endswith(EMPTY_THINK_BLOCK):
+        r.ok("enable_thinking=False renders the empty <think></think> block at the end of the prompt")
+    else:
+        r.fail(
+            "chat template",
+            f"enable_thinking=False prompt does not end with the empty think block: ...{off[-60:]!r}",
+        )
+    if on.endswith(EMPTY_THINK_BLOCK):
+        r.fail(
+            "chat template",
+            "enable_thinking=True renders the same tail: the kwarg is NOT honoured by this template",
+        )
+    else:
+        r.ok("enable_thinking=True differs from False (the kwarg is honoured)")
+    if SYSTEM_PROMPT in off:
+        r.ok("system prompt rendered verbatim")
+    else:
+        r.fail("chat template", "system prompt missing from the rendered prompt")
+    try:
+        think_token_ids(tok)
+        r.ok("<think>/</think> are single tokens (the response check works on ids)")
+    except ValueError as e:
+        r.fail("think tokens", str(e))
+
+
+def check_config(r: Report, name: str | None) -> None:
+    """Compose the config about to be launched and run the compose-check invariants."""
+    if not name:
+        return
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from compose_config import check, compose_train_config
+
+        # On the cluster verl's config tree comes from the installed package; on a laptop point
+        # MC_VERL_CONFIG_DIR at a checkout's verl/trainer/config.
+        cfg = compose_train_config(name, os.environ.get("MC_VERL_CONFIG_DIR") or None, [])
+        problems = check(cfg)
+    except Exception as e:  # noqa: BLE001
+        r.fail(f"config {name}", f"does not compose: {type(e).__name__}: {e}")
+        return
+    for p in problems:
+        r.fail(f"config {name}", p)
+    if not problems:
+        r.ok(
+            f"config {name} composes and passes every invariant (fp16, D1, D2, D4, 4-GPU layout, seeds, resume)"
+        )
+
+
+def check_durable_dir(r: Report) -> None:
+    run_dir = os.environ.get("MC_RUN_DIR") or os.environ.get("MC_RUNS_DIR")
+    if not run_dir:
+        return
+    try:
+        Path(run_dir).mkdir(parents=True, exist_ok=True)
+        probe = Path(run_dir) / ".mc_write_probe"
+        probe.write_text("ok")
+        probe.unlink()
+        r.ok(f"durable run dir writable: {run_dir}")
+    except OSError as e:
+        r.fail("durable run dir", f"{run_dir} not writable ({e}); checkpoints must land on /share1")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--no-gpu", action="store_true", help="skip GPU checks (login node / laptop)")
     ap.add_argument("--no-staged", action="store_true", help="skip staged model/data checks")
     ap.add_argument("--no-pins", action="store_true", help="skip package pin checks (dev env)")
+    ap.add_argument("--config", default=None, help="training config name to compose and check (e.g. smoke)")
+    ap.add_argument(
+        "--model-dir", default=None, help="tokenizer dir for the chat-template check (default $MC_MODEL_DIR)"
+    )
+    ap.add_argument("--only-config", action="store_true", help="run only the config + chat-template checks")
     ap.add_argument(
         "--facts-json", default=os.environ.get("MC_ENV_FACTS_JSON"), help="write detected facts here"
     )
     args = ap.parse_args()
 
     r = Report()
+    if args.only_config:
+        print("== config ==")
+        check_config(r, args.config)
+        print("== chat template ==")
+        check_chat_template(r, args.model_dir)
+        print("== RESULT:", "FAIL (see above)" if r.failed else "OK", "==")
+        return 1 if r.failed else 0
     print("== python ==")
     check_python(r)
     if not args.no_pins:
@@ -261,8 +448,19 @@ def main() -> int:
     if not args.no_gpu:
         print("== gpu ==")
         check_gpu(r)
+        print("== vllm engine ==")
+        check_vllm_engine(r)
+        check_attention_backend(r)
+    print("== single node ==")
+    check_single_node(r)
     print("== storage ==")
     check_storage(r)
+    check_durable_dir(r)
+    if args.config:
+        print("== config ==")
+        check_config(r, args.config)
+    print("== chat template ==")
+    check_chat_template(r, args.model_dir)
     if not args.no_staged:
         print("== staged model/data ==")
         check_staged(r)
@@ -271,6 +469,7 @@ def main() -> int:
     print("== slurm ==")
     check_slurm(r)
 
+    r.facts["slurm_job_num_nodes"] = os.environ.get("SLURM_JOB_NUM_NODES")
     if args.facts_json:
         Path(args.facts_json).parent.mkdir(parents=True, exist_ok=True)
         Path(args.facts_json).write_text(json.dumps(r.facts, indent=2))

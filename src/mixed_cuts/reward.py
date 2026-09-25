@@ -1,4 +1,4 @@
-"""Rule-based reward: last ``\\boxed{}`` extraction + math-verify equivalence.
+"""Rule-based reward (CUTS paper Appendix B.4): final ``\\boxed{}`` + math-verify equivalence.
 
 Used by verl through ``reward.custom_reward_function`` (signature fixed by
 ``verl/experimental/reward_loop/reward_manager/naive.py``)::
@@ -7,12 +7,22 @@ Used by verl through ``reward.custom_reward_function`` (signature fixed by
 
 and by the eval harness, so training reward and evaluation correctness are the same function.
 
+Math benchmarks (MATH, MATH-500, AIME, AMC): a response is VALID only if a ``\\boxed{...}`` is
+present and the content of the FINAL one contains at least one numeric digit; the content is
+compared with the ground truth by math-verify symbolic equivalence. Binary reward. There is no
+``Answer:``-line fallback on this path. Ground truths without any digit (e.g. ``\\pi``) can never
+be rewarded under this rule; ``scripts/prepare_data.py`` filters them out of the training set and
+the eval harness reports the resulting ceiling per benchmark (docs/decisions/008).
+
+GPQA (multiple choice) uses the separate letter parser in :mod:`mixed_cuts.gpqa`.
+
 Returns a dict; verl takes ``"score"`` as the reward and stores the other keys as
-``reward_extra_info`` (they must be present for every sample, so keys are constant):
+``reward_extra_info`` (they must be present for every sample, so the keys are constant):
 
     score      1.0 / 0.0
     pred       the extracted answer string ("" if nothing was extracted)
-    has_boxed  1.0 if a ``\\boxed{}`` was found, else 0.0   (format diagnostic)
+    has_boxed  1.0 if a \\boxed{} was found, else 0.0        (format diagnostic)
+    valid      1.0 if the response passed the validity rule  (boxed + digit, or a letter for GPQA)
 
 math-verify uses ``signal.alarm`` for its internal timeout, which only works in the main thread;
 verl calls the reward from a thread-pool executor, so like verl's own ``math_verify.py`` we run
@@ -29,7 +39,8 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any
 
 from mc_data.schema import DS_GPQA
-from mixed_cuts.boxed import last_answer_line, last_boxed_content, normalize_letter
+from mixed_cuts.boxed import last_boxed_content
+from mixed_cuts.gpqa import extract_choice_letter
 
 _pool: ProcessPoolExecutor | None = None
 _pool_lock = threading.Lock()
@@ -59,21 +70,23 @@ def _math_verify_equal(gold: str, pred: str) -> bool:
     return bool(verify(gold_parsed, pred_parsed))
 
 
-def extract_answer(solution_str: str) -> tuple[str | None, bool]:
-    """Return (answer, found_boxed). Falls back to an ``Answer:`` line when no box exists."""
+def has_digit(text: str | None) -> bool:
+    return bool(text) and any(ch.isdigit() for ch in text)
+
+
+def extract_answer(solution_str: str) -> tuple[str | None, bool, bool]:
+    """Return (final boxed content or None, has_boxed, valid). valid = boxed AND contains a digit."""
     boxed = last_boxed_content(solution_str)
-    if boxed is not None:
-        return boxed.strip(), True
-    line = last_answer_line(solution_str)
-    return (line, False) if line else (None, False)
+    if boxed is None:
+        return None, False, False
+    pred = boxed.strip()
+    return pred, True, has_digit(pred)
 
 
-def score_math(
-    solution_str: str, ground_truth: str, *, timeout: float = 30.0, require_boxed: bool = False
-) -> dict[str, Any]:
-    pred, has_boxed = extract_answer(solution_str)
-    result = {"score": 0.0, "pred": pred or "", "has_boxed": float(has_boxed)}
-    if pred is None or (require_boxed and not has_boxed):
+def score_math(solution_str: str, ground_truth: str, *, timeout: float = 30.0) -> dict[str, Any]:
+    pred, has_boxed, valid = extract_answer(solution_str)
+    result = {"score": 0.0, "pred": pred or "", "has_boxed": float(has_boxed), "valid": float(valid)}
+    if not valid:
         return result
     gt = str(ground_truth).strip()
     if pred == gt:  # exact match short-circuit (also avoids a subprocess round trip)
@@ -90,12 +103,12 @@ def score_math(
 
 
 def score_multiple_choice(solution_str: str, ground_truth: str) -> dict[str, Any]:
-    pred, has_boxed = extract_answer(solution_str)
-    letter = normalize_letter(pred)
+    letter = extract_choice_letter(solution_str)
     return {
         "score": 1.0 if letter is not None and letter == str(ground_truth).strip().upper() else 0.0,
-        "pred": letter or (pred or ""),
-        "has_boxed": float(has_boxed),
+        "pred": letter or "",
+        "has_boxed": float(last_boxed_content(solution_str) is not None),
+        "valid": float(letter is not None),
     }
 
 
@@ -106,13 +119,12 @@ def compute_score(
     extra_info: dict[str, Any] | None = None,  # noqa: ARG001 - verl passes it; unused
     *,
     timeout: float = 30.0,
-    require_boxed: bool = False,
     **_: Any,
 ) -> dict[str, Any]:
     """verl entry point (see module docstring)."""
     if data_source == DS_GPQA:
         return score_multiple_choice(solution_str, ground_truth)
-    return score_math(solution_str, ground_truth, timeout=timeout, require_boxed=require_boxed)
+    return score_math(solution_str, ground_truth, timeout=timeout)
 
 
 def shutdown_pool() -> None:

@@ -19,12 +19,13 @@ VERL_URL   := git+https://github.com/volcengine/verl.git@$(VERL_TAG)
 
 # training / eval knobs (override on the command line: make train CONFIG=math_mixed_cuts)
 CONFIG ?= smoke
+SEED   ?= 42
 CKPT   ?=
 BENCH  ?= math500,aime24,aime25,amc23,gpqa_diamond
 N_SAMPLES ?= 16
 
-.PHONY: help setup-dev setup-login setup lock test lint compose-check check-env prefetch data bench smoke train eval \
-        sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup clean-cache
+.PHONY: help setup-dev setup-login setup lock test gpu-test lint compose-check preflight check-env prefetch data \
+        bench smoke train eval sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup sbatch-resume-test clean-cache
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
@@ -58,17 +59,22 @@ lock: ## freeze the resolved cluster env into requirements/lock.txt (run on the 
 
 # ---------------------------------------------------------------------- checks
 test: ## run CPU unit tests (verl/vLLM-dependent tests auto-skip)
-	$(PY) -m pytest -q
+	$(PY) -m pytest -q --ignore=tests/gpu
+
+gpu-test: ## GPU tests (inside an allocation, after the smoke test): MC_SMOKE_RUN_DIR=... make gpu-test
+	@. $(ENV_FILE); $(PY) -m pytest -q tests/gpu -m "needs_gpu" -p no:cacheprovider
 
 lint: ## ruff
 	$(PY) -m ruff check src tests scripts eval
 	$(PY) -m ruff format --check src tests scripts eval
 
-check-env: ## preflight: pins, GPU (sm_75), staged paths, /share1 mount, internet
-	@. $(ENV_FILE); $(PY) scripts/check_env.py
+preflight: ## preflight report: pins, GPU (sm_75), single node, vLLM engine/backend, storage, config, chat template
+	@. $(ENV_FILE); $(PY) scripts/check_env.py --config $(CONFIG)
+
+check-env: preflight ## alias of preflight
 
 compose-check: ## compose every training config (Hydra) and assert the sm_75/fp16/CUTS invariants
-	@for c in base_grpo smoke math_grpo math_mixed_cuts dapo_grpo dapo_mixed_cuts; do \
+	@for c in base_grpo smoke math_grpo math_mixed_cuts; do \
 	  $(PY) scripts/compose_config.py $$c --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),) || exit 1; done
 	@$(PY) scripts/compose_config.py math_mixed_cuts --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),) memory=plan_b_lora
 
@@ -83,14 +89,14 @@ data: ## build parquet files in verl schema (MATH, DAPO deduped, eval sets, smok
 bench: ## rollout throughput + peak memory on ONE GPU (inside an allocation)
 	@. $(ENV_FILE); $(PY) scripts/bench_rollout.py
 
-smoke: ## end-to-end smoke test on ~20 MATH problems (inside an allocation, <1h)
-	@. $(ENV_FILE); bash slurm/run_train.sh smoke
+smoke: ## end-to-end smoke test on ~20 MATH problems (inside an allocation)
+	@. $(ENV_FILE); MC_SEED=$(SEED) MC_RUN_NAME=smoke-s$(SEED)-$$$$ bash slurm/run_train.sh smoke
 
-train: ## train with configs/train/$(CONFIG).yaml (inside an allocation)
-	@. $(ENV_FILE); bash slurm/run_train.sh $(CONFIG)
+train: ## train with configs/train/$(CONFIG).yaml (inside an allocation): make train CONFIG=math_grpo SEED=1
+	@. $(ENV_FILE); MC_SEED=$(SEED) bash slurm/run_train.sh $(CONFIG)
 
-eval: ## eval CKPT (HF dir or verl ckpt dir) on BENCH with N_SAMPLES samples per problem
-	@. $(ENV_FILE); $(PY) eval/run_eval.py --ckpt "$(CKPT)" --benchmarks "$(BENCH)" --n-samples $(N_SAMPLES)
+eval: ## eval CKPT (HF dir) on BENCH with N_SAMPLES samples per problem
+	@. $(ENV_FILE); $(PY) eval/run_eval.py --ckpt "$(CKPT)" --benchmarks "$(BENCH)" --n-samples $(N_SAMPLES) --seed $(SEED)
 
 # ------------------------------------------------------------------ sbatch wrappers
 sbatch-setup: ## submit the environment build job
@@ -99,10 +105,12 @@ sbatch-bench: ## submit the 1-GPU rollout benchmark
 	@. $(ENV_FILE); sbatch slurm/bench_rollout.sbatch
 sbatch-smoke: ## submit the smoke test
 	@. $(ENV_FILE); sbatch slurm/smoke.sbatch
-sbatch-train: ## submit a training run: make sbatch-train CONFIG=math_mixed_cuts
-	@. $(ENV_FILE); sbatch --export=ALL,MC_CONFIG=$(CONFIG) slurm/train.sbatch
-sbatch-eval: ## submit an eval run: make sbatch-eval CKPT=... BENCH=...
-	@. $(ENV_FILE); sbatch --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES) slurm/eval.sbatch
+sbatch-train: ## submit (or resume) a training run: make sbatch-train CONFIG=math_mixed_cuts SEED=1
+	@. $(ENV_FILE); sbatch -J $(CONFIG)-s$(SEED) --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
+sbatch-eval: ## submit an eval run: make sbatch-eval CKPT=... BENCH=... SEED=0
+	@. $(ENV_FILE); sbatch --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES),MC_SEED=$(SEED) slurm/eval.sbatch
+sbatch-resume-test: ## kill-at-step-15-and-resubmit verification of checkpoint resume
+	@. $(ENV_FILE); sbatch slurm/test_resume.sbatch
 
 clean-cache: ## remove node-local caches (safe; they are rebuilt)
 	@. $(ENV_FILE); rm -rf "$$MC_CACHE_ROOT"

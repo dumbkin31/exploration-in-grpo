@@ -1,0 +1,9 @@
+# Qwen's own recommended non-thinking decoding (T=0.7, top_p 0.8, top_k 20), for comparison with
+# model-card numbers. `default.yaml` follows the paper's validation decoding instead.
+defaults:
+  - default
+  - _self_
+sampling:
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20

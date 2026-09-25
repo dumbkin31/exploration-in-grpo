@@ -5,10 +5,14 @@ Given a batch of next-token logits, for every *active* row:
 1. SELECT   -- keep the ``k`` most likely tokens;
 2. FILTER   -- among those, keep the ones with probability ``>= delta`` (probabilities are
                computed with a temperature-1 softmax in float32, as in the paper);
-3. EQUALIZE -- give every survivor logit ``0`` and every other token ``-inf`` so that a softmax
-               yields the *uniform* distribution over survivors. The model's relative ordering
-               inside the candidate set is discarded on purpose; this is what distinguishes
-               CUTS from top-k / nucleus / min-p sampling.
+3. EQUALIZE -- give every survivor logit ``0`` and every other token the most negative finite
+               value of the output dtype (``torch.finfo(dtype).min``) so that a softmax yields the
+               *uniform* distribution over survivors (``exp(min - 0)`` underflows to exactly 0).
+               The model's relative ordering inside the candidate set is discarded on purpose;
+               this is what distinguishes CUTS from top-k / nucleus / min-p sampling.
+               ``-inf`` is deliberately NOT used: on fp16 hardware it propagates into NaN through
+               downstream normalisation. Note the value must be the *output* dtype's min: filling
+               the fp32 working tensor with fp32's min and casting to fp16 overflows back to -inf.
 
 If the filter leaves nothing, ``empty_set_fallback`` decides between the paper's rule
 (uniform over the whole top-K set) and greedy (argmax only). Either way the set is never
@@ -109,9 +113,10 @@ def cuts_transform(
             survive[empty, 0] = True  # greedy: only the argmax survives
     fallback_rows = empty
 
-    # EQUALIZE: 0 for survivors, -inf elsewhere -> softmax is uniform over survivors.
-    new_sub = torch.full_like(sub, float("-inf"))
-    src = torch.where(survive, torch.zeros_like(top_probs), torch.full_like(top_probs, float("-inf")))
+    # EQUALIZE: 0 for survivors, finfo(out dtype).min elsewhere -> softmax is uniform over survivors.
+    mask_value = torch.finfo(logits.dtype).min  # exactly representable after the cast below
+    new_sub = torch.full_like(sub, mask_value)
+    src = torch.where(survive, torch.zeros_like(top_probs), torch.full_like(top_probs, mask_value))
     new_sub.scatter_(1, top_idx, src)
 
     out = logits if inplace else logits.clone()

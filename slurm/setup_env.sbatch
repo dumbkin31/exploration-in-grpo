@@ -4,6 +4,7 @@
 #SBATCH --qos=normal
 #SBATCH -p u22
 #SBATCH -C 2080ti
+#SBATCH -N 1
 #SBATCH --gres=gpu:1
 #SBATCH -c 8
 #SBATCH --mem-per-cpu=3G

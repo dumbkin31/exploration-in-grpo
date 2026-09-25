@@ -1,27 +1,12 @@
 #!/usr/bin/env bash
-# In-allocation training launcher (used by `make train`, `make smoke` and the sbatch scripts).
+# In-allocation training launcher, used by `make train/smoke` and exec'd by the sbatch scripts.
 #
 #   bash slurm/run_train.sh <config-name> [extra hydra overrides...]
+#   MC_SEED=1 bash slurm/run_train.sh math_mixed_cuts          # run name math_mixed_cuts-s1
 #
-# Resolves every path from configs/ada.env.sh + slurm/common.sh, stages data in, and runs
-# python -m mixed_cuts.main with the config from configs/train/<config-name>.yaml.
+# Everything (paths, seed, run name, resume, traps) is in slurm/common.sh::mc_train_main.
 set -euo pipefail
 CONFIG="${1:?usage: run_train.sh <config-name> [overrides...]}"; shift || true
 # shellcheck source=common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-export MC_JOB_NAME="${MC_JOB_NAME:-${CONFIG}}"
-mc_job_init
-mc_stage_in
-
-export MC_EXPERIMENT_NAME="${MC_EXPERIMENT_NAME:-${CONFIG}-${MC_JOB_ID}}"
-cd "${MC_REPO_ROOT}"
-mc_run_with_traps python -m mixed_cuts.main \
-  --config-name "${CONFIG}" \
-  "hydra.searchpath=[pkg://verl.trainer.config]" \
-  "paths.run_dir=${MC_RUN_DIR}" \
-  "paths.model_dir=${MC_STAGED_MODEL_DIR}" \
-  "paths.data_dir=${MC_STAGED_DATA_DIR}" \
-  "paths.repo_dir=${MC_REPO_ROOT}" \
-  "trainer.experiment_name=${MC_EXPERIMENT_NAME}" \
-  "hydra.run.dir=${MC_RUN_DIR}/hydra" \
-  "$@"
+mc_train_main "${CONFIG}" "$@"

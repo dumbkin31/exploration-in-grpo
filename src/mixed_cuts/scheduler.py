@@ -42,6 +42,8 @@ class MixedCutsConfig:
     enabled: bool = True
     n_std: int = 8
     n_cuts: int = 8
+    group_size: int | None = None
+    """G, the GRPO group size. Defaults to ``n_std + n_cuts``; when given it must equal it (D4)."""
     cuts: CutsParams = field(default_factory=CutsParams)
     dump_samples_per_step: int = 4
     """How many whole groups to dump to disk each step for manual reading."""
@@ -51,6 +53,11 @@ class MixedCutsConfig:
             raise ValueError(f"mixed_cuts.n_std / n_cuts must be >= 0, got {self.n_std} / {self.n_cuts}")
         if self.enabled and self.n_std + self.n_cuts == 0:
             raise ValueError("mixed_cuts.enabled but n_std + n_cuts == 0")
+        if self.group_size is None:
+            object.__setattr__(self, "group_size", self.n_std + self.n_cuts)  # frozen dataclass
+        # D4: both arms must cost the same generation budget. Vanilla GRPO is n_std = G, n_cuts = 0.
+        if self.enabled and self.n_std + self.n_cuts != self.group_size:
+            raise ValueError(f"budget mismatch: {self.n_std} + {self.n_cuts} != G={self.group_size}")
 
     @property
     def n(self) -> int:
@@ -62,11 +69,11 @@ class MixedCutsConfig:
         return self.enabled and self.n_cuts > 0
 
     def validate_against_rollout_n(self, rollout_n: int) -> None:
-        """``actor_rollout_ref.rollout.n`` must equal ``n_std + n_cuts`` when CUTS is on."""
-        if self.enabled and self.n != rollout_n:
+        """``actor_rollout_ref.rollout.n`` must equal G when CUTS is on (verl uses rollout.n everywhere)."""
+        if self.enabled and self.group_size != rollout_n:
             raise ValueError(
-                f"mixed_cuts.n_std + n_cuts = {self.n} but actor_rollout_ref.rollout.n = {rollout_n}; "
-                "they must be equal (rollout.n is the GRPO group size verl uses everywhere)"
+                f"budget mismatch: mixed_cuts.group_size (= n_std + n_cuts = {self.group_size}) != "
+                f"actor_rollout_ref.rollout.n = {rollout_n}; set rollout.n: ${{mixed_cuts.group_size}}"
             )
 
     @classmethod
@@ -112,10 +119,10 @@ def plan_group(
         # Exactly what verl's AgentLoopWorkerTQ._run_prompt does: one copy of the params per session.
         return [SessionSpec(i, STD, dict(base_sampling_params)) for i in range(n)]
 
-    if n != config.n:
+    if n != config.group_size:
         raise ValueError(
             f"prompt {uid!r} asks for n={n} rollouts but mixed_cuts is configured for "
-            f"n_std + n_cuts = {config.n}; per-prompt __rollout_n__ overrides are not supported with CUTS"
+            f"G = n_std + n_cuts = {config.group_size}; per-prompt __rollout_n__ overrides are not supported"
         )
 
     specs = [SessionSpec(i, STD, dict(base_sampling_params)) for i in range(config.n_std)]
@@ -127,5 +134,9 @@ def plan_group(
             **(base_sampling_params.get("extra_args") or {}),
             **params.to_extra_args(),
         }
+        # D2: vLLM's own truncation must not re-narrow the already-uniform candidate set. Its
+        # top-k/top-p run AFTER the logits processor, so with top_p < 1 they would drop survivors.
+        sampling_params["top_p"] = 1.0
+        sampling_params["top_k"] = -1
         specs.append(SessionSpec(session_id, CUTS, sampling_params))
     return specs

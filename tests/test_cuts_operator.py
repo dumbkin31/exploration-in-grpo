@@ -9,10 +9,19 @@ from cuts.operator import cuts_transform
 from tests.conftest import logits_from_probs
 
 
+def _survivors(out_row: torch.Tensor) -> torch.Tensor:
+    """Survivors carry logit 0; everything else carries finfo(dtype).min (never -inf)."""
+    assert torch.isfinite(out_row).all(), "CUTS output must never contain -inf/NaN (fp16 safety)"
+    return out_row > torch.finfo(out_row.dtype).min
+
+
 def _uniform_over(out_row: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Return (survivor mask, softmax) of one output row."""
     probs = torch.softmax(out_row.float(), dim=-1)
-    survivors = torch.isfinite(out_row)
+    survivors = _survivors(out_row)
+    assert torch.all(out_row[survivors] == 0) and torch.all(
+        out_row[~survivors] == torch.finfo(out_row.dtype).min
+    )
     return survivors, probs
 
 
@@ -65,7 +74,43 @@ def test_set_is_never_empty_and_argmax_always_survives(fallback):
         res = cuts_transform(logits, k=5, delta=delta, empty_set_fallback=fallback)
         assert torch.all(res.set_size >= 1)
         argmax = logits.argmax(dim=-1)
-        assert torch.all(torch.isfinite(res.logits[torch.arange(64), argmax]))
+        assert torch.all(res.logits[torch.arange(64), argmax] == 0)
+
+
+def test_d3_empty_set_falls_back_to_full_topk_set():
+    """Paper Section 2.2: if S_t is empty after the delta filter, fall back to V_top-K."""
+    logits = logits_from_probs([0.3, 0.25, 0.2, 0.15, 0.1])
+    res = cuts_transform(logits, k=5, delta=0.5)  # nothing reaches 0.5
+    assert int(res.set_size[0]) == 5 and bool(res.used_fallback[0])
+    survivors, probs = _uniform_over(res.logits[0])
+    assert survivors.all() and torch.allclose(probs, torch.full((5,), 0.2))
+
+
+def test_d3_singleton_set_is_deterministic_and_counted():
+    """|S_t| == 1 is correct behaviour (deterministic step), and must be reported, not hidden."""
+    logits = logits_from_probs([0.97, 0.01, 0.01, 0.005, 0.005])
+    res = cuts_transform(logits, k=5, delta=0.03)
+    assert int(res.set_size[0]) == 1 and not bool(res.used_fallback[0])
+    survivors, probs = _uniform_over(res.logits[0])
+    assert survivors.tolist() == [True, False, False, False, False] and probs[0] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_no_inf_or_nan_anywhere_after_softmax(dtype):
+    """-inf must never appear: on fp16 hardware it propagates into NaN downstream."""
+    logits = (torch.randn(8, 100) * 4).to(dtype)
+    res = cuts_transform(logits, k=5, delta=0.03)
+    assert res.logits.dtype == dtype
+    assert torch.isfinite(res.logits).all()
+    assert torch.all(res.logits.min(dim=-1).values == torch.finfo(dtype).min)
+    probs = torch.softmax(res.logits.float(), dim=-1)
+    assert torch.isfinite(probs).all() and torch.allclose(probs.sum(-1), torch.ones(8))
+    # masked entries are exactly zero after softmax, survivors exactly uniform
+    for b in range(8):
+        n = int(res.set_size[b])
+        top = probs[b].topk(n).values
+        assert torch.allclose(top, torch.full((n,), 1 / n), atol=1e-6)
+        assert float(probs[b].sum() - top.sum()) == 0.0
 
 
 def test_output_distribution_is_uniform_over_survivors():
@@ -99,7 +144,7 @@ def test_inactive_rows_are_untouched_and_input_not_modified():
     assert torch.equal(res.logits[1], original[1]) and torch.equal(res.logits[3], original[3])
     assert res.set_size[1] == 0 and res.set_size[3] == 0
     assert res.set_size[0] >= 1 and res.set_size[2] >= 1
-    assert torch.isinf(res.logits[0]).sum() >= 47  # at most 3 survivors
+    assert int((res.logits[0] == torch.finfo(torch.float32).min).sum()) >= 47  # at most 3 survivors
     # all-inactive batch is a pure pass-through
     res2 = cuts_transform(logits, k=3, delta=0.01, active_mask=torch.zeros(4, dtype=torch.bool))
     assert torch.equal(res2.logits, original) and torch.all(res2.set_size == 0)
@@ -109,7 +154,7 @@ def test_inplace_writes_into_the_input():
     logits = torch.randn(3, 20)
     res = cuts_transform(logits, k=2, delta=0.0, inplace=True)
     assert res.logits is logits
-    assert torch.isinf(logits).sum() == 3 * 18
+    assert int((logits == torch.finfo(torch.float32).min).sum()) == 3 * 18
 
 
 def test_fp16_dtype_is_preserved_and_small_probs_survive():

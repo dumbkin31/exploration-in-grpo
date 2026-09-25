@@ -26,7 +26,7 @@ real vLLM ``LogitsProcessor`` in :mod:`cuts.vllm_logits_processor` is a thin wra
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
@@ -55,6 +55,8 @@ class RequestEntry:
     """Steps where |S_t| == 1, i.e. CUTS degenerated into greedy decoding."""
     n_fallback: int = 0
     """Steps where the filter emptied the set and ``empty_set_fallback`` fired."""
+    set_size_hist: list[int] = field(default_factory=list)
+    """``set_size_hist[i-1]`` = number of CUTS steps with |S_t| == i, for i in 1..k."""
 
     @property
     def n_generated(self) -> int:
@@ -65,17 +67,24 @@ class RequestEntry:
         return self.n_generated >= self.params.t_warm
 
     def record(self, set_size: int, used_fallback: bool) -> None:
+        set_size = int(set_size)
         self.n_cuts_steps += 1
-        self.sum_set_size += int(set_size)
+        self.sum_set_size += set_size
         if set_size == 1:
-            self.n_singleton += 1
+            self.n_singleton += 1  # CUTS degenerated into greedy decoding for this step
         if used_fallback:
             self.n_fallback += 1
+        if not self.set_size_hist:
+            self.set_size_hist = [0] * self.params.k
+        if 1 <= set_size <= len(self.set_size_hist):
+            self.set_size_hist[set_size - 1] += 1
 
     def summary(self) -> dict[str, Any]:
         """JSON-serialisable record, emitted when the request leaves the batch."""
         p = self.params
         return {
+            # Where CutsStatsWriter should append this record; without it every record is dropped.
+            "stats_dir": p.stats_dir,
             "uid": p.uid,
             "session_id": p.session_id,
             "step": p.step,
@@ -89,6 +98,7 @@ class RequestEntry:
             "mean_set_size": (self.sum_set_size / self.n_cuts_steps) if self.n_cuts_steps else None,
             "n_singleton": self.n_singleton,
             "n_fallback": self.n_fallback,
+            "set_size_hist": list(self.set_size_hist) if self.set_size_hist else [0] * p.k,
         }
 
 
