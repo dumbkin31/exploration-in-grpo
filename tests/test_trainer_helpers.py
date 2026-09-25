@@ -40,15 +40,15 @@ def trainer_module(monkeypatch):
         return lambda cls: cls
 
     v1.PPOTrainerSync, v1.register_trainer = PPOTrainerSync, register_trainer
-    pyf = types.ModuleType("verl.utils.py_functional")
-    pyf.marked_timer = lambda *a, **k: __import__("contextlib").nullcontext()
+    dbg = types.ModuleType("verl.utils.debug")
+    dbg.marked_timer = lambda *a, **k: __import__("contextlib").nullcontext()
     for name, m in {
         "verl": verl,
         "verl.trainer": types.ModuleType("verl.trainer"),
         "verl.trainer.ppo": types.ModuleType("verl.trainer.ppo"),
         "verl.trainer.ppo.v1": v1,
         "verl.utils": types.ModuleType("verl.utils"),
-        "verl.utils.py_functional": pyf,
+        "verl.utils.debug": dbg,
     }.items():
         stubs[name] = m
     for name, m in stubs.items():
@@ -58,6 +58,13 @@ def trainer_module(monkeypatch):
     mod = importlib.import_module("mixed_cuts.trainer")
     yield mod
     sys.modules.pop("mixed_cuts.trainer", None)
+
+
+def test_padded_helper_and_id_lists(trainer_module):
+    nested = torch.nested.nested_tensor([torch.tensor([1, 2, 3]), torch.tensor([4])], layout=torch.jagged)
+    assert trainer_module._padded(nested).tolist() == [[1, 2, 3], [4, 0, 0]]
+    assert trainer_module._id_lists(nested) == [[1, 2, 3], [4]]
+    assert trainer_module._id_lists(torch.tensor([[7, 8], [9, 0]])) == [[7, 8], [9, 0]]
 
 
 def test_sequence_lengths_from_padded_mask(trainer_module):

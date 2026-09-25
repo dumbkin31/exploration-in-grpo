@@ -17,10 +17,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from mixed_cuts.errors import MixedCutsStartupError
+
 EMPTY_THINK_BLOCK = "<think>\n\n</think>\n\n"
 
 
-class ThinkingModeError(RuntimeError):
+class ThinkingModeError(MixedCutsStartupError):
     """Raised when thinking-mode tags show up where non-thinking output was required."""
 
 
