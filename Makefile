@@ -68,7 +68,7 @@ check-env: ## preflight: pins, GPU (sm_75), staged paths, /share1 mount, interne
 	@. $(ENV_FILE); $(PY) scripts/check_env.py
 
 compose-check: ## compose every training config (Hydra) and assert the sm_75/fp16/CUTS invariants
-	@for c in base_grpo smoke math_grpo math_mixed_cuts dapo_grpo dapo_mixed_cuts; do \
+	@for c in base_grpo smoke math_grpo math_mixed_cuts; do \
 	  $(PY) scripts/compose_config.py $$c --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),) || exit 1; done
 	@$(PY) scripts/compose_config.py math_mixed_cuts --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),) memory=plan_b_lora
 

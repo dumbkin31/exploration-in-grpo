@@ -1,5 +1,6 @@
-# End-to-end plumbing test: 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS), plan A.
-# Must finish comfortably inside a 6 h interactive session on 4x 2080 Ti.
+# End-to-end plumbing test on the real 4-GPU layout (TP=4, plan A): 20 MATH problems, 2 steps,
+# groups of 4 (2 std + 2 CUTS), 512-token responses. Must finish well inside a 6 h session.
+# Two steps are the minimum: the |S_t| statistics of step 1 are summarised at step 2.
 hydra:
   searchpath:
     - pkg://verl.trainer.config
@@ -8,6 +9,7 @@ defaults:
   - _self_
 
 mixed_cuts:
+  group_size: 4
   n_std: 2
   n_cuts: 2
   dump_samples_per_step: 2
@@ -23,18 +25,19 @@ data:
 actor_rollout_ref:
   actor:
     ppo_mini_batch_size: 4
+    ppo_max_token_len_per_gpu: 2048
+  ref:
+    log_prob_max_token_len_per_gpu: 2048
   rollout:
-    n: 4
     max_model_len: 1536
     max_num_batched_tokens: 2048
-    gpu_memory_utilization: 0.6
+    log_prob_max_token_len_per_gpu: 2048
     agent:
       num_workers: 2
     val_kwargs:
       n: 2
 
 trainer:
-  experiment_name: smoke
   total_training_steps: 2
   test_freq: 1
-  save_freq: 2
+  save_freq: 1

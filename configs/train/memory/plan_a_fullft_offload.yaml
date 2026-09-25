@@ -1,11 +1,13 @@
 # @package _global_
-# Memory plan A (default): full-parameter fine-tune, FSDP2 with CPU offload, fp16 mixed precision.
+# Memory plan A (DEFAULT): full-parameter fine-tune, FSDP2 sharded over the 4 GPUs with CPU
+# offload of parameters, gradients AND optimizer state, fp16 mixed precision.
 #
-# fp32 master weights + fp32 grads + Adam moments (~27.6 GB for 1.72 B params) live in pinned
-# host RAM (FSDP2 CPUOffloadPolicy); each GPU only holds the layer being computed plus
-# activations (~5-6 GB peak with gradient checkpointing, micro-batch 1, seq 4k). See README 4.
-# NOTE: only `strategy: fsdp2` gives real CPU offload in verl v0.9.0; with `fsdp` (FSDP1) verl
-# force-disables CPUOffload for the actor.
+# verl v0.9.0 has two offload mechanisms; only this one keeps the optimizer state off the GPU
+# during optimizer.step (transformer_impl.py:440-444 -> torch FSDP2 CPUOffloadPolicy):
+#   fsdp_config.offload_policy: true     params/grads/Adam live in pinned host RAM, step on CPU
+#   param_offload / optimizer_offload    (plan_a_manual_offload.yaml) move them back to the GPU
+#                                        for the update: ~7 GB/GPU sharded 4-way, too tight here.
+# Per-GPU arithmetic and the throughput caveat: docs/decisions/002.
 actor_rollout_ref:
   model:
     lora_rank: 0
@@ -14,9 +16,9 @@ actor_rollout_ref:
     fsdp_config:
       strategy: fsdp2
       offload_policy: true           # FSDP2 CPUOffloadPolicy(pin_memory=True)
-      param_offload: false           # verl's manual offload is redundant with offload_policy
+      param_offload: false           # ignored when offload_policy is set (kept explicit)
       optimizer_offload: false
-      reshard_after_forward: true
+      reshard_after_forward: true    # ZeRO-3 style: a layer is all-gathered only while it computes
   ref:
     fsdp_config:
       strategy: fsdp2

@@ -1,4 +1,5 @@
-# Vanilla GRPO on MATH: identical to math_mixed_cuts except n_cuts = 0 (all 16 rollouts standard).
+# Arm 1: vanilla GRPO on MATH. Identical to math_mixed_cuts except the group composition:
+# all 16 rollouts standard (n_cuts = 0), so both arms spend the same generation budget (D4).
 hydra:
   searchpath:
     - pkg://verl.trainer.config
@@ -7,7 +8,6 @@ defaults:
   - _self_
 mixed_cuts:
   enabled: true
+  group_size: 16
   n_std: 16
   n_cuts: 0
-trainer:
-  experiment_name: math_grpo
