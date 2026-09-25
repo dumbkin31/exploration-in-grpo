@@ -26,9 +26,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from mc_data import dapo, eval_sets, math
-from mc_data.schema import DS_GPQA, EVAL_SOURCES
-from mixed_cuts.reward import has_digit
+# The repo's src/ must be importable even when the package is not installed (login node, fresh venv).
+_REPO_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_REPO_SRC) not in sys.path:
+    sys.path.insert(0, str(_REPO_SRC))
+
+from mc_data import dapo, eval_sets, math  # noqa: E402  (after the sys.path shim)
+from mc_data.schema import DS_GPQA, EVAL_SOURCES  # noqa: E402  (after the sys.path shim)
+from mixed_cuts.reward import has_digit  # noqa: E402  (after the sys.path shim)
 
 MATH_REPO = "DigitalLearningGmbH/MATH-lighteval"
 DAPO_REPO = "BytedTsinghua-SIA/DAPO-Math-17k"

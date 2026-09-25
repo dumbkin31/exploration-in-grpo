@@ -38,36 +38,35 @@ SYNTHETIC = [
 
 
 class GpuMemPoller(threading.Thread):
-    """Samples nvidia-smi memory.used for one GPU index until stopped; keeps the max."""
+    """Samples nvidia-smi memory.used for every GPU until stopped; keeps the per-GPU max."""
 
-    def __init__(self, gpu_index: int, interval: float = 0.5):
+    def __init__(self, interval: float = 0.5):
         super().__init__(daemon=True)
-        self.gpu_index = gpu_index
         self.interval = interval
-        self.peak_mib = 0
+        self.peak_mib: list[int] = []
         self._stop = threading.Event()
 
     def run(self) -> None:
         while not self._stop.is_set():
             try:
                 out = subprocess.run(
-                    [
-                        "nvidia-smi",
-                        "--query-gpu=memory.used",
-                        "--format=csv,noheader,nounits",
-                        "-i",
-                        str(self.gpu_index),
-                    ],
+                    ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"],
                     capture_output=True,
                     text=True,
                     timeout=5,
-                ).stdout.strip()
-                self.peak_mib = max(self.peak_mib, int(float(out.splitlines()[0])))
+                ).stdout
+                mems = [int(float(line.split(",")[1])) for line in out.strip().splitlines() if "," in line]
+                if len(mems) > len(self.peak_mib):
+                    self.peak_mib.extend([0] * (len(mems) - len(self.peak_mib)))
+                self.peak_mib = [
+                    max(a, b)
+                    for a, b in zip(self.peak_mib, mems + [0] * (len(self.peak_mib) - len(mems)), strict=True)
+                ]
             except Exception:  # noqa: BLE001
                 pass
             self._stop.wait(self.interval)
 
-    def stop(self) -> int:
+    def stop(self) -> list[int]:
         self._stop.set()
         self.join(timeout=5)
         return self.peak_mib
@@ -98,6 +97,10 @@ def main() -> int:
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.70)
     ap.add_argument("--max-model-len", type=int, default=4096)
     ap.add_argument("--enforce-eager", action="store_true")
+    ap.add_argument("--tp", type=int, default=1, help="tensor parallel size (4 = the training layout)")
+    ap.add_argument(
+        "--attention-backend", default="TRITON_ATTN", help="vLLM attention backend (sm_75: TRITON_ATTN)"
+    )
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
     if not args.model:
@@ -107,11 +110,6 @@ def main() -> int:
     import torch
     from vllm import LLM, SamplingParams
 
-    gpu_index = (
-        int((os.environ.get("CUDA_VISIBLE_DEVICES") or "0").split(",")[0])
-        if os.environ.get("CUDA_VISIBLE_DEVICES", "0").isdigit()
-        else 0
-    )
     info = {
         "model": args.model,
         "gpu": torch.cuda.get_device_name(0),
@@ -119,15 +117,14 @@ def main() -> int:
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
         "vllm": __import__("vllm").__version__,
-        "attention_backend_env": os.environ.get(
-            "VLLM_ATTENTION_BACKEND", "(auto; expect TRITON_ATTN on sm_75, see engine log)"
-        ),
+        "attention_backend": args.attention_backend,
+        "tensor_parallel_size": args.tp,
         "max_tokens": args.max_tokens,
         "gpu_memory_utilization": args.gpu_memory_utilization,
     }
     print(json.dumps(info, indent=2, default=str))
 
-    poller = GpuMemPoller(gpu_index)
+    poller = GpuMemPoller()
     poller.start()
     t0 = time.time()
     llm = LLM(
@@ -136,6 +133,8 @@ def main() -> int:
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
         enforce_eager=args.enforce_eager,
+        tensor_parallel_size=args.tp,
+        attention_config={"backend": args.attention_backend},
         seed=0,
     )
     info["engine_startup_seconds"] = time.time() - t0
@@ -166,17 +165,18 @@ def main() -> int:
             "prompt_tokens": prompt_tokens,
             "gen_tokens_per_s": round(gen_tokens / dt, 1),
             "per_seq_tokens_per_s": round(gen_tokens / dt / conc, 1),
-            "peak_mib_so_far": poller.peak_mib,
+            "peak_mib_so_far": list(poller.peak_mib),
         }
         print(json.dumps(row))
         results.append(row)
 
     info["peak_mib"] = poller.stop()
     info["results"] = results
-    kv_per_token_kib = 112  # Qwen3-1.7B: 2 x 28 layers x 8 kv heads x 128 dims x 2 bytes
+    kv_per_token_kib = 112  # Qwen3-1.7B: 2 x 28 layers x 8 kv heads x 128 dims x 2 bytes (whole model)
     info["note"] = (
-        f"KV cache is ~{kv_per_token_kib} KiB/token; with gpu_memory_utilization={args.gpu_memory_utilization} "
-        "the engine log line 'GPU KV cache size: N tokens' gives the concurrency budget at your max_model_len."
+        f"KV cache is ~{kv_per_token_kib} KiB/token across all TP ranks; with gpu_memory_utilization="
+        f"{args.gpu_memory_utilization} and tp={args.tp} the engine log line 'GPU KV cache size: N tokens' gives "
+        "the concurrency budget at your max_model_len. Grep the log for 'Using ... attention backend' too."
     )
     print(json.dumps(info, indent=2, default=str))
     if args.out:
