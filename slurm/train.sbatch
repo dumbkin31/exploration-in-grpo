@@ -14,4 +14,6 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 CONFIG="${MC_CONFIG:?set MC_CONFIG (e.g. sbatch --export=ALL,MC_CONFIG=math_mixed_cuts slurm/train.sbatch)}"
 export MC_JOB_NAME="${CONFIG}"
-bash slurm/run_train.sh "${CONFIG}" "$@"
+# exec (not a child bash): SLURM delivers --signal=B:SIGUSR1 to THIS shell's PID, and the
+# stage-out traps are installed inside run_train.sh, so it must run in this process.
+exec bash slurm/run_train.sh "${CONFIG}" "$@"

@@ -14,4 +14,6 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 export MC_JOB_NAME=smoke
-bash slurm/run_train.sh smoke "$@"
+# exec (not a child bash): SLURM delivers --signal=B:SIGUSR1 to THIS shell's PID, and the
+# stage-out traps are installed inside run_train.sh, so it must run in this process.
+exec bash slurm/run_train.sh smoke "$@"

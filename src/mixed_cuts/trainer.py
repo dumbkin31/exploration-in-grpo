@@ -44,14 +44,21 @@ def _sequence_scores(rm_scores: Any) -> list[float]:
     return rm_scores.float().sum(dim=-1).tolist()
 
 
-def _sequence_lengths(responses: Any) -> list[int] | None:
-    if getattr(responses, "is_nested", False):
+def _sequence_lengths(response_mask: Any) -> list[int] | None:
+    """Response length in tokens per rollout, from ``response_mask`` (1 = generated token).
+
+    Works for a nested (ragged) tensor and for a right-padded ``[B, T]`` tensor. It must NOT be
+    computed from ``responses.shape[-1]``: that is the padded width, identical for every row.
+    """
+    if response_mask is None:
+        return None
+    if getattr(response_mask, "is_nested", False):
         try:
-            return responses.offsets().diff().tolist()
+            return [int(t.sum()) for t in response_mask.unbind()]
         except Exception:  # noqa: BLE001 - layout-dependent API
-            return [int(t.numel()) for t in responses.unbind()]
-    if isinstance(responses, torch.Tensor):
-        return [int(responses.shape[-1])] * int(responses.shape[0])
+            return response_mask.offsets().diff().tolist()
+    if isinstance(response_mask, torch.Tensor):
+        return response_mask.to(torch.int64).sum(dim=-1).tolist()
     return None
 
 
@@ -98,13 +105,13 @@ class MixedCutsPPOTrainerSync(PPOTrainerSync):
         data = tq.kv_batch_get(
             keys=batch.keys,
             partition_id=batch.partition_id,
-            select_fields=["uid", "rm_scores", "responses", "rollout_kind"],
+            select_fields=["uid", "rm_scores", "response_mask", "rollout_kind"],
         )
         n = len(batch.keys)
         uids = _non_tensor_list(data, "uid", n, None)
         kinds = _non_tensor_list(data, "rollout_kind", n, STD)
         scores = _sequence_scores(data["rm_scores"])
-        lengths = _sequence_lengths(data["responses"])
+        lengths = _sequence_lengths(data["response_mask"]) if "response_mask" in data.keys() else None
 
         keep = np.flatnonzero(non_padding) if non_padding.size == n else np.arange(n)
         out = compute_group_diagnostics(

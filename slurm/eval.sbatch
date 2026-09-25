@@ -24,6 +24,8 @@ EVAL_CFG="${MC_EVAL_CONFIG:-configs/eval/default.yaml}"
 IFS=',' read -r -a benches <<< "${BENCH}"
 IFS=',' read -r -a gpus <<< "${CUDA_VISIBLE_DEVICES:-0}"
 ngpu=${#gpus[@]}
+# Stage out on the SLURM warning signal / termination too, then stop the engines.
+trap 'mc_log "caught signal: staging out"; mc_stage_out; pkill -TERM -P $$ || true; exit 143' USR1 TERM
 trap 'mc_stage_out' EXIT
 pids=()
 for i in "${!benches[@]}"; do

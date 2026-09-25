@@ -76,6 +76,8 @@ class RequestEntry:
         """JSON-serialisable record, emitted when the request leaves the batch."""
         p = self.params
         return {
+            # Where CutsStatsWriter should append this record; without it every record is dropped.
+            "stats_dir": p.stats_dir,
             "uid": p.uid,
             "session_id": p.session_id,
             "step": p.step,

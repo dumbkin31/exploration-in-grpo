@@ -59,3 +59,30 @@ def test_summary_is_weighted_by_cuts_steps():
 
 def test_summary_of_nothing():
     assert summarize_cuts_stats([]) == {"cuts/n_rollouts": 0.0}
+
+
+def test_state_to_writer_round_trip_writes_a_record(tmp_path):
+    """Regression: RequestEntry.summary() must carry stats_dir or the writer drops every record."""
+    from cuts.config import CutsParams
+    from cuts.state import CutsBatchState
+
+    class FakeParams:
+        def __init__(self, extra_args):
+            self.extra_args = extra_args
+
+    class Update:
+        def __init__(self, removed=(), added=(), moved=()):
+            self.batch_size, self.removed, self.added, self.moved = 1, list(removed), list(added), list(moved)
+
+    writer = CutsStatsWriter()
+    state = CutsBatchState(on_request_finished=writer.write)
+    params = CutsParams(k=3, delta=0.0, t_warm=0, stats_dir=str(tmp_path), step=9, uid="u", session_id=4)
+    state.apply_batch_update(Update(added=[(0, FakeParams(params.to_extra_args()), [1], [])]))
+    import torch
+
+    state.apply(torch.randn(1, 20))
+    state.apply_batch_update(Update(removed=[0]))
+    writer.close()
+    recs = read_cuts_stats(tmp_path, step=9)
+    assert len(recs) == 1 and recs[0]["uid"] == "u" and recs[0]["session_id"] == 4
+    assert recs[0]["n_cuts_steps"] == 1 and "stats_dir" not in recs[0]
