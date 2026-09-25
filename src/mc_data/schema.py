@@ -3,7 +3,7 @@
 One row per problem::
 
     data_source   str                       routes the reward function / eval metrics
-    prompt        list[{"role","content"}]  chat messages (system prompt is NOT included here)
+    prompt        list[{"role","content"}]  chat messages: [system instruction, user question]
     ability       str                       "math" | "science"
     reward_model  {"style": "rule", "ground_truth": str}
     extra_info    {"split": str, "index": str, ...}   anything else, kept for provenance
@@ -17,8 +17,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-# Qwen's recommended math instruction. Every prompt ends with it (train and eval alike).
+# The one instruction used identically for training and evaluation, as the SYSTEM prompt
+# (docs/decisions/003-system-prompt-placement.md).
 BOXED_INSTRUCTION = "Please reason step by step, and put your final answer within \\boxed{}."
+SYSTEM_PROMPT = BOXED_INSTRUCTION
+
+
+def build_messages(question: str) -> list[dict[str, str]]:
+    """The chat messages for one problem: system instruction + user question. Used everywhere
+    a prompt is built (parquet builder, eval harness, bench, preflight) so they cannot drift."""
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": question.strip()},
+    ]
+
 
 # data_source values (also the benchmark names used by the eval harness)
 DS_MATH_TRAIN = "DigitalLearningGmbH/MATH-lighteval"
@@ -44,7 +56,7 @@ class Row:
     def to_record(self) -> dict[str, Any]:
         return {
             "data_source": self.data_source,
-            "prompt": [{"role": "user", "content": f"{self.question.strip()}\n\n{BOXED_INSTRUCTION}"}],
+            "prompt": build_messages(self.question),
             "ability": self.ability,
             "reward_model": {"style": "rule", "ground_truth": str(self.ground_truth)},
             "extra_info": {"split": self.split, "index": str(self.index), **self.extra},

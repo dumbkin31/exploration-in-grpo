@@ -28,6 +28,7 @@ import pandas as pd
 
 from mc_data import dapo, eval_sets, math
 from mc_data.schema import DS_GPQA, EVAL_SOURCES
+from mixed_cuts.reward import has_digit
 
 MATH_REPO = "DigitalLearningGmbH/MATH-lighteval"
 DAPO_REPO = "BytedTsinghua-SIA/DAPO-Math-17k"
@@ -49,6 +50,21 @@ def _load_local(repo_dir: Path, config: str | None, split: str):
             raise FileNotFoundError(f"{csv} missing (gated dataset; was HF_TOKEN set during prefetch?)")
         return load_dataset("csv", data_files=str(csv), split="train")
     return load_dataset(str(repo_dir), split=split)
+
+
+def filter_rewardable(records: list[dict]) -> tuple[list[dict], int]:
+    """Drop training prompts whose ground truth has no digit: the reward rule (final \\boxed{} whose
+    content contains a digit, docs/decisions/008) can never score them, so their groups would be
+    permanently collapsed and waste generation budget. Returns (kept, n_dropped)."""
+    kept = [r for r in records if has_digit(str(r["reward_model"]["ground_truth"]))]
+    return kept, len(records) - len(kept)
+
+
+def digit_ceiling(records: list[dict]) -> float:
+    """Fraction of ground truths that contain a digit = the best accuracy the digit rule allows."""
+    if not records:
+        return 0.0
+    return sum(has_digit(str(r["reward_model"]["ground_truth"])) for r in records) / len(records)
 
 
 def _write(df: pd.DataFrame, path: Path, manifest: dict, **info) -> None:
@@ -85,13 +101,16 @@ def main() -> int:
     if "math" not in args.skip:
         print("== MATH train")
         ds = _load_local(_raw_dir(stage, MATH_REPO), None, "train")
-        rows = [r.to_record() for r in math.rows_from_hf(ds, "train")]
+        rows_all = [r.to_record() for r in math.rows_from_hf(ds, "train")]
+        rows, n_no_digit = filter_rewardable(rows_all)
+        print(f"   {len(rows_all)} boxed problems, {n_no_digit} dropped (ground truth without a digit)")
         _write(
             pd.DataFrame(rows),
             out / "math_train.parquet",
             manifest,
             source=MATH_REPO,
-            skipped_unboxed=len(ds) - len(rows),
+            skipped_unboxed=len(ds) - len(rows_all),
+            dropped_no_digit_ground_truth=n_no_digit,
         )
         _write(
             pd.DataFrame(rows[: args.smoke_train]), out / "smoke_train.parquet", manifest, source=MATH_REPO
@@ -105,7 +124,8 @@ def main() -> int:
         print(f"   {total} rows -> {len(unique)} unique prompts (x{ratio:.1f} duplication)")
         if ratio < 2:
             print("   WARN expected ~100x duplication on the Hub file; check the source", file=sys.stderr)
-        rows = [r.to_record() for r in dapo.rows_from_hf(unique)]
+        rows_all = [r.to_record() for r in dapo.rows_from_hf(unique)]
+        rows, n_no_digit = filter_rewardable(rows_all)
         _write(
             pd.DataFrame(rows),
             out / "dapo_train.parquet",
@@ -113,6 +133,7 @@ def main() -> int:
             source=DAPO_REPO,
             raw_rows=total,
             dedupe_ratio=ratio,
+            dropped_no_digit_ground_truth=n_no_digit,
         )
 
     for name in EVAL_SOURCES:
@@ -129,7 +150,10 @@ def main() -> int:
                 return 1
             continue
         rows = [r.to_record() for r in eval_sets.rows_from_hf(name, ds)]
-        _write(pd.DataFrame(rows), out / f"{name}.parquet", manifest, source=repo)
+        # Eval sets are NOT filtered; the digit rule's ceiling is reported instead (GPQA: letters, 1.0).
+        ceiling = 1.0 if name == DS_GPQA else digit_ceiling(rows)
+        print(f"   digit-rule accuracy ceiling: {100 * ceiling:.1f}%")
+        _write(pd.DataFrame(rows), out / f"{name}.parquet", manifest, source=repo, digit_rule_ceiling=ceiling)
         if name == "math500":
             _write(pd.DataFrame(rows[: args.smoke_val]), out / "smoke_val.parquet", manifest, source=repo)
 

@@ -49,6 +49,9 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=None, help="only the first N problems per benchmark (debug)")
     ap.add_argument("--tp", type=int, default=None, help="tensor parallel size override")
     ap.add_argument(
+        "--seed", type=int, default=None, help="sampling + engine + bootstrap seed (default from config)"
+    )
+    ap.add_argument(
         "--override", action="append", default=[], help="dotlist override, e.g. sampling.temperature=1.0"
     )
     args = ap.parse_args()
@@ -63,6 +66,12 @@ def main() -> int:
         cfg["n_samples"] = args.n_samples
     if args.tp:
         cfg["engine"]["tensor_parallel_size"] = args.tp
+    if args.seed is not None:
+        cfg["seed"] = args.seed
+    seed = int(cfg.get("seed", 0))
+    cfg["sampling"]["seed"] = seed
+    cfg["engine"]["seed"] = seed
+    cfg["bootstrap_seed"] = seed
     benchmarks = args.benchmarks.split(",") if args.benchmarks else list(cfg["benchmarks"])
     limit = args.limit or cfg.get("limit")
     if not args.data_dir:
@@ -81,7 +90,7 @@ def main() -> int:
     out = args.out or os.path.join(
         os.environ.get("MC_RUNS_DIR", str(REPO / "runs")),
         "eval",
-        f"{ckpt.name}-{time.strftime('%Y%m%d-%H%M%S')}",
+        f"{ckpt.name}-s{seed}-{time.strftime('%Y%m%d-%H%M%S')}",
     )
     from mc_eval.generate import VllmGenerator
 

@@ -1,31 +1,29 @@
-# Evaluation settings (eval/run_eval.py). Every number here is a choice worth revisiting:
+# Evaluation settings (eval/run_eval.py). Decoding follows the CUTS paper's validation settings
+# (Table 3): temperature 1.0, top_p 0.8, top_k 20, up to 5000 generated tokens, Qwen3 NON-thinking.
 #   - n_samples 16 gives pass@1 as a mean over 16 samples (AIME has 30 problems; a single
 #     greedy decode is far too noisy) plus pass@16 and maj@16.
-#   - sampling defaults are Qwen3's official non-thinking recommendation (T=0.7, p=0.8, k=20).
-#     `paper_val.yaml` uses the paper's validation settings instead.
-#   - max_tokens caps the response; keep it >= the training max_response_length.
+#   - `seed` is the single knob: sampling seed, engine seed and bootstrap seed (override: --seed).
 n_samples: 16
 k_values: [1, 4, 16]
 benchmarks: [math500, aime24, aime25, amc23, gpqa_diamond]
+seed: 0
 
 sampling:
-  temperature: 0.7
+  temperature: 1.0
   top_p: 0.8
   top_k: 20
-  max_tokens: 3072
-  seed: 0
+  max_tokens: 5000            # >= training max_response_length
 
 chat_template_kwargs:
-  enable_thinking: false     # Qwen3 non-thinking mode, as in the paper
+  enable_thinking: false      # Qwen3 non-thinking mode, as in the paper (asserted on the first batch)
 
-engine:                      # vLLM offline engine (LLM(...)) kwargs
-  dtype: float16             # sm_75: no bf16
+engine:                       # vLLM offline engine (LLM(...)) kwargs
+  dtype: float16              # sm_75: no bf16
   gpu_memory_utilization: 0.85
-  max_model_len: 4096
+  max_model_len: 6144         # 1024 prompt + 5000 response, rounded
   tensor_parallel_size: 1
   enforce_eager: false
-  seed: 0
+  attention_config: {backend: TRITON_ATTN}   # explicit; the only V1 backend supporting sm_75
 
 reward:
-  timeout: 30                # seconds per math-verify check (subprocess)
-  require_boxed: false
+  timeout: 30                 # seconds per math-verify check (subprocess)

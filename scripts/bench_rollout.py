@@ -27,7 +27,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-from mc_data.schema import BOXED_INSTRUCTION  # noqa: E402
+from mc_data.schema import build_messages  # noqa: E402
 
 SYNTHETIC = [
     "Find the sum of all positive integers n such that n^2 + 2n + 3 is divisible by 7 and n < 100.",
@@ -83,7 +83,7 @@ def load_prompts(data_dir: str | None, n: int) -> list[list[dict]]:
             df = pd.read_parquet(p)
             convs = [list(x) for x in df["prompt"]]
     if not convs:
-        convs = [[{"role": "user", "content": f"{q}\n\n{BOXED_INSTRUCTION}"}] for q in SYNTHETIC]
+        convs = [build_messages(q) for q in SYNTHETIC]
     while len(convs) < n:
         convs = convs + convs
     return convs[:n]

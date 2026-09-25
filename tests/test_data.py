@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from mc_data import dapo, eval_sets, math
-from mc_data.schema import BOXED_INSTRUCTION, DS_AIME24, DS_AMC23, DS_GPQA, DS_MATH500, Row
+from mc_data.schema import BOXED_INSTRUCTION, DS_AIME24, DS_AMC23, DS_GPQA, DS_MATH500, Row, build_messages
 
 DAPO_PRE = (
     "Solve the following math problem step by step. The last line of your response should be of the form "
@@ -22,7 +22,11 @@ def _dapo_row(idx: str, q: str, gt: str) -> dict:
 
 def test_row_record_schema():
     rec = Row("src", " q ", "7", "train", 3).to_record()
-    assert rec["prompt"] == [{"role": "user", "content": f"q\n\n{BOXED_INSTRUCTION}"}]
+    assert rec["prompt"] == [
+        {"role": "system", "content": BOXED_INSTRUCTION},
+        {"role": "user", "content": "q"},
+    ]
+    assert rec["prompt"] == build_messages(" q ")
     assert rec["reward_model"] == {"style": "rule", "ground_truth": "7"}
     assert rec["extra_info"] == {"split": "train", "index": "3"}
     assert rec["data_source"] == "src" and rec["ability"] == "math"
@@ -33,7 +37,7 @@ def test_dapo_dedupe_keeps_first_occurrence_and_counts_total():
     unique, total = dapo.deduplicate(rows)
     assert total == 201 and [r["extra_info"]["index"] for r in unique] == ["a", "b"]
     recs = [r.to_record() for r in dapo.rows_from_hf(unique)]
-    assert recs[0]["prompt"][0]["content"] == f"Q1\n\n{BOXED_INSTRUCTION}"
+    assert recs[0]["prompt"][-1] == {"role": "user", "content": "Q1"}
     assert recs[0]["extra_info"]["original_prompt"].startswith(DAPO_PRE)
     assert recs[1]["reward_model"]["ground_truth"] == "2" and recs[1]["extra_info"]["index"] == "b"
 
@@ -84,3 +88,21 @@ def test_gpqa_shuffle_is_deterministic_and_letter_is_correct():
     assert r1.question == r2.question and r1.ground_truth == r2.ground_truth
     letter = r1.ground_truth
     assert f"({letter}) right" in r1.question and r1.ability == "science"
+
+
+def test_training_filter_drops_digitless_ground_truths_but_eval_keeps_them():
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("prepare_data", Path("scripts/prepare_data.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["prepare_data"] = mod
+    spec.loader.exec_module(mod)
+    recs = [
+        Row("s", "q", gt, "train", i).to_record()
+        for i, gt in enumerate(["\\frac{1}{2}", "\\pi", "3", "e", "x+1"])
+    ]
+    kept, dropped = mod.filter_rewardable(recs)
+    assert dropped == 2 and [r["reward_model"]["ground_truth"] for r in kept] == ["\\frac{1}{2}", "3", "x+1"]
+    assert mod.digit_ceiling(recs) == 3 / 5 and mod.digit_ceiling([]) == 0.0

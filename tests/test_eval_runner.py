@@ -37,7 +37,12 @@ def test_run_all_writes_samples_and_results(tmp_path):
         json.loads(line) for line in (tmp_path / "out" / "math500" / "samples.jsonl").read_text().splitlines()
     ]
     assert len(samples) == 8 and sum(s["correct"] for s in samples) == 3
-    assert samples[6]["has_boxed"] == 0.0 and samples[6]["pred"] == "8"
+    assert samples[6]["has_boxed"] == 0.0 and samples[6]["pred"] == "" and samples[6]["valid"] == 0.0
     assert (tmp_path / "out" / "summary.json").exists()
     table = markdown_table(results, [1, 4])
     assert "| math500 | 2 |" in table and "pass@4" in table
+    r = results["math500"]
+    assert (
+        r["frac_valid_responses"] == 7 / 8 and r["digit_rule_ceiling"] == 1.0 and r["pp_per_problem"] == 50.0
+    )
+    assert "one problem = 50.0 pp" in r["notes"] and "ceiling 100.0%" in table
