@@ -14,3 +14,6 @@ pandas>=2.2
 pyarrow>=19.0.0
 datasets>=3.0
 ruff>=0.6
+# For the tokenizer-only chat-template preflight check on a laptop (scripts/check_env.py --only-config):
+transformers==5.5.3
+huggingface_hub>=0.30
