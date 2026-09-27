@@ -104,21 +104,21 @@ eval: ## eval CKPT (HF dir) on BENCH with N_SAMPLES samples per problem
 
 # ------------------------------------------------------------------ sbatch wrappers
 sbatch-setup: ## submit the environment build job (venv, lock, tests, compose-check, data)
-	@. $(ENV_FILE); sbatch slurm/setup_env.sbatch
+	@. $(ENV_FILE); sbatch $$(mc_sbatch_exclude) slurm/setup_env.sbatch
 sbatch-data: ## build the parquet data on a compute node (if the setup job ran before prefetch finished)
-	@. $(ENV_FILE); sbatch slurm/data.sbatch
+	@. $(ENV_FILE); sbatch $$(mc_sbatch_exclude) slurm/data.sbatch
 sbatch-bench: ## submit the 1-GPU rollout benchmark
-	@. $(ENV_FILE); sbatch slurm/bench_rollout.sbatch
+	@. $(ENV_FILE); sbatch $$(mc_sbatch_exclude) slurm/bench_rollout.sbatch
 sbatch-smoke: ## submit the smoke test
-	@. $(ENV_FILE); sbatch slurm/smoke.sbatch
+	@. $(ENV_FILE); sbatch $$(mc_sbatch_exclude) slurm/smoke.sbatch
 sbatch-train: ## submit (or resume) a training run: make sbatch-train CONFIG=math_mixed_cuts SEED=1  (pins the node holding the checkpoints; MC_PIN_NODE=0 to skip)
 	@. $(ENV_FILE); W=""; NF="$$MC_RUNS_DIR/$(CONFIG)-s$(SEED)/node.txt"; \
 	  if [ "$${MC_PIN_NODE:-1}" = 1 ] && [ -f "$$NF" ]; then N=$$(sed -n 's/^node=//p' "$$NF" | tail -1); W="-w $$N"; echo "resuming: checkpoints live on $$N, pinning with $$W"; fi; \
-	  sbatch -J $(CONFIG)-s$(SEED) $$W --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
+	  sbatch $$(mc_sbatch_exclude) -J $(CONFIG)-s$(SEED) $$W --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
 sbatch-eval: ## submit an eval run: make sbatch-eval CKPT=... BENCH=... SEED=0 [NODE=gnodeXX if CKPT is on that node's scratch]
-	@. $(ENV_FILE); sbatch $(if $(NODE),-w $(NODE),) --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES),MC_SEED=$(SEED) slurm/eval.sbatch
+	@. $(ENV_FILE); sbatch $$(mc_sbatch_exclude) $(if $(NODE),-w $(NODE),) --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES),MC_SEED=$(SEED) slurm/eval.sbatch
 sbatch-resume-test: ## kill-at-step-15-and-resubmit verification of checkpoint resume
-	@. $(ENV_FILE); sbatch slurm/test_resume.sbatch
+	@. $(ENV_FILE); sbatch $$(mc_sbatch_exclude) slurm/test_resume.sbatch
 
 clean-cache: ## remove node-local caches (safe; they are rebuilt)
 	@. $(ENV_FILE); rm -rf "$$MC_CACHE_ROOT"

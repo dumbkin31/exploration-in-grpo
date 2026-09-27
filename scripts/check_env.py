@@ -26,6 +26,7 @@ import importlib
 import importlib.metadata
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -113,6 +114,28 @@ def check_pins(r: Report) -> None:
             r.ok(f"import {name} ({got})")
 
 
+def check_driver(r: Report) -> None:
+    """The pinned wheels are CUDA 13.0 builds: driver >= 580 (mixed generations on Ada, decision 011)."""
+    need = int(os.environ.get("MC_MIN_DRIVER_MAJOR", "580"))
+    try:
+        text = Path("/proc/driver/nvidia/version").read_text()
+    except OSError:
+        r.fail("nvidia driver", "/proc/driver/nvidia/version missing: no NVIDIA kernel module on this node")
+        r.facts["nvidia_driver"] = None
+        return
+    m = re.search(r"Kernel Module\s+([0-9.]+)", text)
+    drv = m.group(1) if m else "?"
+    r.facts["nvidia_driver"] = drv
+    major = int(drv.split(".")[0]) if drv[:1].isdigit() else 0
+    if major >= need:
+        r.ok(f"nvidia driver {drv} (>= {need}, runs the cu130 wheels)")
+    else:
+        r.fail(
+            "nvidia driver",
+            f"{drv} < {need}: the cu130 wheels cannot initialise CUDA here; exclude this node (decision 011)",
+        )
+
+
 def check_gpu(r: Report) -> None:
     try:
         import torch
@@ -132,6 +155,11 @@ def check_gpu(r: Report) -> None:
         r.ok(f"sm_75 kernels present in torch wheel: {arch_list}")
     else:
         r.fail("torch arch list", f"sm_75 missing from {arch_list}; this wheel cannot run on a 2080 Ti")
+    try:
+        torch.cuda.init()
+    except RuntimeError as e:  # e.g. "The NVIDIA driver on your system is too old" on a 570 node
+        r.fail("cuda init", str(e).split(". ")[0])
+        return
     n = torch.cuda.device_count()
     r.facts["gpu_count"] = n
     for i in range(n):
@@ -485,6 +513,7 @@ def main() -> int:
         check_pins(r)
     if not args.no_gpu:
         print("== gpu ==")
+        check_driver(r)
         check_gpu(r)
         print("== vllm engine ==")
         check_vllm_engine(r)

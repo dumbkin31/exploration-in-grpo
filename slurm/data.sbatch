@@ -15,6 +15,7 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source configs/ada.env.sh
+source slurm/common.sh; mc_check_driver   # mixed driver generations, decision 011
 [ -f "${MC_STAGE_ROOT}/MANIFEST.json" ] || { echo "run 'make prefetch' on the login node first"; exit 1; }
 "${MC_VENV_DIR}/bin/python" scripts/prepare_data.py
 echo "== preflight with the staged model + data =="

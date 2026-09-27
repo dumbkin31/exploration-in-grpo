@@ -16,6 +16,7 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source configs/ada.env.sh
+source slurm/common.sh; mc_check_driver   # mixed driver generations, decision 011
 VERL_TAG="${VERL_TAG:-v0.9.0}"
 PY="${MC_VENV_DIR}/bin/python"
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }

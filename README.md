@@ -40,6 +40,7 @@ Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions
 | Engine | vLLM V1 engine (V0 is gone); **Model Runner V1** is forced by the custom logits processor | never set `VLLM_USE_V2_MODEL_RUNNER`; the preflight and the job logs check it. |
 | Memory | 11 GiB/GPU, 128 GB host RAM, 40 cores | section 4; request `--mem-per-cpu=3000M` (117 GB). |
 | SLURM | `-A nlp --qos=normal -p u22 -C 2080ti -N 1 --gres=gpu:4 -c 40 --mem-per-cpu=3000M` (`MaxMemPerCPU=3000`; `3G` is rejected); 4 GPUs/job, 12 across the group; interactive `srun` capped at 6 h | all real runs are `sbatch`; templates in `slurm/`. |
+| NVIDIA driver | **mixed across the 2080 Ti nodes**: 580/595 on 7 of the 25 probed, 570 (CUDA 12.8) on 12, no module on 4 | the cu130 wheels need >= 580 (vLLM 0.24.0 has no cu128 wheel): `make sbatch-*` passes `-x $MC_SLURM_EXCLUDE`, and every job checks `/proc/driver/nvidia/version` before touching the run dir ([011](docs/decisions/011-mixed-driver-generations.md)). |
 | Storage | `/home2/$USER` 25 GB / 300k files NFS, the **only durable file system compute nodes see**; `/share1` is a local disk of the login node (measured: absent on the gnodes); `/scratch` node-local 1.8 TB, purged after ~7 days | section 3: code, venv, staged model/data and each run's small outputs on `/home2`; checkpoints on scratch ([009](docs/decisions/009-scratch-checkpoints-quota.md), [010](docs/decisions/010-share1-is-login-node-local.md)). |
 
 Measured on 2026-09-27 (setup job 2719025 on gnode084, a CPU diagnostic on gnode043) and re-checked by
@@ -149,7 +150,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh                                 
 source configs/ada.env.sh
 make setup-login && make prefetch      # Qwen3-1.7B + datasets -> ~/mixed-cuts-data/{models,raw} (~5 GB on /home2)
 
-# 1. build the environment ON A COMPUTE NODE; also builds the parquet data and runs the vLLM/verl tests
+# 1. build the environment ON A COMPUTE NODE; also builds the parquet data and runs the vLLM/verl tests.
+#    Always submit through make: it excludes the nodes whose NVIDIA driver is too old for the cu130 wheels (011).
 make sbatch-setup
 git add requirements/lock.txt && git commit -m "lock cluster env"
 make sbatch-data                       # only if prefetch finished after the setup job ran (it builds the parquet + a full preflight)

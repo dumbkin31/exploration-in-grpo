@@ -29,9 +29,28 @@ export MC_REPO_ROOT="${MC_REPO_ROOT:-$(cd "${_MC_COMMON_DIR}/.." && pwd)}"
 
 mc_log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
 
+mc_check_driver() {
+  # The pinned wheels are CUDA 13.0 builds and need an NVIDIA driver >= MC_MIN_DRIVER_MAJOR (580); the
+  # 2080 Ti nodes are mixed (docs/decisions/011). Runs before anything is written, so a bad node leaves no
+  # node.txt behind. The node is recorded in MC_BAD_NODES_FILE, which `make sbatch-*` excludes from then on.
+  local drv major min="${MC_MIN_DRIVER_MAJOR:-580}"
+  drv="$(sed -n 's/.*Kernel Module *\([0-9.]*\).*/\1/p' /proc/driver/nvidia/version 2>/dev/null || true)"
+  major="${drv%%.*}"
+  if [ -z "${drv}" ] || ! [ "${major}" -ge "${min}" ] 2>/dev/null; then
+    mc_log "ERROR: $(hostname) has NVIDIA driver '${drv:-none}' (need >= ${min} for the cu130 wheels; decision 011)"
+    if [ -n "${MC_BAD_NODES_FILE:-}" ] && mkdir -p "$(dirname "${MC_BAD_NODES_FILE}")" 2>/dev/null; then
+      echo "$(hostname) driver=${drv:-none} job=${SLURM_JOB_ID:-?} $(date '+%F')" >> "${MC_BAD_NODES_FILE}"
+      mc_log "recorded in ${MC_BAD_NODES_FILE}: rerun the same make sbatch-* command, it now excludes this node"
+    fi
+    exit 6
+  fi
+  mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu130 wheels (>= ${min})"
+}
+
 mc_job_init() {
   # shellcheck source=/dev/null
   source "${MC_REPO_ROOT}/configs/ada.env.sh"
+  mc_check_driver
   export MC_JOB_ID="${SLURM_JOB_ID:-local-$$}"
   export MC_SEED="${MC_SEED:-42}"
   export MC_RUN_NAME="${1:-${MC_RUN_NAME:-${SLURM_JOB_NAME:-job}-s${MC_SEED}}}"

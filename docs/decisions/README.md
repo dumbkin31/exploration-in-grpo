@@ -15,3 +15,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [008](008-digit-rule-and-filtered-prompts.md) | The boxed-plus-digit validity rule, its training-set filter and the evaluation ceiling |
 | [009](009-scratch-checkpoints-quota.md) | /share1 is 25 GB: checkpoints on node-local scratch, small outputs mirrored, resubmissions pinned to the node |
 | [010](010-share1-is-login-node-local.md) | /share1 is a login-node-local disk: staged model/data and the durable run outputs live on /home2 |
+| [011](011-mixed-driver-generations.md) | The 2080 Ti nodes run mixed NVIDIA drivers; the cu130 wheels need >= 580: exclude list + a fail-fast guard in every job |
