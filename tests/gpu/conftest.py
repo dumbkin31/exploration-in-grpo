@@ -13,6 +13,10 @@ from pathlib import Path
 
 import pytest
 
+# pytest has torch (and often CUDA) initialised before a fixture builds an engine; vLLM must spawn its
+# engine core, not fork it ("Cannot re-initialize CUDA in forked subprocess").
+os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+
 
 def model_dir() -> str | None:
     for var in ("MC_STAGED_MODEL_DIR", "MC_MODEL_DIR"):

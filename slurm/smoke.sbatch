@@ -25,16 +25,22 @@ trap 'kill -USR1 "${child}" 2>/dev/null || true' USR1
 trap 'kill -TERM "${child}" 2>/dev/null || true' TERM
 rc=0
 while :; do
-  if wait "${child}"; then rc=0; break; fi
-  rc=$?
-  kill -0 "${child}" 2>/dev/null || break   # a trap interrupted `wait`; keep waiting while the child lives
+  wait "${child}" && rc=0 || rc=$?          # NOT `if wait`: an if-statement's own status would mask the rc
+  kill -0 "${child}" 2>/dev/null || break   # exited: rc is final. Otherwise a trap interrupted `wait`: keep waiting
 done
 echo "[$(date '+%F %T')] smoke training finished with rc=${rc}; running the GPU tests"
 source configs/ada.env.sh
 if [ "${MC_CHECKPOINT_HOME:-scratch}" = "scratch" ]; then RUN_DIR="${MC_SCRATCH_RUNS_DIR}/${MC_RUN_NAME}"; else RUN_DIR="${MC_RUNS_DIR}/${MC_RUN_NAME}"; fi
 JOB_DUR="${MC_RUNS_DIR}/${MC_RUN_NAME}/jobs/${SLURM_JOB_ID}"; mkdir -p "${JOB_DUR}"
 trc=0
+if [ "${rc}" -ne 0 ]; then
+  echo "[$(date '+%F %T')] training failed (rc=${rc}): skipping the GPU tests, which need its run dir"
+  exit "${rc}"
+fi
+# pytest imports torch before the vLLM fixtures fork the engine core: force spawn (vLLM's auto-detection
+# only sees CUDA already initialised in the parent)
 MC_SMOKE_RUN_DIR="${RUN_DIR}" MC_STAGED_MODEL_DIR="${MC_SCRATCH_ROOT}/stage/models/$(basename "${MC_MODEL_DIR}")" \
+  VLLM_WORKER_MULTIPROC_METHOD=spawn \
   "${MC_VENV_DIR}/bin/python" -m pytest -q tests/gpu -p no:cacheprovider 2>&1 | tee "${JOB_DUR}/gpu_test.log" || trc=$?
 echo "[$(date '+%F %T')] smoke rc=${rc} gpu-tests rc=${trc} (log: ${JOB_DUR}/gpu_test.log)"
 exit $(( rc != 0 ? rc : trc ))
