@@ -78,9 +78,9 @@ COMPOSE = $(PY) scripts/compose_config.py
 COMPOSE_FLAGS = --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),)
 compose-check: ## compose every training config (Hydra) and assert the sm_75/fp16/CUTS/layout invariants
 	@for c in base_grpo smoke math_grpo math_mixed_cuts; do $(COMPOSE) $$c $(COMPOSE_FLAGS) || exit 1; done
-	@$(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) layout=nlp_4gpu memory=plan_a_fullft_offload
+	@MC_SLURM_GPUS=4 $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) layout=nlp_4gpu memory=plan_a_fullft_offload   # MC_SLURM_GPUS: the guard compares the layout with the sbatch request
 	@echo "== negative case: 1 GPU + plan A must be refused =="; \
-	  if $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) memory=plan_a_fullft_offload >/dev/null 2>&1; then echo "FAIL: compose-check accepted 1 GPU + plan A"; exit 1; else echo "== refused: OK =="; fi
+	  if MC_SLURM_GPUS=1 $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) memory=plan_a_fullft_offload >/dev/null 2>&1; then echo "FAIL: compose-check accepted 1 GPU + plan A"; exit 1; else echo "== refused: OK =="; fi
 
 # ------------------------------------------------------------------------ data
 prefetch: ## LOGIN NODE (has internet): download Qwen3-1.7B + datasets into $$MC_STAGE_ROOT (idempotent)
