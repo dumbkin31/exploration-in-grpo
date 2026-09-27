@@ -117,10 +117,10 @@ sbatch-bench: ## submit the rollout benchmark (TP=1 sweep; TP=4 too under MC_LAY
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/bench_rollout.sbatch
 sbatch-smoke: ## submit the smoke test (2 steps + the GPU tests in the same allocation); SMOKE_CONFIG=smoke_maxlen for the max-length stress test
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) --export=ALL,MC_SMOKE_CONFIG=$(SMOKE_CONFIG) slurm/smoke.sbatch
-sbatch-train: ## submit (or resume) a training run: make sbatch-train CONFIG=math_mixed_cuts SEED=1  (pins the node holding the checkpoints; MC_PIN_NODE=0 to skip)
+sbatch-train: ## submit (or resume) a training run: make sbatch-train CONFIG=math_mixed_cuts SEED=1  (pins the node holding the checkpoints; MC_PIN_NODE=0 to skip; --dependency=singleton: one job per run name at a time, so a research/nlp twin or an early resubmission queues instead of racing the live run)
 	@. $(ENV_FILE); W=""; NF="$$MC_RUNS_DIR/$(CONFIG)-s$(SEED)/node.txt"; \
 	  if [ "$${MC_PIN_NODE:-1}" = 1 ] && [ -f "$$NF" ]; then N=$$(sed -n 's/^node=//p' "$$NF" | tail -1); W="-w $$N"; echo "resuming: checkpoints live on $$N, pinning with $$W"; fi; \
-	  sbatch $$(mc_sbatch_args) -J $(CONFIG)-s$(SEED) $$W --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
+	  sbatch $$(mc_sbatch_args) -J $(CONFIG)-s$(SEED) --dependency=singleton $$W --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
 sbatch-eval: ## submit an eval run: make sbatch-eval CKPT=... BENCH=... SEED=0 [NODE=gnodeXX if CKPT is on that node's scratch]
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) $(if $(NODE),-w $(NODE),) --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES),MC_SEED=$(SEED) slurm/eval.sbatch
 sbatch-resume-test: ## kill-at-step-15-and-resubmit verification of checkpoint resume

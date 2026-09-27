@@ -106,6 +106,10 @@ times per sequence (smoke_maxlen job 2719395).
 * W&B: `WANDB_MODE=online`, `WANDB_DIR=<run dir>` (wandb appends its own `wandb/`), `WANDB_RUN_ID=<run name>`,
   `WANDB_RESUME=allow`; a node that cannot reach api.wandb.ai falls back to offline for that job and
   `scripts/wandb_sync.sh` pushes those runs later.
+* `make sbatch-train` adds `--dependency=singleton`: SLURM runs one job per (user, job name) at a time, so a
+  twin on the other account or a resubmission made before the wall queues behind the live run instead of
+  writing into the same run dir. Measured: the resume test (2719790 -> 2719803) killed at 15, resumed at 16,
+  ran to 30 with one W&B run id; a LoRA checkpoint is 7.3 GB on scratch.
 * Checkpoints stay on node-local scratch with node pinning (009): 7.8 GB per step would not fit the home
   quota. Phase-2 option once the pipeline is proven: `save_lora_only: true` (~0.9 GB) and
   `MC_CHECKPOINT_HOME=durable`, which removes the pin.
