@@ -1,5 +1,8 @@
 # ---------------------------------------------------------------------------
-# Base GRPO config for Qwen3-1.7B on Ada: ONE node, 4x RTX 2080 Ti (sm_75, 11 GiB, fp16 only).
+# Base GRPO config for Qwen3-1.7B on Ada's RTX 2080 Ti nodes (sm_75, 11 GiB, fp16 only). The GPU count
+# comes from configs/train/layout/ (default research_1gpu: ONE card per job, decision 012; nlp_4gpu: the
+# original 4-card layout of decision 002) and the memory plan from configs/train/memory/ (default
+# plan_b_lora; plan_a_* need the 4-card layout).
 #
 # Layers on verl v0.9.0's `ppo_trainer` tree (through hydra.searchpath, declared by the leaf
 # configs and the launcher) and picks a memory plan from configs/train/memory/. The two
@@ -13,15 +16,16 @@
 # ---------------------------------------------------------------------------
 defaults:
   - ppo_trainer                      # verl's full default tree (found via hydra.searchpath)
-  - memory: plan_a_fullft_offload    # configs/train/memory/: A = full FT + CPU offload (default)
+  - layout: research_1gpu            # configs/train/layout/: GPU count, TP, vLLM budget, Ray cpus (012)
+  - memory: plan_b_lora              # configs/train/memory/: B = LoRA + CPUOffloadPolicy (default), A = full FT
   - _self_
 
 # ---- run identity (injected by the launcher; `make train CONFIG=... SEED=...`) ----------------
 seed: 42                             # the ONE seed knob: wired into data/rollout/actor/ref/engine below
 run_name: ???                        # "<config>-s<seed>"; W&B run name and id, durable dir name
-save_freq: 1                         # steps. One step here is ~40-90 min (2048 sequences x <=5000
-                                     # tokens on 4x 2080 Ti), so 1 keeps the loss on a kill to one
-                                     # step; retune after the smoke test (docs/decisions/005)
+save_freq: 1                         # steps. One step is ~1-1.5 h on one 2080 Ti (2048 sequences x
+                                     # <=5000 tokens; 40-90 min on four), so 1 keeps the loss on a kill
+                                     # to one step; retune after the smoke test (docs/decisions/005)
 paths:
   run_dir: ???                       # the live run dir (node-local scratch by default, decisions 009/010): checkpoints, metrics.jsonl, cuts_stats, dumps
   model_dir: ???
@@ -67,7 +71,7 @@ data:
   seed: ${seed}                      # train sampler + subsampling
   apply_chat_template_kwargs:
     enable_thinking: false           # paper: Qwen3 NON-thinking; same code path for validation
-  dataloader_num_workers: 4
+  # dataloader_num_workers: set by configs/train/layout/
 
 # ---- algorithm --------------------------------------------------------------------------------
 algorithm:
@@ -137,11 +141,9 @@ actor_rollout_ref:
     seed: ${seed}                    # vLLM engine seed (+ replica rank)
     calculate_log_probs: false       # D1: no rollout logprobs enter TransferQueue at all; for CUTS
                                      # rows they would be log(1/|S_t|), not pi_theta_old  [checked]
-    tensor_model_parallel_size: 4    # one replica across the 4 cards (llm_server.py:528-564)  [checked]
-    gpu_memory_utilization: 0.40     # rollout-phase budget; the actor lives on CPU then (002)
+    # tensor_model_parallel_size, gpu_memory_utilization, max_num_seqs, max_num_batched_tokens: set by
+    # configs/train/layout/ (TP == n_gpus_per_node == one replica  [checked])
     max_model_len: 6144              # 1024 + 5000, rounded  [checked >= prompt + response]
-    max_num_batched_tokens: 8192
-    max_num_seqs: 128                # `make sbatch-bench` (TP=4) decides the final value
     enable_chunked_prefill: true
     enable_prefix_caching: true
     free_cache_engine: true          # sleep (level 2) between rollout and update: load-bearing on 11 GiB
@@ -149,8 +151,7 @@ actor_rollout_ref:
     log_prob_use_dynamic_bsz: true
     log_prob_max_token_len_per_gpu: 6144
     log_prob_micro_batch_size_per_gpu: null
-    agent:
-      num_workers: 4
+    agent:                           # num_workers: set by configs/train/layout/
       agent_loop_manager_class: mixed_cuts.agent_loop.MixedCutsAgentLoopManagerTQ   # [checked]
     engine_kwargs:
       vllm:
@@ -175,8 +176,9 @@ trainer:
     trainer_mode: mixed_cuts_sync    # registered by mixed_cuts.trainer  [checked]
   project_name: ${oc.env:WANDB_PROJECT,mixed-cuts}
   experiment_name: ${run_name}       # stable across resubmissions (W&B name; id comes from WANDB_RUN_ID)
-  logger: [console, wandb]           # WANDB_MODE=offline by default (configs/ada.env.sh)
-  n_gpus_per_node: 4
+  logger: [console, wandb]           # WANDB_MODE=online by default (configs/ada.env.sh); a node without
+                                     # internet falls back to offline (slurm/common.sh)
+  # n_gpus_per_node: set by configs/train/layout/  [checked: == MC_SLURM_GPUS == rollout TP]
   nnodes: 1                          # single node; the sbatch headers pin -N 1
   total_epochs: 1000                 # bounded by total_training_steps
   total_training_steps: 100
@@ -185,11 +187,9 @@ trainer:
   val_before_train: true
   resume_mode: auto                  # newest checkpoint under default_local_dir, else start fresh  [checked]
   default_local_dir: ${paths.run_dir}/checkpoints   # always under paths.run_dir  [checked]
-  max_actor_ckpt_to_keep: 2          # ~27 GB each; pre-restart ones are pruned by the sbatch script
+  max_actor_ckpt_to_keep: 2          # ~7.8 GB each with LoRA (full PEFT state dict), ~21 GB full FT;
+                                     # pre-restart ones are pruned by the sbatch script
   rollout_data_dir: ${paths.run_dir}/rollout_dumps
   balance_batch: true
 
-ray_kwargs:
-  ray_init:
-    num_cpus: 40
-    object_store_memory: 16000000000 # 16 GB cap; Ray's default (30% of RAM) collides with CPU offload
+# ray_kwargs.ray_init (num_cpus, object_store_memory) and transfer_queue storage units: configs/train/layout/

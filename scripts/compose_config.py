@@ -14,14 +14,16 @@ Invariants checked with --check (see the [checked] marks in configs/train/base_g
   * D4: n_std + n_cuts == group_size == rollout.n; CUTS K/delta/T_warm = paper values
   * D1: rollout_correction.rollout_is/rollout_rs null, bypass_mode false, calculate_log_probs false
   * D2: rollout T=1.0/top_p=1.0, validation 1.0/0.8/20, non-thinking, KL low_var_kl 1e-3
-  * Task A: TP=4 on one node, TRITON_ATTN, sleep mode, gradient checkpointing, dynamic bsz with
-    token budgets >= max_prompt_length + max_response_length, micro-batch keys null
+  * layout: one node, TP == n_gpus_per_node == MC_SLURM_GPUS (1 on research/low with LoRA + the FSDP2
+    offload policy, 4 on nlp), TRITON_ATTN, sleep mode, gradient checkpointing, dynamic bsz with token
+    budgets >= max_prompt_length + max_response_length (or the documented micro-batch-1 fallback)
   * one seed interpolated into data/rollout/actor/ref; resume_mode auto; outputs under paths.run_dir
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -61,7 +63,7 @@ def _walk(node, path=""):
 
 
 def check(cfg) -> list[str]:
-    """Invariants that keep the two arms runnable on 4x 2080 Ti and faithful to the brief."""
+    """Invariants that keep the two arms runnable on the 2080 Ti layouts and faithful to the brief."""
     problems: list[str] = []
     arr = cfg.actor_rollout_ref
 
@@ -128,11 +130,51 @@ def check(cfg) -> list[str]:
     if arr.actor.kl_loss_type != "low_var_kl":
         fail(f"actor.kl_loss_type must be low_var_kl: {arr.actor.kl_loss_type}")
 
-    # --- Task A: 4-GPU layout ---
-    if arr.rollout.tensor_model_parallel_size != 4:
-        fail(f"rollout.tensor_model_parallel_size must be 4: {arr.rollout.tensor_model_parallel_size}")
-    if cfg.trainer.n_gpus_per_node != 4 or cfg.trainer.nnodes != 1:
-        fail("trainer.n_gpus_per_node must be 4 and nnodes 1")
+    # --- layout: one node, one replica (TP == GPUs), matched to the sbatch request (decisions 002/012) ---
+    n_gpus = int(cfg.trainer.n_gpus_per_node)
+    tp = int(arr.rollout.tensor_model_parallel_size)
+    if cfg.trainer.nnodes != 1:
+        fail(f"trainer.nnodes must be 1: {cfg.trainer.nnodes}")
+    if tp != n_gpus:
+        fail(
+            f"rollout.tensor_model_parallel_size ({tp}) must equal trainer.n_gpus_per_node ({n_gpus}): one replica"
+        )
+    env_gpus = os.environ.get("MC_SLURM_GPUS")
+    if env_gpus and int(env_gpus) != n_gpus:
+        fail(
+            f"trainer.n_gpus_per_node = {n_gpus} but MC_SLURM_GPUS = {env_gpus}: layout/sbatch mismatch (set MC_LAYOUT)"
+        )
+    ray_init = (cfg.get("ray_kwargs") or {}).get("ray_init") or {}
+    if ray_init.get("num_cpus") is None:
+        fail("ray_kwargs.ray_init.num_cpus must be set (SLURM cgroups; verl's own advice)")
+    lora_rank = int(arr.model.get("lora_rank", 0) or 0)
+    if n_gpus == 1:
+        # research/low: 1 GPU, 10 CPUs, 30 GB host RAM (decision 012)
+        if lora_rank <= 0:
+            fail(
+                "the 1-GPU layout needs LoRA (memory=plan_b_lora): full FT needs 27.6 GB of host RAM for the optimizer alone"
+            )
+        if not arr.actor.fsdp_config.get("offload_policy"):
+            fail(
+                "the 1-GPU layout needs actor.fsdp_config.offload_policy=true (the fp32 base must live in host RAM)"
+            )
+        if not (arr.model.get("lora") or {}).get("merge"):
+            fail("the 1-GPU layout needs model.lora.merge=true (merged weights -> vLLM, level-2 sleep)")
+        if int(ray_init.get("object_store_memory") or 0) > 6_000_000_000:
+            fail(
+                f"ray object_store_memory {ray_init.get('object_store_memory')} > 6 GB on the 30 GB host budget"
+            )
+        if int(arr.rollout.agent.get("num_workers", 1)) > 2:
+            fail("rollout.agent.num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
+        if int(cfg.data.get("dataloader_num_workers", 0) or 0) > 2:
+            fail("data.dataloader_num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
+    if lora_rank > 0:
+        if str(arr.actor.fsdp_config.get("model_dtype", "fp32")) != "fp32":
+            fail(
+                f"LoRA needs actor.fsdp_config.model_dtype fp32 (masters): {arr.actor.fsdp_config.get('model_dtype')}"
+            )
+        if arr.actor.strategy != "fsdp2":
+            fail(f"the LoRA plan needs actor.strategy fsdp2: {arr.actor.strategy}")
     if arr.rollout.engine_kwargs.vllm.get("attention_backend") != "TRITON_ATTN":
         fail(
             "rollout.engine_kwargs.vllm.attention_backend must be TRITON_ATTN (the only V1 backend for sm_75)"
@@ -141,12 +183,17 @@ def check(cfg) -> list[str]:
         fail("rollout.free_cache_engine must be true (vLLM must sleep during the update on 11 GiB)")
     if not arr.model.enable_gradient_checkpointing:
         fail("model.enable_gradient_checkpointing must be true")
-    if (
-        not arr.actor.use_dynamic_bsz
-        or not arr.rollout.log_prob_use_dynamic_bsz
-        or not arr.ref.log_prob_use_dynamic_bsz
-    ):
-        fail("use_dynamic_bsz must be true for actor, rollout log-prob and ref")
+    dyn = bool(
+        arr.actor.use_dynamic_bsz
+        and arr.rollout.log_prob_use_dynamic_bsz
+        and arr.ref.log_prob_use_dynamic_bsz
+    )
+    # documented fallback rung (012): a fixed micro-batch of ONE sequence bounds the update-phase peak
+    fallback = (not arr.actor.use_dynamic_bsz) and arr.actor.ppo_micro_batch_size_per_gpu == 1
+    if not dyn and not fallback:
+        fail(
+            "use_dynamic_bsz must be true for actor, rollout log-prob and ref (or actor.use_dynamic_bsz=false with ppo_micro_batch_size_per_gpu=1)"
+        )
     longest = cfg.data.max_prompt_length + cfg.data.max_response_length
     for path, value in (
         ("actor.ppo_max_token_len_per_gpu", arr.actor.ppo_max_token_len_per_gpu),
@@ -156,12 +203,24 @@ def check(cfg) -> list[str]:
     ):
         if value is None or int(value) < longest:
             fail(f"{path} = {value} < max_prompt_length + max_response_length = {longest}")
-    for path, value in (
-        ("actor.ppo_micro_batch_size_per_gpu", arr.actor.ppo_micro_batch_size_per_gpu),
-        ("rollout.log_prob_micro_batch_size_per_gpu", arr.rollout.log_prob_micro_batch_size_per_gpu),
-        ("ref.log_prob_micro_batch_size_per_gpu", arr.ref.log_prob_micro_batch_size_per_gpu),
+    for path, value, dynamic in (
+        (
+            "actor.ppo_micro_batch_size_per_gpu",
+            arr.actor.ppo_micro_batch_size_per_gpu,
+            arr.actor.use_dynamic_bsz,
+        ),
+        (
+            "rollout.log_prob_micro_batch_size_per_gpu",
+            arr.rollout.log_prob_micro_batch_size_per_gpu,
+            arr.rollout.log_prob_use_dynamic_bsz,
+        ),
+        (
+            "ref.log_prob_micro_batch_size_per_gpu",
+            arr.ref.log_prob_micro_batch_size_per_gpu,
+            arr.ref.log_prob_use_dynamic_bsz,
+        ),
     ):
-        if value is not None:
+        if dynamic and value is not None:
             fail(f"{path} must be null in dynamic-bsz mode: {value}")
     mgr = arr.rollout.agent.get("agent_loop_manager_class")
     if mgr != "mixed_cuts.agent_loop.MixedCutsAgentLoopManagerTQ":

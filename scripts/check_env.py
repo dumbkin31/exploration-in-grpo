@@ -287,6 +287,35 @@ def check_slurm(r: Report) -> None:
     r.ok(
         f"slurm job {job} on {os.environ.get('SLURMD_NODENAME', '?')}, gpu ids={os.environ.get('SLURM_JOB_GPUS') or os.environ.get('CUDA_VISIBLE_DEVICES', '?')}"
     )
+    slurm = {
+        k: os.environ.get(k)
+        for k in (
+            "SLURM_JOB_ACCOUNT",
+            "SLURM_JOB_QOS",
+            "SLURM_CPUS_PER_TASK",
+            "SLURM_MEM_PER_CPU",
+            "SLURM_JOB_GPUS",
+        )
+    }
+    r.facts["slurm"] = slurm
+    r.ok(
+        "slurm request: "
+        + ", ".join(f"{k.removeprefix('SLURM_').lower()}={v}" for k, v in slurm.items() if v)
+    )
+    try:
+        import resource
+
+        soft, _hard = resource.getrlimit(resource.RLIMIT_MEMLOCK)
+        r.facts["memlock_soft"] = soft
+        if soft == resource.RLIM_INFINITY:
+            r.ok("ulimit -l unlimited (pinned host RAM for the FSDP2 offload policy)")
+        else:
+            r.warn(
+                "ulimit -l",
+                f"{soft} bytes; the offload policy pins ~7 GB, CUDA falls back to pageable copies",
+            )
+    except Exception:  # noqa: BLE001
+        pass
     part = os.environ.get("SLURM_JOB_PARTITION", "")
     try:
         out = subprocess.run(
@@ -300,7 +329,7 @@ def check_slurm(r: Report) -> None:
 
 
 def check_single_node(r: Report) -> None:
-    """The 4 GPUs must be on one node: rollout TP=4 and FSDP over 4 ranks assume one NCCL host."""
+    """One node, and as many visible GPUs as the layout expects (TP == GPUs; decisions 002/012)."""
     n = os.environ.get("SLURM_JOB_NUM_NODES")
     if n is None:
         r.warn("single node", "SLURM_JOB_NUM_NODES unset (not inside a SLURM job)")
@@ -311,9 +340,21 @@ def check_single_node(r: Report) -> None:
     vis = os.environ.get("CUDA_VISIBLE_DEVICES")
     if vis is not None:
         n_vis = len([x for x in vis.split(",") if x.strip()])
-        (r.ok if n_vis == 4 else r.warn)(
-            f"visible GPUs: {n_vis} ({vis})", "training configs expect 4 (rollout TP=4)"
-        )
+        r.facts["visible_gpus"] = n_vis
+        want = os.environ.get("MC_SLURM_GPUS")
+        layout = os.environ.get("MC_LAYOUT", "?")
+        if want is None:
+            r.warn(
+                f"visible GPUs: {n_vis} ({vis})",
+                "MC_SLURM_GPUS unset; `source configs/ada.env.sh` to compare with the layout",
+            )
+        elif int(want) == n_vis:
+            r.ok(f"visible GPUs: {n_vis} ({vis}) == MC_SLURM_GPUS for layout {layout}")
+        else:
+            r.fail(
+                "visible GPUs",
+                f"{n_vis} ({vis}) but layout {layout} expects {want}; check MC_LAYOUT and the sbatch --gres",
+            )
 
 
 def check_vllm_engine(r: Report) -> None:
@@ -443,8 +484,16 @@ def check_config(r: Report, name: str | None) -> None:
 
         # On the cluster verl's config tree comes from the installed package; on a laptop point
         # MC_VERL_CONFIG_DIR at a checkout's verl/trainer/config.
-        cfg = compose_train_config(name, os.environ.get("MC_VERL_CONFIG_DIR") or None, [])
+        # the same layout/memory overrides the launcher passes (configs/ada.env.sh: MC_TRAIN_OVERRIDES)
+        overrides = os.environ.get("MC_TRAIN_OVERRIDES", "").split()
+        cfg = compose_train_config(name, os.environ.get("MC_VERL_CONFIG_DIR") or None, overrides)
         problems = check(cfg)
+        n_gpus = int(cfg.trainer.n_gpus_per_node)
+        r.facts["n_gpus_per_node"] = n_gpus
+        r.facts["train_overrides"] = overrides
+        vis = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if vis is not None and len([x for x in vis.split(",") if x.strip()]) != n_gpus:
+            problems.append(f"config expects {n_gpus} GPU(s) but CUDA_VISIBLE_DEVICES={vis}")
     except Exception as e:  # noqa: BLE001
         r.fail(f"config {name}", f"does not compose: {type(e).__name__}: {e}")
         return
@@ -452,7 +501,7 @@ def check_config(r: Report, name: str | None) -> None:
         r.fail(f"config {name}", p)
     if not problems:
         r.ok(
-            f"config {name} composes and passes every invariant (fp16, D1, D2, D4, 4-GPU layout, seeds, resume)"
+            f"config {name} composes and passes every invariant (fp16, D1, D2, D4, {n_gpus}-GPU layout, seeds, resume)"
         )
 
 

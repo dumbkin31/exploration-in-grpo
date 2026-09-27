@@ -1,5 +1,5 @@
-# End-to-end plumbing test on the real 4-GPU layout (TP=4, plan A): 20 MATH problems, 2 steps,
-# groups of 4 (2 std + 2 CUTS), 512-token responses. Must finish well inside a 6 h session.
+# End-to-end plumbing test on the real layout (default: research_1gpu + plan B LoRA; whatever layout/memory
+# you override): 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS), 512-token responses.
 # Two steps are the minimum: the |S_t| statistics of step 1 are summarised at step 2.
 hydra:
   searchpath:
@@ -40,4 +40,4 @@ actor_rollout_ref:
 trainer:
   total_training_steps: 2
   test_freq: 1
-  save_freq: 1
+  # save_freq comes from the top-level `save_freq` (default 1) so `save_freq=` overrides still apply
