@@ -16,10 +16,11 @@
 # with research/low's one-GPU-per-user quota (decision 012).
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
-export MC_RUN_NAME="${MC_RUN_NAME:-smoke-s${MC_SEED:-42}-${SLURM_JOB_ID}}"   # fresh dir per smoke job
+CFG="${MC_SMOKE_CONFIG:-smoke}"   # smoke (2 steps + GPU tests) or smoke_maxlen (1 step at the paper's lengths, ignore_eos)
+export MC_RUN_NAME="${MC_RUN_NAME:-${CFG}-s${MC_SEED:-42}-${SLURM_JOB_ID}}"   # fresh dir per smoke job
 # run_train.sh installs the stage-out traps in its own shell, so it runs as a child and SLURM's
 # --signal=B:SIGUSR1 (delivered to THIS shell) is forwarded to it.
-bash slurm/run_train.sh smoke "$@" &
+bash slurm/run_train.sh "${CFG}" "$@" &
 child=$!
 trap 'kill -USR1 "${child}" 2>/dev/null || true' USR1
 trap 'kill -TERM "${child}" 2>/dev/null || true' TERM
@@ -37,6 +38,20 @@ if [ "${rc}" -ne 0 ]; then
   echo "[$(date '+%F %T')] training failed (rc=${rc}): skipping the GPU tests, which need its run dir"
   exit "${rc}"
 fi
+if [ "${CFG}" != "smoke" ]; then
+  echo "[$(date '+%F %T')] ${CFG} done (rc=0); the GPU tests are written for the 2-step smoke config, skipping them"
+  exit 0
+fi
+# The trainer's Ray actors (vLLM engine core, workers) release the GPU asynchronously after the driver
+# exits; the test fixtures start their own engine at util 0.40 and need the card back first.
+"${MC_VENV_DIR}/bin/ray" stop --force >/dev/null 2>&1 || true
+used=""
+for _ in $(seq 1 36); do
+  used=$(nvidia-smi -i "${CUDA_VISIBLE_DEVICES%%,*}" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d ' ')
+  [ "${used:-0}" -lt 600 ] && break
+  sleep 5
+done
+echo "[$(date '+%F %T')] GPU memory in use before the tests: ${used:-?} MiB"
 # pytest imports torch before the vLLM fixtures fork the engine core: force spawn (vLLM's auto-detection
 # only sees CUDA already initialised in the parent)
 MC_SMOKE_RUN_DIR="${RUN_DIR}" MC_STAGED_MODEL_DIR="${MC_SCRATCH_ROOT}/stage/models/$(basename "${MC_MODEL_DIR}")" \

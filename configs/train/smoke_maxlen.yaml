@@ -1,0 +1,38 @@
+# Memory stress test for the 1-GPU layout (decision 012): the smoke run's tiny batch at the PAPER's sequence
+# lengths with ignore_eos, so every response is the full 5000 tokens and the update phase sees 6024-token
+# micro-batches, the worst case the arms can produce. One step, groups of 4, no validation. Its
+# memory_profile.md and host_mem_peak.txt are the gate before a 4-day submission:
+#   SMOKE_CONFIG=smoke_maxlen make sbatch-smoke
+# (Inherits base_grpo directly: Hydra allows hydra.searchpath only in a primary config, so it cannot layer on smoke.)
+hydra:
+  searchpath:
+    - pkg://verl.trainer.config
+defaults:
+  - base_grpo
+  - _self_
+
+mixed_cuts:
+  group_size: 4
+  n_std: 2
+  n_cuts: 2
+  dump_samples_per_step: 2
+
+data:
+  train_files: ${paths.data_dir}/smoke_train.parquet
+  val_files: ${paths.data_dir}/smoke_val.parquet
+  val_max_samples: 8
+  train_batch_size: 4
+  # max_prompt_length 1024 / max_response_length 5000 and the 6144-token budgets: base_grpo values
+
+actor_rollout_ref:
+  actor:
+    ppo_mini_batch_size: 4
+  rollout:
+    ignore_eos: true                 # force full-length responses (memory test only; never in a real arm)
+    val_kwargs:
+      n: 2
+
+trainer:
+  total_training_steps: 1
+  val_before_train: false            # validation was exercised by the plain smoke
+  test_freq: -1

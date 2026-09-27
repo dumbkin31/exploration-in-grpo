@@ -99,9 +99,37 @@ def sample_host_mib(f: Path | None) -> int | None:
         return None
 
 
+def sample_top_rss(n: int = 8) -> list[list]:
+    """[[rss_mib, short command], ...] of this user's biggest processes (attributes the host budget)."""
+    try:
+        out = subprocess.run(
+            ["ps", "-u", os.environ.get("USER", str(os.getuid())), "-o", "rss=,args=", "--sort=-rss"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    rows: list[list] = []
+    for line in out.splitlines()[:n]:
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        rss_kib, args = parts
+        cmd = args.strip()
+        for marker in ("ray::", "vllm", "-m mixed_cuts.main", "raylet", "gcs_server", "python"):
+            if marker in cmd:
+                cmd = marker if marker != "ray::" else cmd[cmd.index("ray::") : cmd.index("ray::") + 40]
+                break
+        rows.append([int(rss_kib) // 1024, cmd[:60]])
+    return rows
+
+
 def watch(path: Path, interval: float, job: str) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     host_file = _host_mem_file()
+    every = max(1, int(20 / interval))  # a process snapshot every ~20 s
+    i = 0
     with open(path, "a", encoding="utf-8") as f:
         while True:
             mems = sample_gpu_mem()
@@ -110,8 +138,11 @@ def watch(path: Path, interval: float, job: str) -> int:
                 host = sample_host_mib(host_file)
                 if host is not None:
                     row["host_mib"] = host
+                if i % every == 0:
+                    row["top_rss"] = sample_top_rss()
                 f.write(json.dumps(row) + "\n")
                 f.flush()
+            i += 1
             time.sleep(interval)
 
 
@@ -173,6 +204,17 @@ def report(run_dir: Path) -> str:
                 if any(a <= s["t"] <= b for a, b, _ in wins):
                     host_peak[name] = max(host_peak[name], s["host_mib"])
         lines.append("")
+        # biggest processes seen (max RSS per command over the snapshots)
+        top: dict[str, int] = {}
+        for s_ in samples:
+            for rss, cmd in s_.get("top_rss") or []:
+                top[cmd] = max(top.get(cmd, 0), int(rss))
+        if top:
+            lines.append("")
+            lines.append("| process (max RSS over the run) | MiB |")
+            lines.append("|---|---|")
+            for cmd, rss in sorted(top.items(), key=lambda kv: -kv[1])[:10]:
+                lines.append(f"| `{cmd}` | {rss} |")
         lines.append(
             f"Host RSS of the job cgroup (sampled memory.current): peak {max(hosts)} MiB, "
             f"median {sorted(hosts)[len(hosts) // 2]} MiB"

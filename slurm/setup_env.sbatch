@@ -42,7 +42,7 @@ log "== 4/6 preflight (no staged-data check yet)"
 "${PY}" scripts/check_env.py --no-staged --facts-json "${MC_STAGE_ROOT}/jobs/setup_${SLURM_JOB_ID}_env_facts.json" || true
 log "== 5/6 interface tests that need vLLM/verl + compose-check"
 "${PY}" -m pytest -q tests/test_vllm_logits_processor.py tests/test_agent_loop_verl.py -p no:cacheprovider
-for c in base_grpo smoke math_grpo math_mixed_cuts; do "${PY}" scripts/compose_config.py "$c" --check; done
+for c in base_grpo smoke smoke_maxlen math_grpo math_mixed_cuts; do "${PY}" scripts/compose_config.py "$c" --check; done
 # the 4-GPU layout composes too (MC_SLURM_GPUS is what the guard compares the config with), and 1 GPU + plan A is refused
 MC_SLURM_GPUS=4 "${PY}" scripts/compose_config.py math_mixed_cuts --check layout=nlp_4gpu memory=plan_a_fullft_offload
 if MC_SLURM_GPUS=1 "${PY}" scripts/compose_config.py math_mixed_cuts --check memory=plan_a_fullft_offload >/dev/null 2>&1; then

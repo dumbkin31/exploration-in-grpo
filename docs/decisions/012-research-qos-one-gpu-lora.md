@@ -52,7 +52,15 @@ Facts verified in the verl v0.9.0 source before writing the configs:
 | `OMP_NUM_THREADS`, `MC_REWARD_WORKERS` | 8, 4 | 4, 2 | 10 cores |
 | paper hyperparameters (batch 128, mini-batch 32, G=16 8+8, 5000 tokens, T=1, KL 1e-3) | | unchanged | decision D2 stands; only the compute scale and LoRA changed |
 
-Budgets: GPU during the update (vLLM asleep) ~9-9.5 GiB of 11 (one gathered fp16 layer, checkpointed
+**Measured by the first green smoke run (job 2719378, gnode084, 2 steps, groups of 4, 512-token responses):**
+GPU peaks rollout 9.70 GiB, old/ref log-probs 8.86, update **10.05 of 11.26 GiB** (torch: 5.83 allocated, 8.17
+reserved -> `expandable_segments` added); host cgroup **peak 29,996 of 30,000 MiB** (median 26.4 GB) -> the
+`research_1gpu` layout now runs one agent-loop worker, in-process data loading, one TransferQueue unit and a
+2 GB object store, `nlp_1gpu` (60 GB) is the comfortable home for the arms, and `smoke_maxlen` (paper lengths,
+`ignore_eos`) is the memory gate before a 4-day submission. W&B synced online
+(`anlp-mixed-cuts/mixed-cuts/runs/smoke-s42-2719378`). Step time at the smoke's scale: 0.6 min.
+
+Budgets as planned: GPU during the update (vLLM asleep) ~9-9.5 GiB of 11 (one gathered fp16 layer, checkpointed
 hidden states 0.66, fp16 logits + log-softmax + grad ~5.3 transient, entropy chunk 1.2); host ~26-27 GB of 30
 (FSDP worker ~10.5 steady with 7.2 GB pinned, vLLM ~4.5, driver 2.5, agent/TQ/reward/dataloader workers ~5,
 Ray ~1.5, object store 1-2). Risk: verl's non-rmpad path pads each dynamic micro-batch to its longest

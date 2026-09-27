@@ -166,6 +166,10 @@ mc_sbatch_exclude() {  # prints "-x <nodes>" for sbatch: the static list + every
 }
 
 # --- runtime knobs for sm_75 / fp16 ---------------------------------------------
+# The smoke run's actor worker reserved 8.2 GB for 5.8 GB allocated (torch caching-allocator fragmentation)
+# while the update phase peaked at 10.05 of 11.26 GiB; expandable segments reclaim most of that gap. vLLM's
+# sleep-mode allocator switches it off around its own allocations and restores it (device_allocator/cumem.py).
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}" # auto-disabled on cc<8.0 anyway
 export VLLM_LOGGING_LEVEL="${VLLM_LOGGING_LEVEL:-INFO}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"

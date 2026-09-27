@@ -20,17 +20,18 @@ actor_rollout_ref:
     max_num_seqs: 32
     max_num_batched_tokens: 4096     # >= max_prompt_length (chunked prefill); half the workspace of 8192
     agent:
-      num_workers: 2                 # Ray actors, ~0.7 GB RSS each; one replica to feed
+      num_workers: 1                 # one asyncio worker drives the single replica; each is a Ray actor of ~0.7 GB RSS
 data:
-  dataloader_num_workers: 2          # 10 cores
+  dataloader_num_workers: 0          # in-process parquet loading: no forked workers on the 30 GB budget
 ray_kwargs:
   ray_init:
     num_cpus: 16                     # LOGICAL cpus for placement, not a cap: Ray itself reserves ~10
                                      # (TaskRunner 1, worker bundle 3, vLLM server 1, agent workers 2,
                                      # TransferQueue controller + storage units); <= 10 deadlocks placement.
                                      # The SLURM cgroup (10 real cores) is what limits actual use.
-    object_store_memory: 4000000000  # 4 GB of the 30 GB cgroup (a step's TransferQueue payload is ~1 GB)
+    object_store_memory: 2000000000  # /dev/shm counts against the 30 GB cgroup; the smoke job peaked at
+                                     # 29,996 of 30,000 MiB with 4 GB here (Ray spills to disk beyond it)
 transfer_queue:
   backend:
     SimpleStorage:
-      num_data_storage_units: 2      # verl default 8: one node, eight actors cost ~2.4 GB RSS and 8 cpus
+      num_data_storage_units: 1      # verl default 8: each unit is an actor of ~1 GB RSS; one node, one replica
