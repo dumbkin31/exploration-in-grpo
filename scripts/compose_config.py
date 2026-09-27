@@ -160,6 +160,10 @@ def check(cfg) -> list[str]:
             )
         if not (arr.model.get("lora") or {}).get("merge"):
             fail("the 1-GPU layout needs model.lora.merge=true (merged weights -> vLLM, level-2 sleep)")
+        if not arr.model.get("use_fused_kernels"):
+            fail(
+                "the 1-GPU layout needs model.use_fused_kernels=true: the padded path materialises 6k x 152k fp32 logits three times (OOM on 11 GiB)"
+            )
         if int(ray_init.get("object_store_memory") or 0) > 6_000_000_000:
             fail(
                 f"ray object_store_memory {ray_init.get('object_store_memory')} > 6 GB on the 30 GB host budget"

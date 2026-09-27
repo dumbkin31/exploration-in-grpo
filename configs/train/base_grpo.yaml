@@ -89,6 +89,13 @@ actor_rollout_ref:
     path: ${paths.model_dir}
     use_remove_padding: false        # sm_75: verl's rmpad path needs FlashAttention-2 (sm_80)  [checked]
     enable_gradient_checkpointing: true   # mandatory on 11 GiB
+    # sm_75: without remove-padding, verl materialises the full (tokens x 151,936) logits in fp32 for the
+    # log-probs AND, unchunked, for the entropy (entropy_from_logits_with_chunking only exists in the rmpad
+    # path). One 6,024-token sequence = 3 x 3.7 GB -> OOM on 11 GiB (smoke_maxlen job 2719395). The fused
+    # linear+log-prob kernel computes both in 512-token chunks from the hidden states instead.  [checked on 1 GPU]
+    use_fused_kernels: true
+    fused_kernel_options:
+      impl_backend: torch            # triton backend untested on sm_75
     override_config:
       attn_implementation: sdpa      # sm_75: no flash_attention_2  [checked]
 
