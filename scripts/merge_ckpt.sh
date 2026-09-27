@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Convert a verl FSDP checkpoint into a HuggingFace model directory for eval / vLLM.
+# Convert a verl FSDP checkpoint (full FT or LoRA) into a HuggingFace model directory for eval / vLLM.
 #
 #   scripts/merge_ckpt.sh <run_dir> [global_step]
 #
@@ -23,6 +23,9 @@ DST="$RUN_DIR/hf/global_step_${STEP}"
 PY="${MC_VENV_DIR:-.venv}/bin/python"
 echo "merging $SRC -> $DST"
 "$PY" -m verl.model_merger merge --backend fsdp --local_dir "$SRC" --target_dir "$DST"
+# LoRA runs (memory=plan_b_lora, the default): the merger leaves base weights + lora_adapter/ side by
+# side; fold the adapter in so vLLM/eval see the trained model (decision 012).
+"$PY" "$(dirname "$0")/merge_lora.py" "$DST"
 # verl's merger writes weights + config; make sure the tokenizer travels with the model.
 if [ -n "${MC_MODEL_DIR:-}" ] && [ ! -f "$DST/tokenizer_config.json" ]; then
   cp -n "$MC_MODEL_DIR"/tokenizer* "$MC_MODEL_DIR"/*.jinja "$MC_MODEL_DIR"/vocab.json "$MC_MODEL_DIR"/merges.txt "$DST"/ 2>/dev/null || true

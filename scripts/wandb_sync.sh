@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Sync offline W&B runs from Ada to wandb.ai, run from YOUR LAPTOP (not the Ada login node).
+# Push OFFLINE W&B runs from Ada to wandb.ai, run from YOUR LAPTOP (not the Ada login node).
 #
-# Why: jobs log with WANDB_MODE=offline into the run's durable mirror on /home2 (<home>/mixed-cuts-data/runs/<run>/wandb/). `wandb sync` needs the
+# Jobs log ONLINE by default (compute nodes reach api.wandb.ai); a job whose node cannot reach it falls
+# back to offline (slurm/common.sh) and its run folder lands in the durable mirror on /home2
+# (<home>/mixed-cuts-data/runs/<run>/wandb/offline-run-*). This script pushes those. `wandb sync` needs the
 # wandb package, whose Linux wheels require glibc >= 2.28; the Ada login node (CentOS 7) has
 # glibc 2.17, so the sync cannot run there. This script copies the offline run folders down with
 # rsync (incremental, safe to repeat) and syncs them from here.
