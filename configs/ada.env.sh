@@ -33,19 +33,34 @@ export MC_MODEL_NAME="${MC_MODEL_NAME:-Qwen/Qwen3-1.7B}"          # or Qwen/Qwen
 export MC_MODELS_DIR="${MC_MODELS_DIR:-${MC_STAGE_ROOT}/models}"
 export MC_MODEL_DIR="${MC_MODEL_DIR:-${MC_MODELS_DIR}/$(basename "${MC_MODEL_NAME}")}"
 export MC_DATA_DIR="${MC_DATA_DIR:-${MC_STAGE_ROOT}/data}"        # parquet in verl schema
-export MC_RUNS_DIR="${MC_RUNS_DIR:-${MC_STAGE_ROOT}/runs/${MC_USER}}"   # durable run outputs
+export MC_RUNS_DIR="${MC_RUNS_DIR:-${MC_STAGE_ROOT}/runs/${MC_USER}}"   # durable: small outputs of every run
+# Where checkpoints and the live run dir go (docs/decisions/009). /share1 has a 25 GB quota per
+# user on Ada and one full-fine-tune checkpoint is ~21 GB, so the default is node-local scratch;
+# the small outputs (metrics, stats, dumps, W&B) are mirrored to MC_RUNS_DIR every few minutes.
+#   scratch : run dir = $MC_SCRATCH_RUNS_DIR/<run>, resubmissions must land on the same node (-w)
+#   share1  : run dir = $MC_RUNS_DIR/<run> (only if the quota is ever raised to >= ~150 GB)
+export MC_CHECKPOINT_HOME="${MC_CHECKPOINT_HOME:-scratch}"
+export MC_SCRATCH_RUNS_DIR="${MC_SCRATCH_RUNS_DIR:-${MC_SCRATCH_ROOT}/runs}"
+export MC_MIRROR_INTERVAL="${MC_MIRROR_INTERVAL:-600}"                  # seconds between mirrors
 
-# --- caches: never on /home2 --------------------------------------------------
-# On a compute node /scratch exists; on the login node it does not, so fall back
-# to the durable stage root (the login node is where `make prefetch` runs).
+# --- caches ---------------------------------------------------------------------
+# Compute nodes: node-local /scratch. Login node (no /scratch): $HOME/.cache, NOT /share1:
+# /share1 allows only ~3,000 files per user and a uv-managed Python alone has thousands
+# (measured 2026-09-27: "Disk quota exceeded" at 76 KB used). /home2 allows 300k files.
 if [ -d "/scratch" ] && mkdir -p "${MC_SCRATCH_ROOT}" 2>/dev/null; then
   export MC_CACHE_ROOT="${MC_CACHE_ROOT:-${MC_SCRATCH_ROOT}/cache}"
+  export MC_ON_LOGIN_NODE=0
 else
-  export MC_CACHE_ROOT="${MC_CACHE_ROOT:-${MC_STAGE_ROOT}/cache}"
+  export MC_CACHE_ROOT="${MC_CACHE_ROOT:-${HOME}/.cache/mixed-cuts}"
+  export MC_ON_LOGIN_NODE=1
+  # The login node caps virtual memory at 512 MB per process (ulimit -v, hard) and 200 processes.
+  # Rust/multithreaded tools die there ("memory allocation failed"): keep downloads single-path.
+  export HF_HUB_ENABLE_HF_TRANSFER=0 HF_HUB_DISABLE_XET=1
+  export UV_CONCURRENT_DOWNLOADS=1 UV_CONCURRENT_INSTALLS=1 UV_CONCURRENT_BUILDS=1 RAYON_NUM_THREADS=1
 fi
 export HF_HOME="${HF_HOME:-${MC_CACHE_ROOT}/huggingface}"
 export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-${HF_HOME}/datasets}"
-export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"
+export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"   # forced to 0 on the login node above
 export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${MC_CACHE_ROOT}/triton}"
 export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-${MC_CACHE_ROOT}/torchinductor}"
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${MC_CACHE_ROOT}/pip}"
@@ -69,7 +84,7 @@ export MC_SLURM_PARTITION="${MC_SLURM_PARTITION:-u22}"
 export MC_SLURM_CONSTRAINT="${MC_SLURM_CONSTRAINT:-2080ti}"
 export MC_SLURM_GPUS="${MC_SLURM_GPUS:-4}"
 export MC_SLURM_CPUS="${MC_SLURM_CPUS:-40}"
-export MC_SLURM_MEM_PER_CPU="${MC_SLURM_MEM_PER_CPU:-3G}"   # 40 x 3G = 120 GB; check MaxMemPerCPU on u22
+export MC_SLURM_MEM_PER_CPU="${MC_SLURM_MEM_PER_CPU:-3000M}"   # u22 MaxMemPerCPU=3000 MB (3G = 3072 is rejected); 40 x 3000M = 117 GB
 export MC_SLURM_SIGNAL_SECS="${MC_SLURM_SIGNAL_SECS:-300}"  # SIGUSR1 this many seconds before kill
 
 # --- runtime knobs for sm_75 / fp16 ---------------------------------------------

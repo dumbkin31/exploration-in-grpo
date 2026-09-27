@@ -8,15 +8,19 @@
 #   mc_stage_out             idempotent copy of job logs into the durable run dir + engine-log facts
 #   mc_train_main CONFIG [overrides...]   the whole training job (used by run_train.sh)
 #
-# Layout (docs/decisions/005):
+# Layout (docs/decisions/005 and 009):
 #   MC_RUN_NAME    = <config>-s<seed>            stable across resubmissions (override: MC_RUN_NAME=...)
-#   MC_RUN_DIR     = $MC_RUNS_DIR/$MC_RUN_NAME   DURABLE (/share1): checkpoints/, metrics.jsonl,
-#                                                cuts_stats/, rollout_dumps/, phases.jsonl,
-#                                                gpu_mem.jsonl, wandb/, jobs/<jobid>/
-#   MC_SCRATCH_ROOT (node-local)                 staged model/data copies and caches ONLY
+#   MC_RUN_DIR     = live run dir: checkpoints/, metrics.jsonl, cuts_stats/, rollout_dumps/,
+#                    phases.jsonl, gpu_mem.jsonl, wandb/, jobs/<jobid>/
+#                    MC_CHECKPOINT_HOME=scratch (default): $MC_SCRATCH_RUNS_DIR/<run>, node-local,
+#                    because /share1 has a 25 GB quota and one checkpoint is ~21 GB
+#   MC_DURABLE_DIR = $MC_RUNS_DIR/<run> on /share1: everything except checkpoints, mirrored every
+#                    MC_MIRROR_INTERVAL seconds and at exit, plus node.txt (which node holds the
+#                    checkpoints; `make sbatch-train` pins resubmissions to it with -w)
+#   MC_SCRATCH_ROOT/stage                        staged model/data copies (re-rsynced per job)
 # verl's resume_mode=auto reads $MC_RUN_DIR/checkpoints/latest_checkpointed_iteration.txt, so a
-# resubmitted job continues where the last periodic checkpoint left off (verl cannot checkpoint
-# on SIGTERM; the grace period only flushes logs). WANDB_RUN_ID = run name keeps one W&B run.
+# resubmitted job ON THE SAME NODE continues from the last periodic checkpoint (verl cannot
+# checkpoint on SIGTERM; the grace period only flushes logs). WANDB_RUN_ID = run name keeps one W&B run.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -31,7 +35,12 @@ mc_job_init() {
   export MC_JOB_ID="${SLURM_JOB_ID:-local-$$}"
   export MC_SEED="${MC_SEED:-42}"
   export MC_RUN_NAME="${1:-${MC_RUN_NAME:-${SLURM_JOB_NAME:-job}-s${MC_SEED}}}"
-  export MC_RUN_DIR="${MC_RUN_DIR:-${MC_RUNS_DIR}/${MC_RUN_NAME}}"          # durable (/share1)
+  export MC_DURABLE_DIR="${MC_DURABLE_DIR:-${MC_RUNS_DIR}/${MC_RUN_NAME}}"   # /share1: mirror of small outputs
+  if [ "${MC_CHECKPOINT_HOME:-scratch}" = "scratch" ]; then
+    export MC_RUN_DIR="${MC_RUN_DIR:-${MC_SCRATCH_RUNS_DIR}/${MC_RUN_NAME}}" # node-local: checkpoints + live outputs
+  else
+    export MC_RUN_DIR="${MC_RUN_DIR:-${MC_DURABLE_DIR}}"
+  fi
   export MC_JOB_DIR="${MC_RUN_DIR}/jobs/${MC_JOB_ID}"                        # this submission's logs
   export MC_STAGED_MODEL_DIR="${MC_SCRATCH_ROOT}/stage/models/$(basename "${MC_MODEL_DIR}")"
   export MC_STAGED_DATA_DIR="${MC_SCRATCH_ROOT}/stage/data"
@@ -43,12 +52,15 @@ mc_job_init() {
   export WANDB_RUN_ID="${MC_RUN_NAME}"
   export WANDB_RESUME="allow"
   export WANDB_NAME="${MC_RUN_NAME}"
+  mkdir -p "${MC_DURABLE_DIR}" \
+    || { mc_log "ERROR: cannot create ${MC_DURABLE_DIR} (is ${MC_STAGE_ROOT} mounted and writable here?)"; exit 3; }
   mkdir -p "${MC_RUN_DIR}" "${MC_JOB_DIR}" "${WANDB_DIR}" "${MC_SCRATCH_ROOT}/stage" \
-    || { mc_log "ERROR: cannot create ${MC_RUN_DIR} (is ${MC_STAGE_ROOT} mounted and writable here?)"; exit 3; }
+    || { mc_log "ERROR: cannot create ${MC_RUN_DIR} (no writable node-local scratch on $(hostname)?)"; exit 3; }
+  mc_check_node_pin
   export PATH="${MC_VENV_DIR}/bin:${PATH}"
   export PYTHONUNBUFFERED=1
 
-  mc_log "job ${MC_JOB_ID} run ${MC_RUN_NAME} on $(hostname); run dir ${MC_RUN_DIR}; job dir ${MC_JOB_DIR}"
+  mc_log "job ${MC_JOB_ID} run ${MC_RUN_NAME} on $(hostname); run dir ${MC_RUN_DIR} (${MC_CHECKPOINT_HOME}); durable ${MC_DURABLE_DIR}"
   mc_log "python: $(command -v python) ; GPUs: ${CUDA_VISIBLE_DEVICES:-unset} ; nodes: ${SLURM_JOB_NUM_NODES:-?}"
   nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv 2>/dev/null || true
   {
@@ -73,6 +85,44 @@ PY
     mc_log "no internet on this node: HF_HUB_OFFLINE=1"
   fi
   mc_start_gpu_sampler
+}
+
+mc_check_node_pin() {
+  # Checkpoints on node-local scratch only resume on the node that wrote them (docs/decisions/009).
+  local node_file="${MC_DURABLE_DIR}/node.txt" here; here="$(hostname)"
+  if [ "${MC_CHECKPOINT_HOME:-scratch}" = "scratch" ] && [ -f "${node_file}" ]; then
+    local prev; prev="$(sed -n 's/^node=//p' "${node_file}" | tail -1)"
+    if [ -n "${prev}" ] && [ "${prev}" != "${here}" ] && [ ! -f "${MC_RUN_DIR}/checkpoints/latest_checkpointed_iteration.txt" ]; then
+      mc_log "ERROR: run ${MC_RUN_NAME} has its checkpoints on ${prev}, but this job landed on ${here}."
+      mc_log "       Resubmit with 'make sbatch-train ...' (pins -w ${prev}) or set MC_ALLOW_NODE_CHANGE=1 to start over here."
+      [ "${MC_ALLOW_NODE_CHANGE:-0}" = "1" ] || exit 5
+      mc_log "MC_ALLOW_NODE_CHANGE=1: starting from scratch on ${here}"
+    fi
+  fi
+  { echo "node=${here}"; echo "run_dir=${MC_RUN_DIR}"; echo "job=${MC_JOB_ID}"; echo "date=$(date '+%F %T')"; } >> "${node_file}"
+}
+
+mc_mirror() {
+  # Copy everything except checkpoints from the (possibly node-local) run dir to /share1. Idempotent.
+  # /share1 has a ~3,000-FILE quota per user, so the two per-step directories (one file per step
+  # each) are packed into a single archive apiece instead of being mirrored file by file.
+  [ "${MC_RUN_DIR}" = "${MC_DURABLE_DIR}" ] && return 0
+  mkdir -p "${MC_DURABLE_DIR}" 2>/dev/null || return 0
+  rsync -a --exclude 'checkpoints/' --exclude 'cuts_stats/' --exclude 'rollout_dumps/' \
+    --exclude '*.pt' --exclude '*.safetensors' "${MC_RUN_DIR}/" "${MC_DURABLE_DIR}/" \
+    || mc_log "WARN: mirror to ${MC_DURABLE_DIR} failed (quota? /share1 unreachable?)"
+  local d
+  for d in cuts_stats rollout_dumps; do
+    if [ -d "${MC_RUN_DIR}/${d}" ]; then
+      tar -czf "${MC_DURABLE_DIR}/${d}.tar.gz.tmp" -C "${MC_RUN_DIR}" "${d}" 2>/dev/null \
+        && mv -f "${MC_DURABLE_DIR}/${d}.tar.gz.tmp" "${MC_DURABLE_DIR}/${d}.tar.gz" \
+        || mc_log "WARN: packing ${d} failed"
+    fi
+  done
+}
+
+_mc_mirror_loop() {
+  while sleep "${MC_MIRROR_INTERVAL:-600}"; do mc_mirror; done
 }
 
 mc_start_gpu_sampler() {
@@ -156,7 +206,10 @@ mc_stage_out() {
   mc_engine_log_facts || true
   if [ -f "${MC_JOB_STDOUT}" ]; then cp -f "${MC_JOB_STDOUT}" "${MC_JOB_DIR}/" 2>/dev/null || true; fi
   mc_prune_checkpoints || true
-  mc_log "stage-out done (run dir ${MC_RUN_DIR})"
+  if [ -n "${_MC_MIRROR_PID:-}" ] && kill -0 "${_MC_MIRROR_PID}" 2>/dev/null; then kill "${_MC_MIRROR_PID}" 2>/dev/null || true; fi
+  _MC_MIRROR_PID=""
+  mc_mirror
+  mc_log "stage-out done (run dir ${MC_RUN_DIR}; durable copy ${MC_DURABLE_DIR})"
 }
 
 _MC_CHILD_PID=""
@@ -193,6 +246,8 @@ mc_run_with_traps() {
   if [ -n "${MC_KILL_AFTER_STEP:-}" ]; then
     _mc_kill_watcher "${MC_KILL_AFTER_STEP}" "$$" &
   fi
+  _mc_mirror_loop &
+  export _MC_MIRROR_PID=$!
   mc_log "launch: $*"
   "$@" &
   _MC_CHILD_PID=$!

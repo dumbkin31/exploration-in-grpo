@@ -7,7 +7,7 @@
 #SBATCH -N 1
 #SBATCH --gres=gpu:4
 #SBATCH -c 40
-#SBATCH --mem-per-cpu=3G
+#SBATCH --mem-per-cpu=3000M
 #SBATCH --signal=B:SIGUSR1@300
 #SBATCH -o slurm-%x-%j.out
 # Checkpoint-resume verification (Task C): run the smoke config for 30 steps with save_freq 5,
@@ -23,11 +23,14 @@ export MC_SAVE_FREQ=5 MC_TOTAL_STEPS=30
 PHASE="${MC_RESUME_PHASE:-1}"
 if [ "${PHASE}" = "1" ]; then
   export MC_KILL_AFTER_STEP=15
-  sbatch --dependency=afterany:"${SLURM_JOB_ID}" --export=ALL,MC_RESUME_PHASE=2,MC_KILL_AFTER_STEP= slurm/test_resume.sbatch
+  # phase 2 must land on THIS node: the checkpoints live on its scratch (docs/decisions/009)
+  sbatch --dependency=afterany:"${SLURM_JOB_ID}" -w "$(hostname)" --export=ALL,MC_RESUME_PHASE=2,MC_KILL_AFTER_STEP= slurm/test_resume.sbatch
   exec bash slurm/run_train.sh smoke "$@"
 else
   unset MC_KILL_AFTER_STEP
   bash slurm/run_train.sh smoke "$@" || true
   source configs/ada.env.sh
-  "${MC_VENV_DIR}/bin/python" scripts/check_resume.py "${MC_RUNS_DIR}/${MC_RUN_NAME}" --killed-at 15 --final-step 30 --save-freq 5
+  if [ "${MC_CHECKPOINT_HOME:-scratch}" = "scratch" ]; then CKDIR="${MC_SCRATCH_RUNS_DIR}/${MC_RUN_NAME}/checkpoints"; else CKDIR="${MC_RUNS_DIR}/${MC_RUN_NAME}/checkpoints"; fi
+  "${MC_VENV_DIR}/bin/python" scripts/check_resume.py "${MC_RUNS_DIR}/${MC_RUN_NAME}" --checkpoints-dir "${CKDIR}" \
+      --killed-at 15 --final-step 30 --save-freq 5
 fi

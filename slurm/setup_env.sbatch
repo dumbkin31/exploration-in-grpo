@@ -7,7 +7,7 @@
 #SBATCH -N 1
 #SBATCH --gres=gpu:1
 #SBATCH -c 8
-#SBATCH --mem-per-cpu=3G
+#SBATCH --mem-per-cpu=3000M
 #SBATCH --time=03:00:00
 #SBATCH -o slurm-%x-%j.out
 # Build the full cluster venv ON A 2080 TI NODE (glibc 2.35), then freeze it. Never on the login node.

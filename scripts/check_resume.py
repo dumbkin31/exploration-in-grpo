@@ -6,7 +6,8 @@
 Asserts, on the durable run dir shared by both jobs:
   * metrics.jsonl steps are 1..killed_at (first job) followed by a restart at
     (last checkpoint before the kill) + 1, continuing to final_step;
-  * checkpoints/latest_checkpointed_iteration.txt == final_step and that directory exists;
+  * <checkpoints dir>/latest_checkpointed_iteration.txt == final_step and that directory exists
+    (pass --checkpoints-dir when checkpoints live on node-local scratch, docs/decisions/009);
   * the checkpoint the resume started from existed (global_step_<last_ckpt>);
   * exactly one W&B run id across every offline-run-* directory (WANDB_RUN_ID stable);
   * two jobs/<id>/ directories (two submissions).
@@ -27,6 +28,11 @@ def main() -> int:
     ap.add_argument("--killed-at", type=int, required=True)
     ap.add_argument("--final-step", type=int, required=True)
     ap.add_argument("--save-freq", type=int, required=True)
+    ap.add_argument(
+        "--checkpoints-dir",
+        default=None,
+        help="default: <run_dir>/checkpoints (scratch layouts keep them elsewhere)",
+    )
     args = ap.parse_args()
     run = Path(args.run_dir)
     fails: list[str] = []
@@ -62,7 +68,7 @@ def main() -> int:
                 fails.append(f"resumed job ended at step {second[-1]}, expected {args.final_step}")
             print(f"first job: {first[0]}..{first[-1]}; resumed job: {second[0]}..{second[-1]}")
 
-    ck = run / "checkpoints"
+    ck = Path(args.checkpoints_dir) if args.checkpoints_dir else run / "checkpoints"
     tracker = ck / "latest_checkpointed_iteration.txt"
     if not tracker.exists():
         fails.append(f"{tracker} missing")
@@ -72,8 +78,6 @@ def main() -> int:
             fails.append(f"latest_checkpointed_iteration = {latest}, expected {args.final_step}")
         if not (ck / f"global_step_{latest}").is_dir():
             fails.append(f"checkpoint dir global_step_{latest} missing")
-    if not str(ck).startswith("/share1") and not str(ck.resolve()).startswith("/share1"):
-        fails.append(f"checkpoints are not under /share1: {ck}")
 
     ids = set()
     for d in (run / "wandb").glob("offline-run-*"):

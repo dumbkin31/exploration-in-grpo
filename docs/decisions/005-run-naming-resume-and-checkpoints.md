@@ -1,5 +1,9 @@
 # 005: Run naming, durable run dir, resume, save frequency, W&B
 
+> **Superseded in part by [009](009-scratch-checkpoints-quota.md)**: Ada's `/share1` quota is 25 GB, so
+> checkpoints live on node-local scratch and only the small outputs are mirrored to `/share1`. The
+> naming, resume and W&B rules below still apply.
+
 Multi-hundred-step runs will be killed and resubmitted. Everything a resumed job needs must be
 in one durable place, found by name, not by job id.
 

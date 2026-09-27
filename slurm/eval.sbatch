@@ -7,7 +7,7 @@
 #SBATCH -N 1
 #SBATCH --gres=gpu:4
 #SBATCH -c 40
-#SBATCH --mem-per-cpu=3G
+#SBATCH --mem-per-cpu=3000M
 #SBATCH --signal=B:SIGUSR1@300
 #SBATCH -o slurm-%x-%j.out
 # Evaluate a HF checkpoint dir on the benchmarks, one vLLM engine per GPU, benchmarks split
