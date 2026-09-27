@@ -69,6 +69,28 @@ util -> `actor.use_dynamic_bsz: false` + `ppo_micro_batch_size_per_gpu: 1` (comp
 last resort `max_response_length` (a deviation from the paper). The smoke job records the per-phase GPU
 peaks (`memory_profile.md`) and the cgroup host peak (`jobs/<id>/host_mem_peak.txt`).
 
+## Attention on Turing (measured 2026-09-28, the decisive memory fact)
+
+PyTorch 2.11's flash and memory-efficient SDPA kernels report *No available kernel* on the 2080 Ti when
+`enable_gqa=True` is requested; with the KV heads repeated, the memory-efficient kernel runs at 6,024 tokens
+for **+0.09/+0.26 GiB** (causal, forward/forward+backward) and **+0.20/+0.36 GiB** with a boolean mask. The
+math kernel costs **+5.2 GiB forward and +8.8 GiB forward+backward per attention call** at that length
+(+4.2 GiB at 4,096, +2.4 GiB at 3,072). transformers 5.5.3 requests `enable_gqa` exactly when
+`attention_mask is None`, i.e. for single-sequence micro-batches without padding: the long ones. That is
+what OOMed the update pass of `smoke_maxlen` job 2719481 (10.8 GiB peak) and what made its log-prob passes
+peak at 9.9 GiB. `mixed_cuts.sdpa_patch.install`, run in every Ray worker through
+`ray_kwargs.ray_init.runtime_env.worker_process_setup_hook`, makes transformers repeat the KV heads instead.
+FlexAttention is not an option on Turing (Triton: *out of resource: shared memory*).
+
+**Result (smoke_maxlen job 2719716, gnode084, 2026-09-28, 16 forced 5,000-token responses, 1 step):** GPU peaks
+rollout 9.70 GiB, old-log-prob **2.93**, ref-log-prob **2.93**, update **6.29 GiB** (torch 4.28 allocated / 5.06
+reserved); anonymous host memory 18.5 GB of 30; timings rollout 357 s (16 x 5,000 tokens at ~224 tok/s: the
+long-context floor), old-log-prob 22 s, ref 20 s, update 64 s, weight sync 17 s. Extrapolated to the real
+step (2,048 sequences, mixed lengths): ~70 min rollout + ~11 + 11 min log-prob passes + ~35 min update, i.e.
+**~2 h per step**, 100 steps ~ 8-9 days = three 4-day submissions per arm with resume.
+The fused log-prob kernel stays: the padded path otherwise materialises the 6k x 152k fp32 logits three
+times per sequence (smoke_maxlen job 2719395).
+
 ## Mechanics
 
 * `MC_LAYOUT` in `configs/ada.env.sh` (default `research_1gpu`; `nlp_4gpu` restores 002) sets the sbatch
@@ -84,6 +106,11 @@ peaks (`memory_profile.md`) and the cgroup host peak (`jobs/<id>/host_mem_peak.t
 * W&B: `WANDB_MODE=online`, `WANDB_DIR=<run dir>` (wandb appends its own `wandb/`), `WANDB_RUN_ID=<run name>`,
   `WANDB_RESUME=allow`; a node that cannot reach api.wandb.ai falls back to offline for that job and
   `scripts/wandb_sync.sh` pushes those runs later.
+* `make sbatch-train` adds `--dependency=singleton`: SLURM runs one job per (user, job name) at a time, so a
+  resubmission made before the wall queues behind the live run instead of writing into the same run dir.
+  Consequence: an arm is submitted on ONE account (a twin on the other account would sit at `Dependency`
+  until the first one ended, unpinned); twins are for the stateless jobs (bench, smoke). Measured: the resume test (2719790 -> 2719803) killed at 15, resumed at 16,
+  ran to 30 with one W&B run id; a LoRA checkpoint is 7.3 GB on scratch.
 * Checkpoints stay on node-local scratch with node pinning (009): 7.8 GB per step would not fit the home
   quota. Phase-2 option once the pipeline is proven: `save_lora_only: true` (~0.9 GB) and
   `MC_CHECKPOINT_HOME=durable`, which removes the pin.

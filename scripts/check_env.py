@@ -136,6 +136,42 @@ def check_driver(r: Report) -> None:
         )
 
 
+def _check_sdpa_kernels(r: Report, torch) -> None:
+    """Turing: the memory-efficient SDPA kernel exists only without enable_gqa (decision 012)."""
+    try:
+        import torch.nn.functional as F
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+    except Exception as e:  # noqa: BLE001
+        r.warn("sdpa probe", f"{type(e).__name__}: {e}")
+        return
+    dev = "cuda"
+    q = torch.randn(1, 16, 256, 128, device=dev, dtype=torch.float16)
+    k = torch.randn(1, 16, 256, 128, device=dev, dtype=torch.float16)
+    k8 = torch.randn(1, 8, 256, 128, device=dev, dtype=torch.float16)
+    mask = torch.ones(1, 1, 256, 256, device=dev, dtype=torch.bool).tril()
+    facts = {}
+    for name, kv, kw in (
+        ("mem_efficient_repeated_kv", k, {"attn_mask": mask}),
+        ("mem_efficient_gqa", k8, {"is_causal": True, "enable_gqa": True}),
+    ):
+        try:
+            with sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):
+                F.scaled_dot_product_attention(q, kv, kv, **kw)
+            facts[name] = True
+        except Exception:  # noqa: BLE001
+            facts[name] = False
+    r.facts["sdpa"] = facts
+    if facts["mem_efficient_repeated_kv"]:
+        r.ok(
+            f"SDPA memory-efficient kernel available with repeated KV heads (enable_gqa: {facts['mem_efficient_gqa']}); the worker hook keeps transformers on that path"
+        )
+    else:
+        r.fail(
+            "sdpa",
+            "no memory-efficient SDPA kernel on this GPU even with repeated KV heads: attention would run on the math kernel (+8.8 GiB per call at 6k tokens)",
+        )
+
+
 def check_gpu(r: Report) -> None:
     try:
         import torch
@@ -175,6 +211,8 @@ def check_gpu(r: Report) -> None:
             )
         else:
             r.warn(f"gpu{i}", f"{name} cc {cc}; configs are tuned for the 2080 Ti (7.5, 11 GiB)")
+    if n:
+        _check_sdpa_kernels(r, torch)
     if n and torch.cuda.is_bf16_supported():
         r.warn("bf16", "reported as supported; configs still force fp16 for reproducibility across nodes")
     else:

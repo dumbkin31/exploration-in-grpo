@@ -99,6 +99,20 @@ def sample_host_mib(f: Path | None) -> int | None:
         return None
 
 
+def sample_host_anon_mib(f: Path | None) -> int | None:
+    """Anonymous (non-reclaimable) memory of the job cgroup: what the OOM killer counts. mmapped model
+    files inflate memory.current and RSS but the kernel reclaims them under pressure."""
+    if f is None:
+        return None
+    try:
+        for line in (f.parent / "memory.stat").read_text().splitlines():
+            if line.startswith("anon "):
+                return int(line.split()[1]) // 1048576
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def sample_top_rss(n: int = 8) -> list[list]:
     """[[rss_mib, short command], ...] of this user's biggest processes (attributes the host budget)."""
     try:
@@ -138,6 +152,9 @@ def watch(path: Path, interval: float, job: str) -> int:
                 host = sample_host_mib(host_file)
                 if host is not None:
                     row["host_mib"] = host
+                    anon = sample_host_anon_mib(host_file)
+                    if anon is not None:
+                        row["host_anon_mib"] = anon
                 if i % every == 0:
                     row["top_rss"] = sample_top_rss()
                 f.write(json.dumps(row) + "\n")
@@ -215,6 +232,13 @@ def report(run_dir: Path) -> str:
             lines.append("|---|---|")
             for cmd, rss in sorted(top.items(), key=lambda kv: -kv[1])[:10]:
                 lines.append(f"| `{cmd}` | {rss} |")
+        anons = [s_["host_anon_mib"] for s_ in samples if s_.get("host_anon_mib") is not None]
+        if anons:
+            lines.append("")
+            lines.append(
+                f"Anonymous (non-reclaimable) memory of the job cgroup: peak {max(anons)} MiB, median "
+                f"{sorted(anons)[len(anons) // 2]} MiB; the rest of memory.current is file-backed (mmapped model files)."
+            )
         lines.append(
             f"Host RSS of the job cgroup (sampled memory.current): peak {max(hosts)} MiB, "
             f"median {sorted(hosts)[len(hosts) // 2]} MiB"

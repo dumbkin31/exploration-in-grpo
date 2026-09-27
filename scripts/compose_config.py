@@ -147,6 +147,11 @@ def check(cfg) -> list[str]:
     ray_init = (cfg.get("ray_kwargs") or {}).get("ray_init") or {}
     if ray_init.get("num_cpus") is None:
         fail("ray_kwargs.ray_init.num_cpus must be set (SLURM cgroups; verl's own advice)")
+    hook = (ray_init.get("runtime_env") or {}).get("worker_process_setup_hook")
+    if hook != "mixed_cuts.sdpa_patch.install":
+        fail(
+            f"ray_kwargs.ray_init.runtime_env.worker_process_setup_hook must be mixed_cuts.sdpa_patch.install (sm_75 SDPA, decision 012): {hook}"
+        )
     lora_rank = int(arr.model.get("lora_rank", 0) or 0)
     if n_gpus == 1:
         # research/low: 1 GPU, 10 CPUs, 30 GB host RAM (decision 012)
@@ -160,6 +165,10 @@ def check(cfg) -> list[str]:
             )
         if not (arr.model.get("lora") or {}).get("merge"):
             fail("the 1-GPU layout needs model.lora.merge=true (merged weights -> vLLM, level-2 sleep)")
+        if not arr.model.get("use_fused_kernels"):
+            fail(
+                "the 1-GPU layout needs model.use_fused_kernels=true: the padded path materialises 6k x 152k fp32 logits three times (OOM on 11 GiB)"
+            )
         if int(ray_init.get("object_store_memory") or 0) > 6_000_000_000:
             fail(
                 f"ray object_store_memory {ray_init.get('object_store_memory')} > 6 GB on the 30 GB host budget"

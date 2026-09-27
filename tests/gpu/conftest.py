@@ -54,10 +54,15 @@ def llm(tmp_path_factory):
         model=path,
         dtype="float16",  # sm_75: no bf16
         tensor_parallel_size=1,
-        gpu_memory_utilization=0.4,
+        # 0.6 x 11 GiB = 6.3 GiB: the 3.2 GiB fp16 model + CUDA-graph profiling + ~1.9 GiB KV. At 0.4 (a leftover from the
+        # 4-way-sharded era) vLLM 0.24 reports "Available KV cache memory: -0.14 GiB" on a whole 2080 Ti (smoke job 2719792).
+        gpu_memory_utilization=0.6,
         max_model_len=2048,
         logits_processors=[CutsLogitsProcessor],
         attention_config={"backend": "TRITON_ATTN"},
+        # verl builds its rollout engine with processed log-probs (the D1 hazard the demo test shows);
+        # vLLM's own default is raw_logprobs, under which only singleton steps sit on the -log|S_t| lattice
+        logprobs_mode="processed_logprobs",
         seed=0,
     )
     yield engine
