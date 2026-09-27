@@ -199,4 +199,13 @@ trainer:
   rollout_data_dir: ${paths.run_dir}/rollout_dumps
   balance_batch: true
 
-# ray_kwargs.ray_init (num_cpus, object_store_memory) and transfer_queue storage units: configs/train/layout/
+# ray_kwargs.ray_init num_cpus / object_store_memory and the TransferQueue storage units come from
+# configs/train/layout/. The worker hook below runs in EVERY Ray worker before the model is built:
+# sm_75 has no grouped-query variant of the memory-efficient SDPA kernel, and transformers requests
+# enable_gqa whenever the attention mask is None, which drops torch to the math kernel (+8.8 GiB per
+# attention call at 6,024 tokens: the update-pass OOM of smoke_maxlen job 2719481). Repeating the KV
+# heads keeps the memory-efficient kernel (+0.36 GiB).  [checked]
+ray_kwargs:
+  ray_init:
+    runtime_env:
+      worker_process_setup_hook: mixed_cuts.sdpa_patch.install

@@ -69,6 +69,21 @@ util -> `actor.use_dynamic_bsz: false` + `ppo_micro_batch_size_per_gpu: 1` (comp
 last resort `max_response_length` (a deviation from the paper). The smoke job records the per-phase GPU
 peaks (`memory_profile.md`) and the cgroup host peak (`jobs/<id>/host_mem_peak.txt`).
 
+## Attention on Turing (measured 2026-09-28, the decisive memory fact)
+
+PyTorch 2.11's flash and memory-efficient SDPA kernels report *No available kernel* on the 2080 Ti when
+`enable_gqa=True` is requested; with the KV heads repeated, the memory-efficient kernel runs at 6,024 tokens
+for **+0.09/+0.26 GiB** (causal, forward/forward+backward) and **+0.20/+0.36 GiB** with a boolean mask. The
+math kernel costs **+5.2 GiB forward and +8.8 GiB forward+backward per attention call** at that length
+(+4.2 GiB at 4,096, +2.4 GiB at 3,072). transformers 5.5.3 requests `enable_gqa` exactly when
+`attention_mask is None`, i.e. for single-sequence micro-batches without padding: the long ones. That is
+what OOMed the update pass of `smoke_maxlen` job 2719481 (10.8 GiB peak) and what made its log-prob passes
+peak at 9.9 GiB. `mixed_cuts.sdpa_patch.install`, run in every Ray worker through
+`ray_kwargs.ray_init.runtime_env.worker_process_setup_hook`, makes transformers repeat the KV heads instead.
+FlexAttention is not an option on Turing (Triton: *out of resource: shared memory*).
+The fused log-prob kernel stays: the padded path otherwise materialises the 6k x 152k fp32 logits three
+times per sequence (smoke_maxlen job 2719395).
+
 ## Mechanics
 
 * `MC_LAYOUT` in `configs/ada.env.sh` (default `research_1gpu`; `nlp_4gpu` restores 002) sets the sbatch

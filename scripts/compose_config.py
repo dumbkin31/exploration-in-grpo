@@ -147,6 +147,11 @@ def check(cfg) -> list[str]:
     ray_init = (cfg.get("ray_kwargs") or {}).get("ray_init") or {}
     if ray_init.get("num_cpus") is None:
         fail("ray_kwargs.ray_init.num_cpus must be set (SLURM cgroups; verl's own advice)")
+    hook = (ray_init.get("runtime_env") or {}).get("worker_process_setup_hook")
+    if hook != "mixed_cuts.sdpa_patch.install":
+        fail(
+            f"ray_kwargs.ray_init.runtime_env.worker_process_setup_hook must be mixed_cuts.sdpa_patch.install (sm_75 SDPA, decision 012): {hook}"
+        )
     lora_rank = int(arr.model.get("lora_rank", 0) or 0)
     if n_gpus == 1:
         # research/low: 1 GPU, 10 CPUs, 30 GB host RAM (decision 012)
