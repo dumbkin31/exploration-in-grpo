@@ -27,7 +27,8 @@ command -v rsync >/dev/null || { echo "rsync not found"; exit 1; }
 command -v wandb >/dev/null || { echo "wandb not found: pip install wandb && wandb login"; exit 1; }
 
 if [ "$#" -eq 0 ]; then
-  mapfile -t RUNS < <(ssh "${TARGET}" "ls -1 ${REMOTE_RUNS} 2>/dev/null")
+  RUNS=()  # no mapfile: macOS ships bash 3.2
+  while IFS= read -r line; do [ -n "${line}" ] && RUNS+=("${line}"); done < <(ssh "${TARGET}" "ls -1 ${REMOTE_RUNS} 2>/dev/null")
 else
   RUNS=("$@")
 fi
