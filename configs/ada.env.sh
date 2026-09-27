@@ -76,6 +76,16 @@ export WANDB_CACHE_DIR="${WANDB_CACHE_DIR:-${MC_CACHE_ROOT}/wandb-cache}"
 mkdir -p "${HF_HOME}" "${TRITON_CACHE_DIR}" "${TORCHINDUCTOR_CACHE_DIR}" "${PIP_CACHE_DIR}" \
          "${UV_CACHE_DIR}" "${RAY_TMPDIR}" "${TMPDIR}" "${WANDB_DIR}" 2>/dev/null || true
 
+# --- package index -----------------------------------------------------------------
+# From Ada, PyPI's CDN (files.pythonhosted.org, Fastly) is throttled to ~60-100 KB/s, and so are
+# GitHub release downloads; a 10 GB torch/vLLM install would take days. Measured 2026-09-27 from a
+# compute node: Tsinghua TUNA 4.5 MB/s, SJTU 2.5 MB/s, download.pytorch.org 6.7 MB/s,
+# wheels.vllm.ai 7.6 MB/s, huggingface.co 3 MB/s. TUNA mirrors all of PyPI, so the pins resolve
+# identically. Override with UV_DEFAULT_INDEX in configs/local.env.sh if it is ever slow.
+export UV_DEFAULT_INDEX="${UV_DEFAULT_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}"
+export UV_INDEX_STRATEGY="${UV_INDEX_STRATEGY:-unsafe-best-match}"
+export PIP_INDEX_URL="${PIP_INDEX_URL:-${UV_DEFAULT_INDEX}}"
+
 # --- logging: local jsonl is primary, W&B is offline by default --------------
 export WANDB_MODE="${WANDB_MODE:-offline}"
 export WANDB_PROJECT="${WANDB_PROJECT:-mixed-cuts}"

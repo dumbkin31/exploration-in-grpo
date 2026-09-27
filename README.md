@@ -32,7 +32,7 @@ Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions
 |---|---|---|
 | GPU | 4x NVIDIA RTX 2080 Ti per node, **sm_75 (Turing), 11 GiB** each | `-C 2080ti -N 1` on every job. Never the 1080 Ti nodes (sm_61: unsupported by CUDA 13 and vLLM). |
 | Driver | 580.178.04 (CUDA 13.0) | default PyPI wheels of torch 2.11.0 / vLLM 0.24.0 (CUDA 13 builds). |
-| OS on compute nodes | Ubuntu 22.04.5, glibc 2.35 | `manylinux_2_28` wheels install natively; no container needed. |
+| OS on compute nodes | Ubuntu 22.04.5, glibc 2.35, internet works, `/scratch` 1.8 TB | `manylinux_2_28` wheels install natively; no container needed. PyPI's CDN is throttled to ~0.1 MB/s from Ada, so `configs/ada.env.sh` uses the Tsinghua mirror (4.5 MB/s). |
 | Login node | CentOS 7, glibc 2.17, **512 MB virtual memory per process, 200 processes** (hard limits) | Only `git`, `make setup-login`, `make prefetch` (plain pip, no `hf_transfer`/`hf-xet`). `wandb` and `torch` wheels need glibc >= 2.28, so W&B syncing happens elsewhere (section 6). |
 | Precision | **fp16 only** (bf16 needs sm_80) | every bf16 default in verl/vLLM is overridden and asserted (section 5). |
 | Attention (rollout) | vLLM **`TRITON_ATTN`**, set explicitly | `FLASH_ATTN` and `FLASHINFER` require capability 8.0 in vLLM 0.24.0; XFORMERS no longer exists ([004](docs/decisions/004-attention-backend-and-engine-version.md)). |

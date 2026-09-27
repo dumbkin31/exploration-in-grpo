@@ -8,7 +8,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH -c 8
 #SBATCH --mem-per-cpu=3000M
-#SBATCH --time=03:00:00
+#SBATCH --time=04:00:00
 #SBATCH -o slurm-%x-%j.out
 # Build the full cluster venv ON A 2080 TI NODE (Ubuntu 22.04, glibc 2.35), then freeze it, run the
 # vLLM/verl interface tests, compose-check the configs and build the parquet data. Never on the
@@ -26,6 +26,7 @@ log "scratch: $(df -h /scratch 2>/dev/null | tail -1 || echo 'NO /scratch on thi
 log "internet: huggingface.co $(curl -s -m 8 -o /dev/null -w '%{http_code}' https://huggingface.co || echo unreachable), pypi.org $(curl -s -m 8 -o /dev/null -w '%{http_code}' https://pypi.org || echo unreachable)"
 command -v uv >/dev/null || { log "uv not found; install it on the login node: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; }
 log "uv $(uv --version) ; venv -> ${MC_VENV_DIR} ; python cache -> ${UV_PYTHON_INSTALL_DIR}"
+log "package index: ${UV_DEFAULT_INDEX} (strategy ${UV_INDEX_STRATEGY}); mirror speed: $(curl -sL -o /dev/null -m 8 -w '%{speed_download}' https://pypi.tuna.tsinghua.edu.cn/packages/d2/7f/577a61bf2c8eff26e942afe53a6b03f4dbf5b4f233b832c228417d0c954e/ray-2.56.1-cp312-cp312-manylinux2014_x86_64.whl || echo ?) B/s"
 
 log "== 1/6 venv + pinned requirements (requirements/base.txt)"
 uv venv --python "${MC_PYTHON_VERSION}" "${MC_VENV_DIR}"

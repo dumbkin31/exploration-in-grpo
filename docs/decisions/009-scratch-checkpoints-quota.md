@@ -35,6 +35,10 @@ node-local scratch over asking for a larger quota.
 Also fixed while measuring:
 * `u22` has `MaxMemPerCPU=3000` MB, so `--mem-per-cpu=3G` (3072 MB) would be rejected; every job now
   asks for `3000M` (117 GB per node).
+* PyPI's CDN is throttled to ~60-100 KB/s from Ada (login and compute nodes alike; GitHub
+  releases too), while the Tsinghua TUNA PyPI mirror does ~4.5 MB/s, `download.pytorch.org`
+  6.7 MB/s and `wheels.vllm.ai` 7.6 MB/s. `configs/ada.env.sh` therefore points uv and pip at
+  TUNA (`UV_DEFAULT_INDEX`); it mirrors all of PyPI, so the pins resolve identically.
 * The login node caps virtual memory at 512 MB per process (hard) and 200 processes. `uv pip install`
   aborted with "memory allocation failed"; the login-node environment is therefore built with plain
   `pip` inside a seeded uv venv, and the Rust download paths (`hf_transfer`, `hf-xet`) are disabled
