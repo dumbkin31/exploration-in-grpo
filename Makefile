@@ -24,8 +24,8 @@ CKPT   ?=
 BENCH  ?= math500,aime24,aime25,amc23,gpqa_diamond
 N_SAMPLES ?= 16
 
-.PHONY: help setup-dev setup-login setup lock test gpu-test lint compose-check preflight check-env prefetch data \
-        bench smoke train eval sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup sbatch-resume-test clean-cache
+.PHONY: help setup-dev setup-login setup lock test gpu-test lint compose-check preflight check-env prefetch prefetch-base data \
+        bench smoke train eval sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup sbatch-data sbatch-resume-test clean-cache
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
@@ -38,8 +38,9 @@ setup-dev: ## CPU dev env (laptop; not the Ada login node): venv + requirements/
 	@echo "dev env ready: $(VENV)"
 
 setup-login: ## tiny download-only env for `make prefetch` on the CentOS 7 login node (no torch/pyarrow)
-	$(UV) venv --python $(PYTHON_VER) .venv-login
-	$(UV) pip install --python .venv-login/bin/python -r requirements/prefetch.txt
+	@. $(ENV_FILE); $(UV) venv --python $(PYTHON_VER) --seed .venv-login
+	# plain pip, not `uv pip`: the login node's 512 MB virtual-memory cap kills uv's installer
+	@. $(ENV_FILE); .venv-login/bin/python -m pip install -q --no-warn-script-location -r requirements/prefetch.txt
 	@echo "login env ready: .venv-login (used automatically by make prefetch)"
 
 setup: ## FULL cluster env. Run ONLY inside a 2080 Ti allocation (sbatch slurm/setup_env.sbatch)
@@ -79,8 +80,11 @@ compose-check: ## compose every training config (Hydra) and assert the sm_75/fp1
 	@$(PY) scripts/compose_config.py math_mixed_cuts --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),) memory=plan_b_lora
 
 # ------------------------------------------------------------------------ data
-prefetch: ## LOGIN NODE (has internet): download model + datasets into $$MC_STAGE_ROOT (idempotent)
-	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --extra-model Qwen/Qwen3-1.7B-Base
+prefetch: ## LOGIN NODE (has internet): download Qwen3-1.7B + datasets into $$MC_STAGE_ROOT (idempotent)
+	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py
+
+prefetch-base: ## also stage Qwen3-1.7B-Base (+3.4 GB of the 25 GB /share1 quota; only if you will train it)
+	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --skip-model --extra-model Qwen/Qwen3-1.7B-Base
 
 data: ## build parquet files in verl schema (MATH, DAPO deduped, eval sets, smoke subsets)
 	@. $(ENV_FILE); $(PY) scripts/prepare_data.py
@@ -99,16 +103,20 @@ eval: ## eval CKPT (HF dir) on BENCH with N_SAMPLES samples per problem
 	@. $(ENV_FILE); $(PY) eval/run_eval.py --ckpt "$(CKPT)" --benchmarks "$(BENCH)" --n-samples $(N_SAMPLES) --seed $(SEED)
 
 # ------------------------------------------------------------------ sbatch wrappers
-sbatch-setup: ## submit the environment build job
+sbatch-setup: ## submit the environment build job (venv, lock, tests, compose-check, data)
 	@. $(ENV_FILE); sbatch slurm/setup_env.sbatch
+sbatch-data: ## build the parquet data on a compute node (if the setup job ran before prefetch finished)
+	@. $(ENV_FILE); sbatch slurm/data.sbatch
 sbatch-bench: ## submit the 1-GPU rollout benchmark
 	@. $(ENV_FILE); sbatch slurm/bench_rollout.sbatch
 sbatch-smoke: ## submit the smoke test
 	@. $(ENV_FILE); sbatch slurm/smoke.sbatch
-sbatch-train: ## submit (or resume) a training run: make sbatch-train CONFIG=math_mixed_cuts SEED=1
-	@. $(ENV_FILE); sbatch -J $(CONFIG)-s$(SEED) --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
-sbatch-eval: ## submit an eval run: make sbatch-eval CKPT=... BENCH=... SEED=0
-	@. $(ENV_FILE); sbatch --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES),MC_SEED=$(SEED) slurm/eval.sbatch
+sbatch-train: ## submit (or resume) a training run: make sbatch-train CONFIG=math_mixed_cuts SEED=1  (pins the node holding the checkpoints; MC_PIN_NODE=0 to skip)
+	@. $(ENV_FILE); W=""; NF="$$MC_RUNS_DIR/$(CONFIG)-s$(SEED)/node.txt"; \
+	  if [ "$${MC_PIN_NODE:-1}" = 1 ] && [ -f "$$NF" ]; then N=$$(sed -n 's/^node=//p' "$$NF" | tail -1); W="-w $$N"; echo "resuming: checkpoints live on $$N, pinning with $$W"; fi; \
+	  sbatch -J $(CONFIG)-s$(SEED) $$W --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
+sbatch-eval: ## submit an eval run: make sbatch-eval CKPT=... BENCH=... SEED=0 [NODE=gnodeXX if CKPT is on that node's scratch]
+	@. $(ENV_FILE); sbatch $(if $(NODE),-w $(NODE),) --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES),MC_SEED=$(SEED) slurm/eval.sbatch
 sbatch-resume-test: ## kill-at-step-15-and-resubmit verification of checkpoint resume
 	@. $(ENV_FILE); sbatch slurm/test_resume.sbatch
 

@@ -403,18 +403,45 @@ def check_config(r: Report, name: str | None) -> None:
         )
 
 
-def check_durable_dir(r: Report) -> None:
-    run_dir = os.environ.get("MC_RUN_DIR") or os.environ.get("MC_RUNS_DIR")
-    if not run_dir:
-        return
+def _writable(path: str) -> str | None:
     try:
-        Path(run_dir).mkdir(parents=True, exist_ok=True)
-        probe = Path(run_dir) / ".mc_write_probe"
+        Path(path).mkdir(parents=True, exist_ok=True)
+        probe = Path(path) / ".mc_write_probe"
         probe.write_text("ok")
         probe.unlink()
-        r.ok(f"durable run dir writable: {run_dir}")
+        return None
     except OSError as e:
-        r.fail("durable run dir", f"{run_dir} not writable ({e}); checkpoints must land on /share1")
+        return str(e)
+
+
+def check_durable_dir(r: Report) -> None:
+    """Both homes of a run must be writable: the live run dir (checkpoints) and the /share1 mirror."""
+    for label, var in (
+        ("run dir (checkpoints, live outputs)", "MC_RUN_DIR"),
+        ("durable mirror dir", "MC_DURABLE_DIR"),
+    ):
+        path = os.environ.get(var)
+        if not path:
+            continue
+        err = _writable(path)
+        if err is None:
+            r.ok(f"{label} writable: {path}")
+        else:
+            r.fail(label, f"{path} not writable ({err})")
+    # /share1 quota on Ada is 25 GB and 3,000 files per user; warn before it bites.
+    stage = os.environ.get("MC_STAGE_ROOT")
+    if stage and Path(stage).is_dir():
+        try:
+            n_files = sum(1 for _ in Path(stage).rglob("*") if _.is_file())
+            n_bytes = sum(p.stat().st_size for p in Path(stage).rglob("*") if p.is_file())
+            msg = f"{stage}: {n_bytes / 2**30:.1f} GiB in {n_files} files (quota ~25 GB / 3000 files)"
+            if n_bytes > 20 * 2**30 or n_files > 2500:
+                r.warn("/share1 usage", msg)
+            else:
+                r.ok(msg)
+            r.facts["share1_usage"] = {"gib": round(n_bytes / 2**30, 2), "files": n_files}
+        except OSError as e:
+            r.warn("/share1 usage", str(e))
 
 
 def main() -> int:

@@ -6,6 +6,6 @@
 #SBATCH -C 2080ti
 #SBATCH -N 1
 #SBATCH -c 40
-#SBATCH --mem-per-cpu=3G
+#SBATCH --mem-per-cpu=3000M
 #SBATCH --signal=B:SIGUSR1@300
 #SBATCH -o slurm-%x-%j.out

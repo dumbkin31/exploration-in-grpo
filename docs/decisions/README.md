@@ -13,3 +13,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [006](006-fp16-stability-ladder.md) | fp16 watchlist and the mitigation ladder |
 | [007](007-cuts-stats-channel.md) | How |S_t| statistics travel from vLLM to the trainer: rank-0 writer, per-step files, one-step lag |
 | [008](008-digit-rule-and-filtered-prompts.md) | The boxed-plus-digit validity rule, its training-set filter and the evaluation ceiling |
+| [009](009-scratch-checkpoints-quota.md) | /share1 is 25 GB: checkpoints on node-local scratch, small outputs mirrored, resubmissions pinned to the node |

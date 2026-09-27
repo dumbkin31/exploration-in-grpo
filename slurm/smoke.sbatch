@@ -7,7 +7,7 @@
 #SBATCH -N 1
 #SBATCH --gres=gpu:4
 #SBATCH -c 40
-#SBATCH --mem-per-cpu=3G
+#SBATCH --mem-per-cpu=3000M
 #SBATCH --time=05:00:00
 #SBATCH --signal=B:SIGUSR1@300
 #SBATCH -o slurm-%x-%j.out
