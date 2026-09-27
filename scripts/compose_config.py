@@ -188,7 +188,7 @@ def check(cfg) -> list[str]:
     run_dir = str(cfg.paths.run_dir)
     if not str(cfg.trainer.default_local_dir).startswith(run_dir):
         fail(
-            f"trainer.default_local_dir must be under paths.run_dir (on /share1): {cfg.trainer.default_local_dir}"
+            f"trainer.default_local_dir must be under paths.run_dir (the live run dir): {cfg.trainer.default_local_dir}"
         )
     if str(cfg.trainer.experiment_name) != str(cfg.run_name):
         fail("trainer.experiment_name must equal run_name (stable across resubmissions)")

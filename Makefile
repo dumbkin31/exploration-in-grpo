@@ -83,7 +83,7 @@ compose-check: ## compose every training config (Hydra) and assert the sm_75/fp1
 prefetch: ## LOGIN NODE (has internet): download Qwen3-1.7B + datasets into $$MC_STAGE_ROOT (idempotent)
 	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py
 
-prefetch-base: ## also stage Qwen3-1.7B-Base (+3.4 GB of the 25 GB /share1 quota; only if you will train it)
+prefetch-base: ## also stage Qwen3-1.7B-Base (+3.4 GB of the 25 GB /home2 quota; only if you will train it)
 	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --skip-model --extra-model Qwen/Qwen3-1.7B-Base
 
 data: ## build parquet files in verl schema (MATH, DAPO deduped, eval sets, smoke subsets)

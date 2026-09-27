@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sync offline W&B runs from Ada to wandb.ai, run from YOUR LAPTOP (not the Ada login node).
 #
-# Why: jobs log with WANDB_MODE=offline into <run dir>/wandb/ on /share1. `wandb sync` needs the
+# Why: jobs log with WANDB_MODE=offline into the run's durable mirror on /home2 (<home>/mixed-cuts-data/runs/<run>/wandb/). `wandb sync` needs the
 # wandb package, whose Linux wheels require glibc >= 2.28; the Ada login node (CentOS 7) has
 # glibc 2.17, so the sync cannot run there. This script copies the offline run folders down with
 # rsync (incremental, safe to repeat) and syncs them from here.
@@ -20,7 +20,7 @@ set -euo pipefail
 TARGET="${1:?usage: wandb_sync.sh <ssh-target> <ada-user> [run-name ...]}"
 ADA_USER="${2:?usage: wandb_sync.sh <ssh-target> <ada-user> [run-name ...]}"
 shift 2
-REMOTE_RUNS="${MC_REMOTE_RUNS_DIR:-/share1/${ADA_USER}/mixed-cuts/runs/${ADA_USER}}"
+REMOTE_RUNS="${MC_REMOTE_RUNS_DIR:-/home2/${ADA_USER}/mixed-cuts-data/runs}"   # MC_RUNS_DIR on Ada (docs/decisions/010)
 LOCAL_ROOT="${MC_LOCAL_WANDB_DIR:-${HOME}/mixed-cuts-wandb}"
 
 command -v rsync >/dev/null || { echo "rsync not found"; exit 1; }

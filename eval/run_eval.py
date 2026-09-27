@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Evaluate a checkpoint on MATH-500 / AIME24 / AIME25 / AMC23 / GPQA-diamond.
 
-    python eval/run_eval.py --ckpt /share1/$USER/mixed-cuts/runs/$USER/<job>/hf/global_step_50 \\
+    python eval/run_eval.py --ckpt /scratch/$USER/mixed-cuts/runs/<run>/checkpoints/hf/global_step_50 \\
         --benchmarks math500,aime24 --n-samples 16 [--config configs/eval/default.yaml] [--out DIR]
 
 ``--ckpt`` must be a HuggingFace model directory. For a verl FSDP checkpoint

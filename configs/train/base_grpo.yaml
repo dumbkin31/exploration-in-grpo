@@ -23,7 +23,7 @@ save_freq: 1                         # steps. One step here is ~40-90 min (2048 
                                      # tokens on 4x 2080 Ti), so 1 keeps the loss on a kill to one
                                      # step; retune after the smoke test (docs/decisions/005)
 paths:
-  run_dir: ???                       # durable, on /share1: checkpoints, metrics.jsonl, cuts_stats, dumps
+  run_dir: ???                       # the live run dir (node-local scratch by default, decisions 009/010): checkpoints, metrics.jsonl, cuts_stats, dumps
   model_dir: ???
   data_dir: ???
   repo_dir: ???
@@ -184,7 +184,7 @@ trainer:
   test_freq: 10
   val_before_train: true
   resume_mode: auto                  # newest checkpoint under default_local_dir, else start fresh  [checked]
-  default_local_dir: ${paths.run_dir}/checkpoints   # on /share1, never node-local scratch  [checked]
+  default_local_dir: ${paths.run_dir}/checkpoints   # always under paths.run_dir  [checked]
   max_actor_ckpt_to_keep: 2          # ~27 GB each; pre-restart ones are pruned by the sbatch script
   rollout_data_dir: ${paths.run_dir}/rollout_dumps
   balance_batch: true

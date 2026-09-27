@@ -14,3 +14,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [007](007-cuts-stats-channel.md) | How |S_t| statistics travel from vLLM to the trainer: rank-0 writer, per-step files, one-step lag |
 | [008](008-digit-rule-and-filtered-prompts.md) | The boxed-plus-digit validity rule, its training-set filter and the evaluation ceiling |
 | [009](009-scratch-checkpoints-quota.md) | /share1 is 25 GB: checkpoints on node-local scratch, small outputs mirrored, resubmissions pinned to the node |
+| [010](010-share1-is-login-node-local.md) | /share1 is a login-node-local disk: staged model/data and the durable run outputs live on /home2 |

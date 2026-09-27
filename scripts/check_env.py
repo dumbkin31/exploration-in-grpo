@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.metadata
 import json
 import os
 import shutil
@@ -74,7 +75,13 @@ def _version_of(mod_name: str) -> str | None:
         mod = importlib.import_module(mod_name)
     except Exception as e:  # noqa: BLE001 - we want to report any import error
         return f"<import error: {type(e).__name__}: {e}>"
-    return getattr(mod, "__version__", "<no __version__>")
+    v = getattr(mod, "__version__", None)
+    if v is None:  # e.g. math_verify exposes no __version__; ask the installed distribution
+        try:
+            v = importlib.metadata.version(mod_name.replace("_", "-"))
+        except importlib.metadata.PackageNotFoundError:
+            return "<no __version__>"
+    return v
 
 
 def check_python(r: Report) -> None:
@@ -194,14 +201,32 @@ def check_storage(r: Report) -> None:
             r.ok(f"{var}={p} writable, {free_gb:.0f} GiB free")
             r.facts[var] = {"path": p, "writable": True, "free_gib": round(free_gb)}
         except OSError as e:
-            r.fail(var, f"{p} not writable here ({e}); outputs and checkpoints must land on /share1")
+            r.fail(
+                var,
+                f"{p} not writable here ({e}); staged data and run outputs live on /home2 (NFS), checkpoints on /scratch",
+            )
             r.facts[var] = {"path": p, "writable": False}
+    # /home2 is the only durable file system compute nodes can see (docs/decisions/010): 25 GB and
+    # 300k files per user hold the venv (~9.6 GB), the staged model/data (~5.2 GB) and every run's
+    # durable outputs. Warn before the quota bites.
     home = Path.home()
     try:
-        used = subprocess.run(
-            ["du", "-sh", str(home)], capture_output=True, text=True, timeout=60
-        ).stdout.split()[0]
-        r.ok(f"home usage {used} (quota 25 GB; code + venv only)")
+        mib = int(
+            subprocess.run(
+                ["du", "-sm", str(home)], capture_output=True, text=True, timeout=120
+            ).stdout.split()[0]
+        )
+        files = int(
+            subprocess.run(
+                ["du", "-s", "--inodes", str(home)], capture_output=True, text=True, timeout=120
+            ).stdout.split()[0]
+        )
+        msg = f"home usage {mib / 1024:.1f} GiB in {files} files (quota 25 GB / 300k files: venv, staged data, run outputs)"
+        if mib > 20_000 or files > 250_000:
+            r.warn("home quota", msg)
+        else:
+            r.ok(msg)
+        r.facts["home_usage"] = {"mib": mib, "files": files}
     except Exception:  # noqa: BLE001
         pass
 
@@ -232,7 +257,7 @@ def check_slurm(r: Report) -> None:
         r.warn("slurm", "not inside an allocation (fine on the login node / laptop)")
         return
     r.ok(
-        f"slurm job {job} on {os.environ.get('SLURMD_NODENAME', '?')}, gres={os.environ.get('SLURM_JOB_GPUS') or os.environ.get('CUDA_VISIBLE_DEVICES', '?')}"
+        f"slurm job {job} on {os.environ.get('SLURMD_NODENAME', '?')}, gpu ids={os.environ.get('SLURM_JOB_GPUS') or os.environ.get('CUDA_VISIBLE_DEVICES', '?')}"
     )
     part = os.environ.get("SLURM_JOB_PARTITION", "")
     try:
@@ -415,7 +440,7 @@ def _writable(path: str) -> str | None:
 
 
 def check_durable_dir(r: Report) -> None:
-    """Both homes of a run must be writable: the live run dir (checkpoints) and the /share1 mirror."""
+    """Both homes of a run must be writable: the live run dir (checkpoints) and the durable mirror on /home2."""
     for label, var in (
         ("run dir (checkpoints, live outputs)", "MC_RUN_DIR"),
         ("durable mirror dir", "MC_DURABLE_DIR"),
@@ -428,20 +453,6 @@ def check_durable_dir(r: Report) -> None:
             r.ok(f"{label} writable: {path}")
         else:
             r.fail(label, f"{path} not writable ({err})")
-    # /share1 quota on Ada is 25 GB and 3,000 files per user; warn before it bites.
-    stage = os.environ.get("MC_STAGE_ROOT")
-    if stage and Path(stage).is_dir():
-        try:
-            n_files = sum(1 for _ in Path(stage).rglob("*") if _.is_file())
-            n_bytes = sum(p.stat().st_size for p in Path(stage).rglob("*") if p.is_file())
-            msg = f"{stage}: {n_bytes / 2**30:.1f} GiB in {n_files} files (quota ~25 GB / 3000 files)"
-            if n_bytes > 20 * 2**30 or n_files > 2500:
-                r.warn("/share1 usage", msg)
-            else:
-                r.ok(msg)
-            r.facts["share1_usage"] = {"gib": round(n_bytes / 2**30, 2), "files": n_files}
-        except OSError as e:
-            r.warn("/share1 usage", str(e))
 
 
 def main() -> int:

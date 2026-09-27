@@ -1,6 +1,6 @@
 """Assertions over a finished smoke run (Task B / D5 / D6 / D1 / Task D), given its run dir:
 
-    MC_SMOKE_RUN_DIR=/share1/.../runs/<user>/smoke-s42-<job> make gpu-test
+    MC_SMOKE_RUN_DIR=/scratch/$USER/mixed-cuts/runs/smoke-s42-<job> make gpu-test
 
 The smoke config runs 2 steps: step 1's |S_t| statistics are summarised at step 2 (one-step lag).
 """

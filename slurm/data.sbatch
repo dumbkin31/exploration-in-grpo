@@ -17,3 +17,6 @@ cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source configs/ada.env.sh
 [ -f "${MC_STAGE_ROOT}/MANIFEST.json" ] || { echo "run 'make prefetch' on the login node first"; exit 1; }
 "${MC_VENV_DIR}/bin/python" scripts/prepare_data.py
+echo "== preflight with the staged model + data =="
+mkdir -p "${MC_STAGE_ROOT}/jobs"
+"${MC_VENV_DIR}/bin/python" scripts/check_env.py --facts-json "${MC_STAGE_ROOT}/jobs/data_${SLURM_JOB_ID}_env_facts.json" || true

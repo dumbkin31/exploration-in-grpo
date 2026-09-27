@@ -1,5 +1,9 @@
 # 009: Checkpoints on node-local scratch, small outputs mirrored to /share1
 
+> **Amended by [010](010-share1-is-login-node-local.md)** (same day, later): `/share1` turned out to be a
+> local disk of the login node, invisible from compute nodes, so the durable side of this layout is
+> `/home2/<user>/mixed-cuts-data` (25 GB / 300k files), not `/share1`. Everything else here stands.
+
 **Measured on Ada (2026-09-27)**: `/share1/<user>` has a quota of 25,000 MB (hard 27,000 MB) and
 3,000 files, not the 100 GB the wiki claimed. One full-fine-tune checkpoint (fp32 master + Adam
 for 1.72 B params) is ~21 GB, and saving the next one before pruning the old needs ~42 GB. The
@@ -29,7 +33,7 @@ node-local scratch over asking for a larger quota.
    node keeps its caches under `$HOME/.cache/mixed-cuts`), and the mirror packs the per-step
    directories `cuts_stats/` and `rollout_dumps/` into one `.tar.gz` each instead of copying
    hundreds of small files (`tar xzf` them locally to read).
-5. **Switching back**: if the quota is ever raised to >= ~150 GB, `MC_CHECKPOINT_HOME=share1` in
+5. **Switching back**: if the quota is ever raised to >= ~150 GB, `MC_CHECKPOINT_HOME=durable` in
    `configs/local.env.sh` restores the single-directory layout of decision 005; nothing else changes.
 
 Also fixed while measuring:

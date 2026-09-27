@@ -38,7 +38,7 @@ log "== 3/6 freeze -> requirements/lock.txt"
 uv pip freeze --python "${PY}" > requirements/lock.txt
 log "$(wc -l < requirements/lock.txt) pinned lines"
 log "== 4/6 preflight (no staged-data check yet)"
-"${PY}" scripts/check_env.py --no-staged --facts-json "${MC_STAGE_ROOT}/setup_env_facts_${SLURM_JOB_ID}.json" || true
+"${PY}" scripts/check_env.py --no-staged --facts-json "${MC_STAGE_ROOT}/jobs/setup_${SLURM_JOB_ID}_env_facts.json" || true
 log "== 5/6 interface tests that need vLLM/verl + compose-check"
 "${PY}" -m pytest -q tests/test_vllm_logits_processor.py tests/test_agent_loop_verl.py -p no:cacheprovider
 for c in base_grpo smoke math_grpo math_mixed_cuts; do "${PY}" scripts/compose_config.py "$c" --check; done

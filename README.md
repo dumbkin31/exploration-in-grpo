@@ -38,14 +38,14 @@ Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions
 | Attention (rollout) | vLLM **`TRITON_ATTN`**, set explicitly | `FLASH_ATTN` and `FLASHINFER` require capability 8.0 in vLLM 0.24.0; XFORMERS no longer exists ([004](docs/decisions/004-attention-backend-and-engine-version.md)). |
 | Attention (training) | HF `sdpa`, `use_remove_padding: false` | FlashAttention-2 needs sm_80; `flash-attn` is not installed. |
 | Engine | vLLM V1 engine (V0 is gone); **Model Runner V1** is forced by the custom logits processor | never set `VLLM_USE_V2_MODEL_RUNNER`; the preflight and the job logs check it. |
-| Memory | 11 GiB/GPU, 128 GB host RAM, 40 cores | section 4; request `--mem-per-cpu=3G` (120 GB). |
+| Memory | 11 GiB/GPU, 128 GB host RAM, 40 cores | section 4; request `--mem-per-cpu=3000M` (117 GB). |
 | SLURM | `-A nlp --qos=normal -p u22 -C 2080ti -N 1 --gres=gpu:4 -c 40 --mem-per-cpu=3000M` (`MaxMemPerCPU=3000`; `3G` is rejected); 4 GPUs/job, 12 across the group; interactive `srun` capped at 6 h | all real runs are `sbatch`; templates in `slurm/`. |
-| Storage | `/home2/$USER` 25 GB NFS (code+venv only); `/share1` durable but **25 GB / 3,000 files per user** (measured); `/scratch` node-local 1.8 TB, purged after ~7 days | section 3: checkpoints on scratch, small outputs mirrored to `/share1` ([009](docs/decisions/009-scratch-checkpoints-quota.md)). |
+| Storage | `/home2/$USER` 25 GB / 300k files NFS, the **only durable file system compute nodes see**; `/share1` is a local disk of the login node (measured: absent on the gnodes); `/scratch` node-local 1.8 TB, purged after ~7 days | section 3: code, venv, staged model/data and each run's small outputs on `/home2`; checkpoints on scratch ([009](docs/decisions/009-scratch-checkpoints-quota.md), [010](docs/decisions/010-share1-is-login-node-local.md)). |
 
-**TODO(cluster)**, detected at runtime by `scripts/check_env.py` and recorded in each job's `env_facts.json`:
-whether compute nodes reach huggingface.co / api.wandb.ai; whether `/share1` is mounted on compute nodes
-(the job aborts early if not); `MaxMemPerCPU` on `u22`; the attention backend and model runner vLLM
-actually chose.
+Measured on 2026-09-27 (setup job 2719025 on gnode084, a CPU diagnostic on gnode043) and re-checked by
+`scripts/check_env.py` in every job (`env_facts.json`): compute nodes reach huggingface.co and api.wandb.ai;
+`/share1` does not exist on compute nodes (it is a local ext4 disk of the login node); `u22` has
+`MaxMemPerCPU=3000`; vLLM 0.24.0 picks `TRITON_ATTN` and Model Runner V1 on the 2080 Ti.
 
 ## 2. Pins
 
@@ -70,36 +70,40 @@ cross-checked against verl v0.9.0 (`setup.py`, `requirements.txt`, `docker/Docke
 
 Files: `requirements/base.txt` (hand pins, cluster), `requirements/dev.txt` (CPU tests),
 `requirements/prefetch.txt` (login node downloads) and `requirements/lock.txt` (full freeze, generated on a
-2080 Ti node by `make lock`; commit it after the first successful `make setup`).
+2080 Ti node by the setup job, `make sbatch-setup`; first committed 2026-09-27 from gnode084).
 
 ## 3. Storage layout and job lifecycle
 
 ```
-/home2/$USER/<repo>                       code + .venv                          (25 GB quota: NOTHING else)
-/share1/$USER/mixed-cuts/                 MC_STAGE_ROOT                         durable, 25 GB / 3,000 files
-  models/Qwen3-1.7B/                        staged weights (~3.4 GB)            (make prefetch, login node)
-  data/*.parquet + MANIFEST.json            verl-schema datasets                (make data)
-  runs/$USER/<config>-s<seed>/              MIRROR of each run (everything but checkpoints), every 10 min:
-    metrics.jsonl  phases.jsonl  gpu_mem.jsonl  wandb/  memory_profile.md
-    cuts_stats.tar.gz  rollout_dumps.tar.gz     per-step files packed (3,000-file quota)
-    jobs/<slurm job id>/                      per-submission logs, preflight report, env_facts.json
-    node.txt                                  which node holds the checkpoints (resubmissions pin it)
+/home2/$USER/                             NFS, 25 GB / 300k files per user, mounted on EVERY node
+  mixed-cuts/ (this repo)                   code + .venv (~9.6 GB)
+  mixed-cuts-data/                          MC_STAGE_ROOT (durable)
+    models/Qwen3-1.7B/                        staged weights (~4.8 GB)                     (make prefetch, login node)
+    raw/                                      Hub snapshots of the datasets (~0.3 GB)      (make prefetch)
+    data/*.parquet + MANIFEST.json            verl-schema datasets                         (make sbatch-data)
+    runs/<config>-s<seed>/                    MIRROR of each run (everything but checkpoints), every 10 min:
+      metrics.jsonl  phases.jsonl  gpu_mem.jsonl  wandb/  memory_profile.md
+      cuts_stats.tar.gz  rollout_dumps.tar.gz     per-step files packed (~5x smaller; the quota is space)
+      jobs/<slurm job id>/                      per-submission logs, preflight report, env_facts.json
+      node.txt                                  which node holds the checkpoints (resubmissions pin it)
 /scratch/$USER/mixed-cuts/                MC_SCRATCH_ROOT, node-local 1.8 TB, purged after ~7 days
   runs/<config>-s<seed>/                    the LIVE run dir: checkpoints/global_step_N/ + the files above
   stage/, cache/                            staged model/data copies (re-rsynced per job), caches
+/share1/$USER/                            a local disk of the LOGIN NODE: not mounted on compute nodes, unused
 ```
 
-Why this split: one FSDP checkpoint is ~21 GB and `/share1` allows 25 GB per user, so checkpoints stay
+Why this split: one FSDP checkpoint is ~21 GB and `/home2`, the only durable file system compute nodes can
+see ([010](docs/decisions/010-share1-is-login-node-local.md)), allows 25 GB per user, so checkpoints stay
 on the node that wrote them ([009](docs/decisions/009-scratch-checkpoints-quota.md)). Consequences:
 resubmitting a run must land on the same node (`make sbatch-train` reads `node.txt` and adds `-w`); if
 that node is lost, the curves and diagnostics survive in the mirror but the run restarts from step 0.
 
 Every `slurm/*.sbatch` does: `source configs/ada.env.sh` -> preflight (`scripts/check_env.py`, aborts
-early) -> stage-in (model + parquet into `/scratch`) -> run, mirroring to `/share1` every 10 min -> on exit
+early) -> stage-in (model + parquet into `/scratch`) -> run, mirroring to `/home2` every 10 min -> on exit
 or on SLURM's `SIGUSR1` (sent 300 s before a kill): stop the GPU sampler, record the engine facts, copy this
 job's log next to the run, prune checkpoints, final mirror. Resubmitting the same `CONFIG` + `SEED` on the
 same node **resumes** from the newest checkpoint ([005](docs/decisions/005-run-naming-resume-and-checkpoints.md)).
-All paths live in `configs/ada.env.sh`; nothing in `src/` hardcodes `/scratch` or `/share1`.
+All paths live in `configs/ada.env.sh`; nothing in `src/` hardcodes `/scratch` or `/home2`.
 
 ## 4. Memory plan: one node, 4x 11 GiB
 
@@ -143,16 +147,17 @@ alerts every step on NaN/inf in actor metrics, gradient-norm spikes and early en
 git clone <this repo> ~/mixed-cuts && cd ~/mixed-cuts && cp .env.example .env   # add HF_TOKEN for GPQA
 curl -LsSf https://astral.sh/uv/install.sh | sh                                    # once, if uv is missing
 source configs/ada.env.sh
-make setup-login && make prefetch      # Qwen3-1.7B + datasets -> /share1/$USER/mixed-cuts/{models,raw} (~4 GB)
+make setup-login && make prefetch      # Qwen3-1.7B + datasets -> ~/mixed-cuts-data/{models,raw} (~5 GB on /home2)
 
 # 1. build the environment ON A COMPUTE NODE; also builds the parquet data and runs the vLLM/verl tests
 make sbatch-setup
 git add requirements/lock.txt && git commit -m "lock cluster env"
+make sbatch-data                       # only if prefetch finished after the setup job ran (it builds the parquet + a full preflight)
 
-# 2. measure before committing compute (each job writes to /share1/$USER/mixed-cuts/runs/$USER/...)
+# 2. measure before committing compute (each job mirrors to ~/mixed-cuts-data/runs/<run>/)
 make sbatch-bench                      # tokens/s + peak memory: TP=4 layout and TP=1; attention backend line
 make sbatch-smoke                      # 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS), plan A, TP=4
-MC_SMOKE_RUN_DIR=/share1/$USER/mixed-cuts/runs/$USER/smoke-s42-<job> make gpu-test   # inside an allocation
+MC_SMOKE_RUN_DIR=/scratch/$USER/mixed-cuts/runs/smoke-s42-<job> make gpu-test   # inside an allocation
 make sbatch-resume-test                # kills itself at step 15, resubmits, checks it resumed at 16
 
 # 3. the two arms (resubmit the same command to resume; use SEED=1,2,3 later for three seeds per arm)
@@ -161,7 +166,7 @@ make sbatch-train CONFIG=math_mixed_cuts SEED=1
 
 # 4. evaluate a checkpoint (16 samples per problem; pass@1, pass@16, maj@16 with 95% CIs).
 #    Checkpoints live on the node named in the run's node.txt; merge and evaluate there.
-NODE=$(sed -n 's/^node=//p' /share1/$USER/mixed-cuts/runs/$USER/math_mixed_cuts-s1/node.txt | tail -1)
+NODE=$(sed -n 's/^node=//p' ~/mixed-cuts-data/runs/math_mixed_cuts-s1/node.txt | tail -1)
 srun -A nlp -p u22 -w $NODE -c 8 -t 01:00:00 scripts/merge_ckpt.sh /scratch/$USER/mixed-cuts/runs/math_mixed_cuts-s1/checkpoints
 make sbatch-eval CKPT=/scratch/$USER/mixed-cuts/runs/math_mixed_cuts-s1/checkpoints/hf/global_step_100 NODE=$NODE SEED=0
 ```
