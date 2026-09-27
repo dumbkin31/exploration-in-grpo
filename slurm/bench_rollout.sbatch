@@ -42,5 +42,5 @@ mc_log "== TP=1 start-up probe at util 0.85 =="
 CUDA_VISIBLE_DEVICES="${GPU0}" python scripts/bench_rollout.py "${COMMON[@]}" --tp 1 --concurrency 1 --max-tokens 32 \
   --gpu-memory-utilization 0.85 --out "${MC_RUN_DIR}/bench_tp1_util085.json" 2>&1 | tee "${MC_JOB_DIR}/bench_tp1_util085.log" \
   || mc_log "WARN: the engine did not start at util 0.85 on this node; keep 0.80"
-grep -hoE "Using [A-Z_]+ attention backend out of potential backends: \[[^]]*\]|GPU KV cache size: [^,]+|Maximum concurrency for [^:]+: [^ ]+|[0-9]+ preempt[a-z]*|Sleep mode [a-z ]+" \
+grep -hoE "Using AttentionBackendEnum\.[A-Z_]+ backend|Using V[12] Model Runner|GPU KV cache size: [^,]+|Maximum concurrency for [^:]+: [^ ]+|Available KV cache memory: [^ ]+ GiB|[0-9]+ preempt[a-z]*|init engine [^)]*\)" \
   "${MC_JOB_DIR}"/bench_tp*.log | sort | uniq -c | tee "${MC_RUN_DIR}/bench_engine_facts.txt" || true

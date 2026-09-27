@@ -53,10 +53,10 @@ class GpuMemPoller(threading.Thread):
         super().__init__(daemon=True)
         self.interval = interval
         self.peak_mib: list[int] = []
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
 
     def run(self) -> None:
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             try:
                 out = subprocess.run(
                     _nvidia_smi_cmd(),
@@ -73,10 +73,10 @@ class GpuMemPoller(threading.Thread):
                 ]
             except Exception:  # noqa: BLE001
                 pass
-            self._stop.wait(self.interval)
+            self._stop_event.wait(self.interval)
 
     def stop(self) -> list[int]:
-        self._stop.set()
+        self._stop_event.set()
         self.join(timeout=5)
         return self.peak_mib
 
@@ -110,6 +110,14 @@ def main() -> int:
     )
     ap.add_argument("--max-num-batched-tokens", type=int, default=None, help="chunked-prefill budget")
     ap.add_argument("--enforce-eager", action="store_true")
+    ap.add_argument(
+        "--logits-processor",
+        default="cuts.vllm_logits_processor:CutsLogitsProcessor",
+        help="registered like training does; custom LPs make vLLM fall back to Model Runner V1 (the runner the arms use)",
+    )
+    ap.add_argument(
+        "--plain", action="store_true", help="no logits processor: bare engine (Model Runner V2 on vLLM 0.24)"
+    )
     ap.add_argument("--tp", type=int, default=1, help="tensor parallel size (4 = the training layout)")
     ap.add_argument(
         "--attention-backend", default="TRITON_ATTN", help="vLLM attention backend (sm_75: TRITON_ATTN)"
@@ -134,8 +142,21 @@ def main() -> int:
         "tensor_parallel_size": args.tp,
         "max_tokens": args.max_tokens,
         "gpu_memory_utilization": args.gpu_memory_utilization,
+        "max_model_len": args.max_model_len,
+        "max_num_seqs": args.max_num_seqs,
+        "max_num_batched_tokens": args.max_num_batched_tokens,
+        "logits_processors": [] if args.plain else [args.logits_processor],
     }
     print(json.dumps(info, indent=2, default=str))
+
+    def _write(partial: bool) -> None:  # after every level, so a crash keeps the numbers
+        if args.out:
+            info["results"] = results
+            info["partial"] = partial
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(json.dumps(info, indent=2, default=str))
+
+    results: list[dict] = []
 
     poller = GpuMemPoller()
     poller.start()
@@ -148,6 +169,7 @@ def main() -> int:
         **({"max_num_seqs": args.max_num_seqs} if args.max_num_seqs else {}),
         **({"max_num_batched_tokens": args.max_num_batched_tokens} if args.max_num_batched_tokens else {}),
         enforce_eager=args.enforce_eager,
+        **({} if args.plain else {"logits_processors": [args.logits_processor]}),
         tensor_parallel_size=args.tp,
         attention_config={"backend": args.attention_backend},
         seed=0,
@@ -155,7 +177,6 @@ def main() -> int:
     info["engine_startup_seconds"] = time.time() - t0
     info["peak_mib_after_startup"] = poller.peak_mib
 
-    results = []
     for conc in args.concurrency:
         convs = load_prompts(args.data_dir, conc)
         sp = SamplingParams(temperature=1.0, top_p=1.0, max_tokens=args.max_tokens, ignore_eos=True, seed=0)
@@ -184,6 +205,7 @@ def main() -> int:
         }
         print(json.dumps(row))
         results.append(row)
+        _write(partial=True)
 
     info["peak_mib"] = poller.stop()
     info["results"] = results
@@ -194,9 +216,8 @@ def main() -> int:
         "the concurrency budget at your max_model_len. Grep the log for 'Using ... attention backend' too."
     )
     print(json.dumps(info, indent=2, default=str))
+    _write(partial=False)
     if args.out:
-        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out).write_text(json.dumps(info, indent=2, default=str))
         print(f"written {args.out}")
     return 0
 

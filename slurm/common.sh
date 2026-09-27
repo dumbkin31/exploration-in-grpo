@@ -140,20 +140,35 @@ PY
 }
 
 mc_record_host_peak() {
-  # The research/low cgroup is 30 GB and the LoRA plan budgets ~26-27 GB (decision 012): keep the evidence.
-  local out="${MC_JOB_DIR}/host_mem_peak.txt" cg f
-  cg="$(awk -F: '{print $NF; exit}' /proc/self/cgroup 2>/dev/null)"
-  for f in "/sys/fs/cgroup${cg}/memory.peak" "/sys/fs/cgroup/memory${cg}/memory.max_usage_in_bytes" \
-           /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory/memory.max_usage_in_bytes; do
-    if [ -r "${f}" ]; then
-      local bytes; bytes="$(cat "${f}")"
-      echo "peak_bytes=${bytes} source=${f}" > "${out}"
-      mc_log "host memory peak (cgroup): $((bytes / 1048576)) MiB"
-      return 0
-    fi
-  done
-  echo "peak_bytes=unknown (no readable cgroup counter; use: sacct -j ${MC_JOB_ID} --format=MaxRSS)" > "${out}"
-  mc_log "host memory peak: no readable cgroup counter; use sacct -j ${MC_JOB_ID} --format=MaxRSS"
+  # The research/low cgroup is 30 GB (decision 012) and kernel 5.15's cgroup v2 has no memory.peak, so
+  # the GPU sampler sidecar (profile_memory.py --watch) also samples the job cgroup's memory.current;
+  # the peak is the max over this job's samples. sstat's MaxRSS (largest single process) is kept beside it.
+  local out="${MC_JOB_DIR}/host_mem_peak.txt" now="" peak="" rss=""
+  local cur="/sys/fs/cgroup/system.slice/slurmstepd.scope/job_${SLURM_JOB_ID:-x}/memory.current"
+  [ -r "${cur}" ] && now="$(( $(cat "${cur}") / 1048576 ))"
+  if [ -f "${MC_RUN_DIR}/gpu_mem.jsonl" ]; then
+    peak="$(python - "${MC_RUN_DIR}/gpu_mem.jsonl" "${MC_JOB_ID}" <<'PY'
+import json, sys
+best = 0
+for line in open(sys.argv[1]):
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    if str(d.get("job")) == sys.argv[2] and d.get("host_mib"):
+        best = max(best, int(d["host_mib"]))
+print(best or "")
+PY
+)"
+  fi
+  rss="$(sstat -n -P -j "${SLURM_JOB_ID:-x}.batch" -o MaxRSS 2>/dev/null | head -1)"
+  {
+    echo "cgroup_peak_mib=${peak:-unknown} (max of the sampled memory.current of this job)"
+    echo "cgroup_now_mib=${now:-unknown}"
+    echo "sstat_maxrss_batch=${rss:-unknown} (largest single process)"
+    echo "request=cpus:${SLURM_CPUS_PER_TASK:-?} mem_per_cpu:${SLURM_MEM_PER_CPU:-?}M"
+  } > "${out}"
+  mc_log "host memory: cgroup peak ${peak:-?} MiB (sampled), now ${now:-?} MiB, sstat MaxRSS ${rss:-?}"
 }
 
 mc_check_node_pin() {
@@ -233,7 +248,7 @@ mc_engine_log_facts() {
   local out="${MC_JOB_STDOUT}"
   [ -f "${out}" ] || return 0
   local attn mrv2
-  attn="$(grep -oE "Using [A-Z_]+ attention backend out of potential backends: \[[^]]*\]" "${out}" | head -1 || true)"
+  attn="$(grep -oE "Using AttentionBackendEnum\.[A-Z_]+ backend|Using [A-Z_]+ attention backend out of potential backends: \[[^]]*\]" "${out}" | head -1 || true)"
   if grep -q "Using V2 Model Runner" "${out}"; then mrv2=true; else mrv2=false; fi
   mc_log "engine facts: attention='${attn:-not found in log}' model_runner_v2=${mrv2}"
   python - "${MC_ENV_FACTS_JSON}" "${attn}" "${mrv2}" <<'PY'

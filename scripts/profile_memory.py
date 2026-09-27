@@ -4,9 +4,11 @@
 Two modes:
 
 ``--watch OUT.jsonl``
-    Sidecar started by ``slurm/common.sh``: samples ``nvidia-smi --query-gpu=index,memory.used``
-    every ``--interval`` seconds and appends ``{"t": ..., "job": ..., "mem_mib": [g0, g1, ...]}``.
-    It is killed by the job's EXIT trap, so data exists however the job ends.
+    Sidecar started by ``slurm/common.sh``: samples ``nvidia-smi --query-gpu=index,memory.used`` and
+    the SLURM job cgroup's ``memory.current`` (host RSS of every process in the job) every ``--interval``
+    seconds and appends ``{"t": ..., "job": ..., "mem_mib": [g0, g1, ...], "host_mib": h}``.
+    It is killed by the job's EXIT trap, so data exists however the job ends. The host sample matters on
+    research/low: the cgroup is 30 GB and kernel 5.15 has no ``memory.peak`` (decision 012).
 
 ``--report RUN_DIR``
     Joins ``RUN_DIR/gpu_mem.jsonl`` with ``RUN_DIR/phases.jsonl`` (written by the trainer:
@@ -63,13 +65,52 @@ def sample_gpu_mem() -> list[int] | None:
     return [mems[i] for i in sorted(mems)] if mems else None
 
 
+def _host_mem_file() -> Path | None:
+    """The SLURM job's cgroup-v2 memory.current (readable inside the job); None outside SLURM."""
+    job = os.environ.get("SLURM_JOB_ID")
+    cands = []
+    if job:
+        cands.append(Path(f"/sys/fs/cgroup/system.slice/slurmstepd.scope/job_{job}/memory.current"))
+    try:  # walk up from our own cgroup to the job_* level
+        own = Path("/proc/self/cgroup").read_text().strip().splitlines()[0].split(":", 2)[-1]
+        p = Path("/sys/fs/cgroup" + own)
+        while p != Path("/sys/fs/cgroup"):
+            if p.name.startswith("job_"):
+                cands.append(p / "memory.current")
+                break
+            p = p.parent
+    except (OSError, IndexError):
+        pass
+    for c in cands:
+        try:
+            c.read_text()
+            return c
+        except OSError:
+            continue
+    return None
+
+
+def sample_host_mib(f: Path | None) -> int | None:
+    if f is None:
+        return None
+    try:
+        return int(f.read_text().strip()) // 1048576
+    except (OSError, ValueError):
+        return None
+
+
 def watch(path: Path, interval: float, job: str) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
+    host_file = _host_mem_file()
     with open(path, "a", encoding="utf-8") as f:
         while True:
             mems = sample_gpu_mem()
             if mems is not None:
-                f.write(json.dumps({"t": time.time(), "job": job, "mem_mib": mems}) + "\n")
+                row = {"t": time.time(), "job": job, "mem_mib": mems}
+                host = sample_host_mib(host_file)
+                if host is not None:
+                    row["host_mib"] = host
+                f.write(json.dumps(row) + "\n")
                 f.flush()
             time.sleep(interval)
 
@@ -121,6 +162,23 @@ def report(run_dir: Path) -> str:
     lines.append("| whole job | " + str(len(samples)) + " | " + " | ".join(str(v) for v in overall) + " |")
     lines.append("")
     lines.append("11 GiB cards hold 11264 MiB; leave >= 1 GiB headroom for fragmentation.")
+    # host RSS of the whole job (cgroup memory.current, sampled): the 30 GB research/low cgroup (012)
+    hosts = [s["host_mib"] for s in samples if s.get("host_mib") is not None]
+    if hosts:
+        host_peak: dict[str, int] = defaultdict(int)
+        for s in samples:
+            if s.get("host_mib") is None:
+                continue
+            for name, wins in windows.items():
+                if any(a <= s["t"] <= b for a, b, _ in wins):
+                    host_peak[name] = max(host_peak[name], s["host_mib"])
+        lines.append("")
+        lines.append(
+            f"Host RSS of the job cgroup (sampled memory.current): peak {max(hosts)} MiB, "
+            f"median {sorted(hosts)[len(hosts) // 2]} MiB"
+            + (" | per phase: " + ", ".join(f"{k} {v}" for k, v in host_peak.items()) if host_peak else "")
+            + ". research/low cgroup limit: 30000 MiB."
+        )
     # verl's torch counters
     keys = [
         "actor/perf/max_memory_allocated_gb",
