@@ -109,12 +109,11 @@ export MC_SLURM_SIGNAL_SECS="${MC_SLURM_SIGNAL_SECS:-300}"  # SIGUSR1 this many 
 export MC_MIN_DRIVER_MAJOR="${MC_MIN_DRIVER_MAJOR:-580}"
 export MC_SLURM_EXCLUDE="${MC_SLURM_EXCLUDE:-gnode043,gnode050,gnode054,gnode056,gnode066,gnode072,gnode073,gnode076,gnode079,gnode080,gnode082,gnode085,gnode088,gnode089,gnode090,gnode091}"
 export MC_BAD_NODES_FILE="${MC_BAD_NODES_FILE:-${MC_STAGE_ROOT}/bad_nodes.txt}"
-mc_sbatch_exclude() {  # prints "-x <nodes>" for sbatch: the static list + every node recorded in MC_BAD_NODES_FILE
-  local list="${MC_SLURM_EXCLUDE:-}" extra=""
-  if [ -f "${MC_BAD_NODES_FILE:-/nonexistent}" ]; then
-    extra="$(awk 'NF{print $1}' "${MC_BAD_NODES_FILE}" | sort -u | paste -s -d , -)"
-  fi
-  [ -n "${extra}" ] && list="${list:+${list},}${extra}"
+mc_sbatch_exclude() {  # prints "-x <nodes>" for sbatch: the static list + every node recorded in MC_BAD_NODES_FILE, deduplicated
+  local list
+  list="$( { printf '%s\n' "${MC_SLURM_EXCLUDE:-}" | tr ',' '\n'
+             [ -f "${MC_BAD_NODES_FILE:-/nonexistent}" ] && awk 'NF{print $1}' "${MC_BAD_NODES_FILE}"
+           } | grep -v '^$' | sort -u | paste -s -d , - || true)"
   [ -n "${list}" ] && printf -- '-x %s' "${list}"
   return 0
 }
