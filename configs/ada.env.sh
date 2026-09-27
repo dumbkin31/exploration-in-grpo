@@ -97,6 +97,9 @@ export WANDB_INIT_TIMEOUT="${WANDB_INIT_TIMEOUT:-180}"
 # research_1gpu (default): account research / QoS low, whose PER-USER limits are 1 GPU, 10 CPUs,
 #   32 GB host RAM, 1 node per job, 5 jobs, 4-day MaxWall. The configs' defaults already select
 #   layout=research_1gpu + memory=plan_b_lora.
+# nlp_1gpu: the same 1-GPU LoRA layout submitted on the shared nlp account: QoS normal has priority 40
+#   (research/low: 10) and no per-user RAM cap, so a freed GPU goes to it first and it may take 60 GB;
+#   it counts against the group's 12 GPUs (pending reason AssocGrpGRES when the group is at its cap).
 # nlp_4gpu: the original 4x 2080 Ti full-fine-tune layout on the shared nlp account (12 GPUs group-wide).
 # `make sbatch-*` passes $(mc_sbatch_args) (CLI flags override #SBATCH headers, which carry the research
 # defaults for hand submission) and slurm/common.sh passes $MC_TRAIN_OVERRIDES to Hydra.
@@ -107,13 +110,18 @@ case "${MC_LAYOUT}" in
     export MC_TRAIN_OVERRIDES=""                       # the config defaults already select this layout
     export MC_REWARD_WORKERS=2
     ;;
+  nlp_1gpu)
+    export MC_SLURM_ACCOUNT=nlp MC_SLURM_QOS=normal MC_SLURM_GPUS=1 MC_SLURM_CPUS=20   # 20 x 3000M = 60 GB host RAM
+    export MC_TRAIN_OVERRIDES=""                       # the config defaults (layout=research_1gpu) fit 1 GPU
+    export MC_REWARD_WORKERS=2
+    ;;
   nlp_4gpu)        # override any of these in configs/local.env.sh (sourced last), not in the environment
     export MC_SLURM_ACCOUNT=nlp MC_SLURM_QOS=normal MC_SLURM_GPUS=4 MC_SLURM_CPUS=40
     export MC_TRAIN_OVERRIDES="layout=nlp_4gpu memory=plan_a_fullft_offload"
     export MC_REWARD_WORKERS=4
     ;;
   *)
-    echo "configs/ada.env.sh: unknown MC_LAYOUT='${MC_LAYOUT}' (research_1gpu | nlp_4gpu)" >&2
+    echo "configs/ada.env.sh: unknown MC_LAYOUT='${MC_LAYOUT}' (research_1gpu | nlp_1gpu | nlp_4gpu)" >&2
     return 1 2>/dev/null || exit 1
     ;;
 esac

@@ -66,6 +66,10 @@ peaks (`memory_profile.md`) and the cgroup host peak (`jobs/<id>/host_mem_peak.t
 * `MC_LAYOUT` in `configs/ada.env.sh` (default `research_1gpu`; `nlp_4gpu` restores 002) sets the sbatch
   flags (`mc_sbatch_args`: account, QoS, GPUs, CPUs, memory + the driver exclude list) and the Hydra overrides
   (`MC_TRAIN_OVERRIDES`). `make sbatch-*` passes both; the `#SBATCH` headers carry the research defaults.
+  `nlp_1gpu` submits the same 1-GPU LoRA job on the shared `nlp` account: priority 40 instead of 10 and no
+  per-user RAM cap (20 CPUs = 60 GB), at the price of counting against the group's 12 GPUs. The account is only
+  a submit flag: resume and node pinning do not depend on it, so a run may alternate between the two accounts
+  across its 4-day walls, and for short jobs a twin can be submitted under both and the loser cancelled.
 * `compose-check` asserts `tp == n_gpus_per_node == MC_SLURM_GPUS`, refuses 1 GPU without LoRA + the offload
   policy + merged weights, caps Ray's object store and the worker counts, and the preflight compares the
   visible GPUs with the layout.
