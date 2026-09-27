@@ -49,7 +49,7 @@ class CutsStatsWriter:
         self._pid = os.getpid()
         self._tp_rank = int(tp_rank)
         # PIDs repeat across nodes and across restarts of a run that share one stats_dir on
-        # /share1, so every writer instance gets its own file name suffix.
+        # shared storage, so every writer instance gets its own file name suffix.
         self.writer_id = f"pid{self._pid}-{uuid.uuid4().hex[:8]}"
 
     def _file_for(self, stats_dir: str, step: int | None) -> IO[str]:

@@ -13,8 +13,8 @@
 #   MC_RUN_DIR     = live run dir: checkpoints/, metrics.jsonl, cuts_stats/, rollout_dumps/,
 #                    phases.jsonl, gpu_mem.jsonl, wandb/, jobs/<jobid>/
 #                    MC_CHECKPOINT_HOME=scratch (default): $MC_SCRATCH_RUNS_DIR/<run>, node-local,
-#                    because /share1 has a 25 GB quota and one checkpoint is ~21 GB
-#   MC_DURABLE_DIR = $MC_RUNS_DIR/<run> on /share1: everything except checkpoints, mirrored every
+#                    because /home2 (the durable NFS) has a 25 GB quota and one checkpoint is ~21 GB
+#   MC_DURABLE_DIR = $MC_RUNS_DIR/<run> on /home2 (NFS, every node): everything except checkpoints, mirrored every
 #                    MC_MIRROR_INTERVAL seconds and at exit, plus node.txt (which node holds the
 #                    checkpoints; `make sbatch-train` pins resubmissions to it with -w)
 #   MC_SCRATCH_ROOT/stage                        staged model/data copies (re-rsynced per job)
@@ -29,13 +29,32 @@ export MC_REPO_ROOT="${MC_REPO_ROOT:-$(cd "${_MC_COMMON_DIR}/.." && pwd)}"
 
 mc_log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
 
+mc_check_driver() {
+  # The pinned wheels are CUDA 13.0 builds and need an NVIDIA driver >= MC_MIN_DRIVER_MAJOR (580); the
+  # 2080 Ti nodes are mixed (docs/decisions/011). Runs before anything is written, so a bad node leaves no
+  # node.txt behind. The node is recorded in MC_BAD_NODES_FILE, which `make sbatch-*` excludes from then on.
+  local drv major min="${MC_MIN_DRIVER_MAJOR:-580}"
+  drv="$(sed -n 's/.*Kernel Module *\([0-9.]*\).*/\1/p' /proc/driver/nvidia/version 2>/dev/null || true)"
+  major="${drv%%.*}"
+  if [ -z "${drv}" ] || ! [ "${major}" -ge "${min}" ] 2>/dev/null; then
+    mc_log "ERROR: $(hostname) has NVIDIA driver '${drv:-none}' (need >= ${min} for the cu130 wheels; decision 011)"
+    if [ -n "${MC_BAD_NODES_FILE:-}" ] && mkdir -p "$(dirname "${MC_BAD_NODES_FILE}")" 2>/dev/null; then
+      echo "$(hostname) driver=${drv:-none} job=${SLURM_JOB_ID:-?} $(date '+%F')" >> "${MC_BAD_NODES_FILE}"
+      mc_log "recorded in ${MC_BAD_NODES_FILE}: rerun the same make sbatch-* command, it now excludes this node"
+    fi
+    exit 6
+  fi
+  mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu130 wheels (>= ${min})"
+}
+
 mc_job_init() {
   # shellcheck source=/dev/null
   source "${MC_REPO_ROOT}/configs/ada.env.sh"
+  mc_check_driver
   export MC_JOB_ID="${SLURM_JOB_ID:-local-$$}"
   export MC_SEED="${MC_SEED:-42}"
   export MC_RUN_NAME="${1:-${MC_RUN_NAME:-${SLURM_JOB_NAME:-job}-s${MC_SEED}}}"
-  export MC_DURABLE_DIR="${MC_DURABLE_DIR:-${MC_RUNS_DIR}/${MC_RUN_NAME}}"   # /share1: mirror of small outputs
+  export MC_DURABLE_DIR="${MC_DURABLE_DIR:-${MC_RUNS_DIR}/${MC_RUN_NAME}}"   # /home2 (NFS): mirror of small outputs
   if [ "${MC_CHECKPOINT_HOME:-scratch}" = "scratch" ]; then
     export MC_RUN_DIR="${MC_RUN_DIR:-${MC_SCRATCH_RUNS_DIR}/${MC_RUN_NAME}}" # node-local: checkpoints + live outputs
   else
@@ -103,14 +122,14 @@ mc_check_node_pin() {
 }
 
 mc_mirror() {
-  # Copy everything except checkpoints from the (possibly node-local) run dir to /share1. Idempotent.
-  # /share1 has a ~3,000-FILE quota per user, so the two per-step directories (one file per step
-  # each) are packed into a single archive apiece instead of being mirrored file by file.
+  # Copy everything except checkpoints from the (possibly node-local) run dir to the durable dir on
+  # /home2 (docs/decisions/010). Idempotent. The durable side has a 25 GB quota, so the two per-step
+  # directories (one jsonl per step each, ~5x smaller gzipped) are packed into one archive apiece.
   [ "${MC_RUN_DIR}" = "${MC_DURABLE_DIR}" ] && return 0
   mkdir -p "${MC_DURABLE_DIR}" 2>/dev/null || return 0
   rsync -a --exclude 'checkpoints/' --exclude 'cuts_stats/' --exclude 'rollout_dumps/' \
     --exclude '*.pt' --exclude '*.safetensors' "${MC_RUN_DIR}/" "${MC_DURABLE_DIR}/" \
-    || mc_log "WARN: mirror to ${MC_DURABLE_DIR} failed (quota? /share1 unreachable?)"
+    || mc_log "WARN: mirror to ${MC_DURABLE_DIR} failed (quota? /home2 unreachable?)"
   local d
   for d in cuts_stats rollout_dumps; do
     if [ -d "${MC_RUN_DIR}/${d}" ]; then

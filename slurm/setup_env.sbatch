@@ -8,7 +8,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH -c 8
 #SBATCH --mem-per-cpu=3000M
-#SBATCH --time=03:00:00
+#SBATCH --time=04:00:00
 #SBATCH -o slurm-%x-%j.out
 # Build the full cluster venv ON A 2080 TI NODE (Ubuntu 22.04, glibc 2.35), then freeze it, run the
 # vLLM/verl interface tests, compose-check the configs and build the parquet data. Never on the
@@ -16,6 +16,7 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source configs/ada.env.sh
+source slurm/common.sh; mc_check_driver   # mixed driver generations, decision 011
 VERL_TAG="${VERL_TAG:-v0.9.0}"
 PY="${MC_VENV_DIR}/bin/python"
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
@@ -26,9 +27,10 @@ log "scratch: $(df -h /scratch 2>/dev/null | tail -1 || echo 'NO /scratch on thi
 log "internet: huggingface.co $(curl -s -m 8 -o /dev/null -w '%{http_code}' https://huggingface.co || echo unreachable), pypi.org $(curl -s -m 8 -o /dev/null -w '%{http_code}' https://pypi.org || echo unreachable)"
 command -v uv >/dev/null || { log "uv not found; install it on the login node: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; }
 log "uv $(uv --version) ; venv -> ${MC_VENV_DIR} ; python cache -> ${UV_PYTHON_INSTALL_DIR}"
+log "package index: ${UV_DEFAULT_INDEX} (strategy ${UV_INDEX_STRATEGY}); mirror speed: $(curl -sL -o /dev/null -m 8 -w '%{speed_download}' https://pypi.tuna.tsinghua.edu.cn/packages/d2/7f/577a61bf2c8eff26e942afe53a6b03f4dbf5b4f233b832c228417d0c954e/ray-2.56.1-cp312-cp312-manylinux2014_x86_64.whl || echo ?) B/s"
 
 log "== 1/6 venv + pinned requirements (requirements/base.txt)"
-uv venv --python "${MC_PYTHON_VERSION}" "${MC_VENV_DIR}"
+uv venv --clear --python "${MC_PYTHON_VERSION}" "${MC_VENV_DIR}"   # --clear: a killed earlier build leaves a half-made venv
 uv pip install --python "${PY}" -r requirements/base.txt
 log "== 2/6 verl ${VERL_TAG} (no deps) + this package"
 uv pip install --python "${PY}" --no-deps "verl @ git+https://github.com/volcengine/verl.git@${VERL_TAG}"
@@ -37,7 +39,7 @@ log "== 3/6 freeze -> requirements/lock.txt"
 uv pip freeze --python "${PY}" > requirements/lock.txt
 log "$(wc -l < requirements/lock.txt) pinned lines"
 log "== 4/6 preflight (no staged-data check yet)"
-"${PY}" scripts/check_env.py --no-staged --facts-json "${MC_STAGE_ROOT}/setup_env_facts_${SLURM_JOB_ID}.json" || true
+"${PY}" scripts/check_env.py --no-staged --facts-json "${MC_STAGE_ROOT}/jobs/setup_${SLURM_JOB_ID}_env_facts.json" || true
 log "== 5/6 interface tests that need vLLM/verl + compose-check"
 "${PY}" -m pytest -q tests/test_vllm_logits_processor.py tests/test_agent_loop_verl.py -p no:cacheprovider
 for c in base_grpo smoke math_grpo math_mixed_cuts; do "${PY}" scripts/compose_config.py "$c" --check; done
