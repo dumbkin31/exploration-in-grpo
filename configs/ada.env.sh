@@ -65,7 +65,10 @@ export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-${MC_CACHE_ROOT}/triton}"
 export TORCHINDUCTOR_CACHE_DIR="${TORCHINDUCTOR_CACHE_DIR:-${MC_CACHE_ROOT}/torchinductor}"
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${MC_CACHE_ROOT}/pip}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-${MC_CACHE_ROOT}/uv}"
-export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-${MC_CACHE_ROOT}/uv-python}"
+# uv-managed interpreters must live on shared storage: the venv on /home2 symlinks to them, and a
+# node-local /scratch copy would vanish (purge) or be missing on the next node. ~150 MB in $HOME.
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-${HOME}/.local/share/uv/python}"
+export PATH="${HOME}/.local/bin:${PATH}"   # uv installs there; batch jobs do not source ~/.bashrc
 export RAY_TMPDIR="${RAY_TMPDIR:-${MC_CACHE_ROOT}/ray}"
 export TMPDIR="${TMPDIR:-${MC_CACHE_ROOT}/tmp}"
 export WANDB_DIR="${WANDB_DIR:-${MC_CACHE_ROOT}/wandb}"

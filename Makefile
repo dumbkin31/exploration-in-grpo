@@ -25,7 +25,7 @@ BENCH  ?= math500,aime24,aime25,amc23,gpqa_diamond
 N_SAMPLES ?= 16
 
 .PHONY: help setup-dev setup-login setup lock test gpu-test lint compose-check preflight check-env prefetch prefetch-base data \
-        bench smoke train eval sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup sbatch-resume-test clean-cache
+        bench smoke train eval sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup sbatch-data sbatch-resume-test clean-cache
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
@@ -103,8 +103,10 @@ eval: ## eval CKPT (HF dir) on BENCH with N_SAMPLES samples per problem
 	@. $(ENV_FILE); $(PY) eval/run_eval.py --ckpt "$(CKPT)" --benchmarks "$(BENCH)" --n-samples $(N_SAMPLES) --seed $(SEED)
 
 # ------------------------------------------------------------------ sbatch wrappers
-sbatch-setup: ## submit the environment build job
+sbatch-setup: ## submit the environment build job (venv, lock, tests, compose-check, data)
 	@. $(ENV_FILE); sbatch slurm/setup_env.sbatch
+sbatch-data: ## build the parquet data on a compute node (if the setup job ran before prefetch finished)
+	@. $(ENV_FILE); sbatch slurm/data.sbatch
 sbatch-bench: ## submit the 1-GPU rollout benchmark
 	@. $(ENV_FILE); sbatch slurm/bench_rollout.sbatch
 sbatch-smoke: ## submit the smoke test
