@@ -5,7 +5,9 @@
 
 Asserts, on the durable run dir shared by both jobs:
   * metrics.jsonl steps are 1..killed_at (first job) followed by a restart at
-    (last checkpoint before the kill) + 1, continuing to final_step;
+    (last checkpoint before the kill) + 1, continuing to final_step (the restart is a backwards
+    step, or, when the kill fell exactly on a checkpoint, the second job's start time from
+    jobs/<id>/job_info.txt);
   * <checkpoints dir>/latest_checkpointed_iteration.txt == final_step and that directory exists
     (pass --checkpoints-dir when checkpoints live on node-local scratch, docs/decisions/009);
   * the checkpoint the resume started from existed (global_step_<last_ckpt>);
@@ -19,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -31,6 +34,35 @@ def wandb_run_ids(run: Path) -> set[str]:
             if d.is_dir():
                 ids.add(d.name.split("-", 2)[-1] if d.name.startswith("run-") else d.name.split("-", 3)[-1])
     return ids
+
+
+def find_restart(steps: list[int], times: list[float], jobs_dir: Path) -> int | None:
+    """Index of the first metrics row logged by the resumed job.
+
+    When the kill lands between two checkpoints the resumed job re-logs some steps, so the step
+    sequence goes backwards. When the kill lands exactly on a checkpoint (kill at 15 with save_freq 5,
+    the resume test's own setting) the resume is seamless (..., 15, 16, ...) and the restart is only
+    visible from the second job's start time (jobs/<second id>/job_info.txt, written by mc_job_init).
+    """
+    for i in range(1, len(steps)):
+        if steps[i] <= steps[i - 1]:
+            return i
+    infos = sorted(
+        (p for p in jobs_dir.glob("*/job_info.txt")),
+        key=lambda p: int(p.parent.name) if p.parent.name.isdigit() else 0,
+    )
+    if len(infos) < 2:
+        return None
+    started = None
+    for line in infos[1].read_text().splitlines():
+        if line.startswith("date="):
+            started = datetime.strptime(line[5:].strip(), "%Y-%m-%d %H:%M:%S").timestamp()
+    if started is None:
+        return None
+    for i, t in enumerate(times):
+        if t and t >= started:
+            return i if i > 0 else None
+    return None
 
 
 def main() -> int:
@@ -48,10 +80,13 @@ def main() -> int:
     run = Path(args.run_dir)
     fails: list[str] = []
 
-    steps = []
+    steps: list[int] = []
+    times: list[float] = []
     for line in (run / "metrics.jsonl").read_text().splitlines() if (run / "metrics.jsonl").exists() else []:
         try:
-            steps.append(int(json.loads(line)["step"]))
+            row = json.loads(line)
+            steps.append(int(row["step"]))
+            times.append(float(row.get("time", 0.0)))
         except (ValueError, KeyError, json.JSONDecodeError):
             continue
     last_ckpt = (args.killed_at // args.save_freq) * args.save_freq
@@ -60,13 +95,11 @@ def main() -> int:
     if not steps:
         fails.append("metrics.jsonl has no steps")
     else:
-        # the first job's steps 1..killed_at, then a restart
-        try:
-            restart_idx = next(i for i in range(1, len(steps)) if steps[i] <= steps[i - 1])
-        except StopIteration:
-            restart_idx = None
+        restart_idx = find_restart(steps, times, run / "jobs")
         if restart_idx is None:
-            fails.append("no restart found in metrics.jsonl (steps never went backwards)")
+            fails.append(
+                "no restart found: steps never went backwards and jobs/*/job_info.txt gives no second start time"
+            )
         else:
             first, second = steps[:restart_idx], steps[restart_idx:]
             if first[-1] < args.killed_at:
