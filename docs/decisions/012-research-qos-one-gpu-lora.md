@@ -42,8 +42,8 @@ Facts verified in the verl v0.9.0 source before writing the configs:
 | Key | 4-GPU (002) | 1-GPU | Why |
 |---|---|---|---|
 | `trainer.n_gpus_per_node` / rollout TP | 4 / 4 | 1 / 1 | one replica = the world |
-| `rollout.gpu_memory_utilization` | 0.40 | 0.80 (bench confirms; 0.85 probed) | the actor is in host RAM during rollout: 8.8 GiB = 3.44 weights + ~1 activations/cudagraphs + ~4.3 GB KV (~39k tokens: 6 max-length or ~25 typical sequences) |
-| `rollout.max_num_seqs` / `max_num_batched_tokens` | 128 / 8192 | 32 / 4096 | KV-bound; bench picks 16/32/64 |
+| `rollout.gpu_memory_utilization` | 0.40 | 0.80 | **measured** (bench 2719260, gnode084): 4.74 GiB KV = 44,416 tokens = 7.2 max-length sequences, rollout peak 8.9 GiB. 0.85 starts too (49,360 tokens) but leaves 1.9 GiB beside vLLM; revisit after the smoke's rollout-phase profile |
+| `rollout.max_num_seqs` / `max_num_batched_tokens` | 128 / 8192 | 32 / 4096 | **measured**: 125/566/759/896/995 tok/s at concurrency 1/8/16/32/64 (1024-token responses); 4096-token responses saturate at ~285 tok/s from 8 up, so 64 only adds preemption |
 | `rollout.agent.num_workers`, `data.dataloader_num_workers` | 4, 4 | 2, 2 | 10 cores |
 | `ray_kwargs.ray_init.num_cpus` | 40 | 16 (logical) | Ray reserves ~10 for its own actors (TaskRunner 1, worker bundle 3, vLLM server 1, agent workers, TransferQueue); `<= 10` deadlocks placement. The cgroup limits real use |
 | `ray_kwargs.ray_init.object_store_memory` | 16 GB | 4 GB | 30 GB host cap |
@@ -78,9 +78,10 @@ peaks (`memory_profile.md`) and the cgroup host peak (`jobs/<id>/host_mem_peak.t
 
 ## Schedule and what the write-up must say
 
-One step = 2048 sequences x <= 5000 tokens generated on one card (~3 M tokens at 1-2.5k tok/s) plus three
-passes over ~3.5 M tokens (old log-probs, ref log-probs, update): **~1-1.5 h per step** until the bench and the
-smoke replace the estimate. 100 steps ~ 4.2-6.3 days = two submissions under the 4-day MaxWall (resume on the
+One step = 2048 sequences x <= 5000 tokens generated on one card plus three passes over the same tokens
+(old log-probs, ref log-probs, update). With the measured decode rates (~900 tok/s for short answers, ~285
+tok/s for the long tail) a realistic MATH length mix gives ~60-90 min of rollout per step, so **~1.5-2 h per
+step** until the smoke's `phases.jsonl` replaces the estimate. 100 steps ~ 4.2-6.3 days = two submissions under the 4-day MaxWall (resume on the
 pinned node). One GPU per user means the arms run sequentially under one account (~9-13 days for one seed of
 both), or in parallel from a second account (the partner's) with its own venv + data in that user's home.
 The report states: LoRA r=64 (not full fine-tuning), lr 1e-5, one GPU; both arms identical in every other

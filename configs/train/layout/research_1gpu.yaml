@@ -5,8 +5,12 @@
 #
 # Rollout budget: the actor lives in pinned host RAM (FSDP2 CPUOffloadPolicy), so vLLM can take most of
 # the card: 0.80 x 11 GiB = 8.8 GiB = 3.44 GB weights + ~1 GB activations/cudagraphs + ~4.3 GB KV
-# (~39k tokens at 112 KB/token = 6 max-length or ~25 typical sequences). `make sbatch-bench` confirms
-# gpu_memory_utilization and max_num_seqs; the update phase (vLLM asleep) peaks at ~9-9.5 GiB.
+# Measured by `make sbatch-bench` on gnode084 (2026-09-27, job 2719260, V1 runner + CUTS processor):
+# util 0.80 -> 4.74 GiB KV = 44,416 tokens (7.2 max-length sequences), rollout peak 8.9 GiB; util 0.85
+# starts too (49,360 tokens) but leaves 1.9 GiB beside vLLM, too thin next to the FSDP worker's context.
+# Decode: 125 / 566 / 759 / 896 / 995 tok/s at concurrency 1/8/16/32/64 with 1024-token responses;
+# 4096-token responses saturate at ~285 tok/s from concurrency 8 up (Triton attention at long context +
+# preemption), so max_num_seqs 32 is the knee. Update phase (vLLM asleep) is budgeted at ~9-9.5 GiB.
 trainer:
   n_gpus_per_node: 1
 actor_rollout_ref:
