@@ -16,6 +16,10 @@ mixed_cuts:
   n_std: 2
   n_cuts: 2
   dump_samples_per_step: 2
+  checks:
+    assert_non_thinking: false       # ignore_eos forces generation past <|im_end|>, where Qwen3 opens a new
+                                     # turn with a <think> block: a stress-test artefact, not a D2 violation
+                                     # (the plain smoke keeps the assertion on). The metric is still logged.
 
 data:
   train_files: ${paths.data_dir}/smoke_train.parquet
