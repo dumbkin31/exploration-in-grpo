@@ -234,6 +234,13 @@ def check_storage(r: Report) -> None:
                 f"{p} not writable here ({e}); staged data and run outputs live on /home2 (NFS), checkpoints on /scratch",
             )
             r.facts[var] = {"path": p, "writable": False}
+    cache_root = os.environ.get("MC_CACHE_ROOT", "")
+    if Path("/scratch").is_dir() and not cache_root.startswith("/scratch"):
+        r.fail(
+            "MC_CACHE_ROOT",
+            f"{cache_root} is not on node-local /scratch although this node has one: a login-node environment "
+            "leaked into the job (configs/ada.env.sh re-derives it by hostname; do not pin it in the environment)",
+        )
     # /home2 is the only durable file system compute nodes can see (docs/decisions/010): 25 GB and
     # 300k files per user hold the venv (~9.6 GB), the staged model/data (~5.2 GB) and every run's
     # durable outputs. Warn before the quota bites.

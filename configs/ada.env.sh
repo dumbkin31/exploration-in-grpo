@@ -45,6 +45,16 @@ export MC_SCRATCH_RUNS_DIR="${MC_SCRATCH_RUNS_DIR:-${MC_SCRATCH_ROOT}/runs}"
 export MC_MIRROR_INTERVAL="${MC_MIRROR_INTERVAL:-600}"                  # seconds between mirrors
 
 # --- caches ---------------------------------------------------------------------
+# sbatch exports the submitting shell's environment, so paths this file derived on the LOGIN node
+# (caches under $HOME, the login-node download settings) would ride into the job and win over the
+# node-local defaults below (smoke job 2719339 ran Ray out of /home2 that way). Re-derive every
+# host-specific value when the file is sourced on a different host than the one that exported it.
+if [ -n "${MC_ENV_HOST:-}" ] && [ "${MC_ENV_HOST}" != "$(hostname)" ]; then
+  unset MC_CACHE_ROOT MC_ON_LOGIN_NODE HF_HOME HF_DATASETS_CACHE TRITON_CACHE_DIR TORCHINDUCTOR_CACHE_DIR \
+        PIP_CACHE_DIR UV_CACHE_DIR RAY_TMPDIR TMPDIR WANDB_DIR WANDB_CACHE_DIR \
+        HF_HUB_DISABLE_XET UV_CONCURRENT_DOWNLOADS UV_CONCURRENT_INSTALLS UV_CONCURRENT_BUILDS RAYON_NUM_THREADS
+fi
+export MC_ENV_HOST="$(hostname)"
 # Compute nodes: node-local /scratch. Login node (no /scratch): $HOME/.cache/mixed-cuts (small: the
 # login node only downloads; /home2 allows 300k files, /share1 only ~3,000 and is unused, see 010).
 if [ -d "/scratch" ] && mkdir -p "${MC_SCRATCH_ROOT}" 2>/dev/null; then

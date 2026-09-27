@@ -68,6 +68,10 @@ mc_check_cuda() {
 mc_job_init() {
   # shellcheck source=/dev/null
   source "${MC_REPO_ROOT}/configs/ada.env.sh"
+  # SLURM exports the AMD device lists next to CUDA_VISIBLE_DEVICES for every --gres=gpu job; verl's
+  # Worker refuses to start when ROCR_VISIBLE_DEVICES and CUDA_VISIBLE_DEVICES are both set
+  # (verl/single_controller/base/worker.py). NVIDIA-only cluster: drop the AMD ones.
+  unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES GPU_DEVICE_ORDINAL
   mc_check_driver
   mc_check_cuda
   export MC_JOB_ID="${SLURM_JOB_ID:-local-$$}"
