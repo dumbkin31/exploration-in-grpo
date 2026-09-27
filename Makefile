@@ -2,7 +2,7 @@
 # Mixed-CUTS on verl + vLLM.  `make help` lists targets.
 #
 # Two environments:
-#   dev      : laptop / login node, CPU only, runs the unit tests   (requirements/dev.txt)
+#   dev      : laptop, CPU only, runs the unit tests                (requirements/dev.txt)
 #   cluster  : a 2080 Ti compute node, full stack                    (requirements/base.txt)
 # All cluster paths come from configs/ada.env.sh (sourced below via a sub-shell).
 # ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
 
 # ---------------------------------------------------------------- environments
-setup-dev: ## CPU dev env (laptop / login node): venv + requirements/dev.txt + this package
+setup-dev: ## CPU dev env (laptop; not the Ada login node): venv + requirements/dev.txt + this package
 	$(UV) venv --python $(PYTHON_VER) $(VENV)
 	$(UV) pip install --python $(PY) -r requirements/dev.txt
 	$(UV) pip install --python $(PY) --no-deps -e .

@@ -33,7 +33,7 @@ Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions
 | GPU | 4x NVIDIA RTX 2080 Ti per node, **sm_75 (Turing), 11 GiB** each | `-C 2080ti -N 1` on every job. Never the 1080 Ti nodes (sm_61: unsupported by CUDA 13 and vLLM). |
 | Driver | 580.178.04 (CUDA 13.0) | default PyPI wheels of torch 2.11.0 / vLLM 0.24.0 (CUDA 13 builds). |
 | OS on compute nodes | Ubuntu 22.04.5, glibc 2.35 | `manylinux_2_28` wheels install natively; no container needed. |
-| Login node | CentOS 7, glibc 2.17 | **Never** `pip install`, build, or benchmark there. Only `git`, `make prefetch`, `wandb sync`. |
+| Login node | CentOS 7, glibc 2.17 | **Never** `pip install`, build, or benchmark there. Only `git` and `make prefetch`. `wandb` and `torch` wheels need glibc >= 2.28, so W&B syncing happens elsewhere (section 6). |
 | Precision | **fp16 only** (bf16 needs sm_80) | every bf16 default in verl/vLLM is overridden and asserted (section 5). |
 | Attention (rollout) | vLLM **`TRITON_ATTN`**, set explicitly | `FLASH_ATTN` and `FLASHINFER` require capability 8.0 in vLLM 0.24.0; XFORMERS no longer exists ([004](docs/decisions/004-attention-backend-and-engine-version.md)). |
 | Attention (training) | HF `sdpa`, `use_remove_padding: false` | FlashAttention-2 needs sm_80; `flash-attn` is not installed. |
@@ -158,8 +158,15 @@ make sbatch-eval CKPT=/share1/$USER/mixed-cuts/runs/$USER/math_mixed_cuts-s1/che
 
 `make preflight` prints the full report (pins, GPU, single node, engine version, attention backend, storage,
 the composed config, the chat template). `make compose-check` validates every config without a GPU.
-Offline W&B: `wandb sync /share1/$USER/mixed-cuts/runs/$USER/<run>/wandb/offline-run-*` from the login
-node; `metrics.jsonl` in the run dir is the primary log.
+**W&B.** One team project (`mixed-cuts`); put `WANDB_API_KEY` and `WANDB_ENTITY` in `.env` on Ada. Jobs log
+**offline** into `<run dir>/wandb/`; `metrics.jsonl` in the run dir stays the primary log. The login node
+cannot run `wandb` (its wheels need glibc >= 2.28; CentOS 7 has 2.17), so sync one of two ways:
+
+- **Compute nodes have internet** (see `jobs/<id>/env_facts.json` from the first job): add
+  `export WANDB_MODE=online` to `configs/local.env.sh` and runs stream live; nothing to sync.
+- **They don't**: from your laptop, `scripts/wandb_sync.sh <ssh-target> <ada-user> [run-name ...]` copies
+  the offline run folders down with rsync and syncs them. Rerun it any time; the run id is the run name,
+  so a resumed run keeps updating the same W&B run.
 
 ## 7. Reproduction targets (CUTS paper, Qwen3-1.7B non-thinking, trained on MATH)
 
@@ -218,7 +225,9 @@ tests/  tests/gpu/         CPU unit tests; GPU tests run after the smoke test
 docs/decisions/            numbered decision records
 ```
 
-## 10. Developing on a laptop / the login node
+## 10. Developing on a laptop
+
+The Ada login node cannot host this environment (torch wheels need glibc >= 2.28); use a laptop.
 
 ```bash
 make setup-dev      # Python 3.12 venv with torch (CPU), math-verify, pytest; no verl/vLLM
