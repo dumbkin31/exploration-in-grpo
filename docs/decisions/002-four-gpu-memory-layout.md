@@ -1,5 +1,9 @@
 # 002: Four-GPU memory layout (Task A)
 
+> **Superseded as the default by [012](012-research-qos-one-gpu-lora.md)** (2026-09-27): the `research`
+> account allows one GPU, 10 CPUs and 32 GB of host RAM per user, so the arms train with LoRA on one card.
+> This layout stays composable as `MC_LAYOUT=nlp_4gpu` (`layout=nlp_4gpu memory=plan_a_fullft_offload`).
+
 **Hardware**: one node, 4x RTX 2080 Ti (11 GiB, sm_75, no bf16, no FlashAttention), 40 cores,
 128 GB RAM (120 GB requested). Model: Qwen3-1.7B, 1.72 B parameters, fp16 weights 3.44 GB, KV
 cache 112 KB/token (2 x 28 layers x 8 KV heads x 128 x 2 bytes).

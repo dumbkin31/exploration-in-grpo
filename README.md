@@ -7,7 +7,9 @@ vLLM logits processor, schedules mixed standard/CUTS rollout groups inside verl'
 diagnostics that say *why* a run behaves the way it does (advantage collapse, the Eq. 5 variance
 decomposition, candidate-set sizes), not just final accuracy.
 
-Two deliverables, on **one node with 4x RTX 2080 Ti (11 GiB, sm_75, fp16 only)** under SLURM:
+Two deliverables, each trained on **one RTX 2080 Ti (11 GiB, sm_75, fp16 only) with LoRA** under SLURM
+(account `research`: one GPU per user, [012](docs/decisions/012-research-qos-one-gpu-lora.md)); the original
+4-GPU full-fine-tune layout stays selectable (`MC_LAYOUT=nlp_4gpu`):
 
 | Arm | Config | Group of 16 |
 |---|---|---|
@@ -30,7 +32,7 @@ Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions
 
 | Fact | Value | Consequence |
 |---|---|---|
-| GPU | 4x NVIDIA RTX 2080 Ti per node, **sm_75 (Turing), 11 GiB** each | `-C 2080ti -N 1` on every job. Never the 1080 Ti nodes (sm_61: unsupported by CUDA 13 and vLLM). |
+| GPU | NVIDIA RTX 2080 Ti, **sm_75 (Turing), 11 GiB**; 4 per node, **1 per job** on `research` | `-C 2080ti -N 1 --gres=gpu:1` on every job. Never the 1080 Ti nodes (sm_61: unsupported by CUDA 13 and vLLM). |
 | Driver | 580.178.04 (CUDA 13.0) | default PyPI wheels of torch 2.11.0 / vLLM 0.24.0 (CUDA 13 builds). |
 | OS on compute nodes | Ubuntu 22.04.5, glibc 2.35, internet works, `/scratch` 1.8 TB | `manylinux_2_28` wheels install natively; no container needed. PyPI's CDN is throttled to ~0.1 MB/s from Ada, so `configs/ada.env.sh` uses the Tsinghua mirror (4.5 MB/s). |
 | Login node | CentOS 7, glibc 2.17, **512 MB virtual memory per process, 200 processes** (hard limits) | Only `git`, `make setup-login`, `make prefetch` (plain pip, no `hf_transfer`/`hf-xet`). `wandb` and `torch` wheels need glibc >= 2.28, so W&B syncing happens elsewhere (section 6). |
@@ -38,8 +40,8 @@ Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions
 | Attention (rollout) | vLLM **`TRITON_ATTN`**, set explicitly | `FLASH_ATTN` and `FLASHINFER` require capability 8.0 in vLLM 0.24.0; XFORMERS no longer exists ([004](docs/decisions/004-attention-backend-and-engine-version.md)). |
 | Attention (training) | HF `sdpa`, `use_remove_padding: false` | FlashAttention-2 needs sm_80; `flash-attn` is not installed. |
 | Engine | vLLM V1 engine (V0 is gone); **Model Runner V1** is forced by the custom logits processor | never set `VLLM_USE_V2_MODEL_RUNNER`; the preflight and the job logs check it. |
-| Memory | 11 GiB/GPU, 128 GB host RAM, 40 cores | section 4; request `--mem-per-cpu=3000M` (117 GB). |
-| SLURM | `-A nlp --qos=normal -p u22 -C 2080ti -N 1 --gres=gpu:4 -c 40 --mem-per-cpu=3000M` (`MaxMemPerCPU=3000`; `3G` is rejected); 4 GPUs/job, 12 across the group; interactive `srun` capped at 6 h | all real runs are `sbatch`; templates in `slurm/`. |
+| Memory | 11 GiB on the card; **30 GB host RAM and 10 cores per job** (`research`/`low` caps: `-c 10 --mem-per-cpu=3000M`) | section 4: LoRA + the FSDP2 offload policy; full fine-tuning needs the 4-card layout (117 GB). |
+| SLURM | account `research` / QoS `low`: **per user 1 GPU, 10 CPUs, 32 GB, 1 node per job, 5 jobs, 4-day MaxWall**; `-A research --qos=low -p u22 -C 2080ti -N 1 --gres=gpu:1 -c 10 --mem-per-cpu=3000M` (`MaxMemPerCPU=3000`; `3G` is rejected); `nlp`/`normal` = 4 GPUs/job, 12 across the group; interactive `srun` capped at 6 h | all real runs are `make sbatch-*` (adds the layout flags + node exclude list); templates in `slurm/`; `MC_LAYOUT=nlp_4gpu` flips everything to the 4-GPU layout ([012](docs/decisions/012-research-qos-one-gpu-lora.md)). |
 | NVIDIA driver | **mixed across the 2080 Ti nodes**: 580/595 on 7 of the 25 probed, 570 (CUDA 12.8) on 12, no module on 4 | the cu130 wheels need >= 580 (vLLM 0.24.0 has no cu128 wheel): `make sbatch-*` passes `-x $MC_SLURM_EXCLUDE`, and every job checks `/proc/driver/nvidia/version` before touching the run dir ([011](docs/decisions/011-mixed-driver-generations.md)). |
 | Storage | `/home2/$USER` 25 GB / 300k files NFS, the **only durable file system compute nodes see**; `/share1` is a local disk of the login node (measured: absent on the gnodes); `/scratch` node-local 1.8 TB, purged after ~7 days | section 3: code, venv, staged model/data and each run's small outputs on `/home2`; checkpoints on scratch ([009](docs/decisions/009-scratch-checkpoints-quota.md), [010](docs/decisions/010-share1-is-login-node-local.md)). |
 
@@ -96,7 +98,8 @@ Files: `requirements/base.txt` (hand pins, cluster), `requirements/dev.txt` (CPU
 Why this split: one FSDP checkpoint is ~21 GB and `/home2`, the only durable file system compute nodes can
 see ([010](docs/decisions/010-share1-is-login-node-local.md)), allows 25 GB per user, so checkpoints stay
 on the node that wrote them ([009](docs/decisions/009-scratch-checkpoints-quota.md)). Consequences:
-resubmitting a run must land on the same node (`make sbatch-train` reads `node.txt` and adds `-w`); if
+resubmitting a run must land on the same node (`make sbatch-train` reads `node.txt` and adds `-w`); LoRA
+checkpoints are ~7.8 GB (full PEFT state dict), still too big for the home quota; if
 that node is lost, the curves and diagnostics survive in the mirror but the run restarts from step 0.
 
 Every `slurm/*.sbatch` does: `source configs/ada.env.sh` -> preflight (`scripts/check_env.py`, aborts
@@ -106,31 +109,36 @@ job's log next to the run, prune checkpoints, final mirror. Resubmitting the sam
 same node **resumes** from the newest checkpoint ([005](docs/decisions/005-run-naming-resume-and-checkpoints.md)).
 All paths live in `configs/ada.env.sh`; nothing in `src/` hardcodes `/scratch` or `/home2`.
 
-## 4. Memory plan: one node, 4x 11 GiB
+## 4. Memory plan: one 2080 Ti, LoRA, 30 GB of host RAM
 
 Model facts: 28 layers, hidden 2048, 16 query / 8 KV heads x 128, vocab 151,936, tied embeddings ->
-**1.72 B params**; fp16 weights **3.44 GB**; KV cache **112 KB/token**. Full derivation and the
-alternatives in [002](docs/decisions/002-four-gpu-memory-layout.md).
+**1.72 B params**; fp16 weights **3.44 GB**; KV cache **112 KB/token**. Why one GPU and LoRA, with the verl
+source lines behind every claim: [012](docs/decisions/012-research-qos-one-gpu-lora.md). The 4-GPU full
+fine-tune of [002](docs/decisions/002-four-gpu-memory-layout.md) stays selectable with `MC_LAYOUT=nlp_4gpu`.
 
-**Rollout**: one vLLM engine with tensor parallel 4 (weights 0.86 GB/card), `gpu_memory_utilization 0.40`
-(~3.5 GB KV per card, ~125k tokens in total, ~20 concurrent 6k-token sequences). The engine sleeps
-(level 2, weights and KV freed) during the update and is re-synced after every optimizer step.
+**Training (plan B, default, `memory=plan_b_lora`)**: LoRA r=64 / alpha=128 on every linear layer (69.7 M
+trainable parameters) under the FSDP2 `CPUOffloadPolicy`: the fp32 base and the LoRA masters live in pinned
+host RAM (~7.2 GB), one decoder layer is gathered in fp16 at a time, gradients and Adam state exist only for
+the adapter (~0.85 GB). The KL reference is the same model with the adapter disabled (no second copy).
+Effective batch = 128 prompts x 16 = 2048 sequences per step, mini-batch 32 prompts (4 optimizer steps),
+micro-batches of <= 6144 tokens packed by `use_dynamic_bsz`. GPU peak during the update **~9-9.5 GiB**
+(vLLM asleep at level 2: weights and KV freed; fp16 logits + chunked fp32 log-softmax dominate).
 
-**Training (plan A, default)**: FSDP2 sharded over the 4 ranks with `offload_policy: true`: params,
-gradients and Adam state live in pinned host RAM (6.9 + 6.9 + 13.8 GB) and the optimizer step runs on the
-CPU; each GPU holds one all-gathered fp16 layer plus the activations of one 6144-token micro-batch
-(gradient checkpointing, chunked fp32 log-softmax): **~5-6 GB peak**. The reference model (needed by the
-KL term) uses the same policy. Effective batch = 128 prompts x 16 = 2048 sequences per step, mini-batch
-32 prompts (4 optimizer steps), micro-batches of <= 6144 tokens packed by `use_dynamic_bsz`.
+**Rollout**: one vLLM engine, TP=1, `gpu_memory_utilization 0.80` while the actor sits in host RAM:
+3.44 GB weights + ~1 GB activations/cudagraphs + ~4.3 GB KV (~39k tokens: 6 max-length or ~25 typical
+sequences). Merged full weights are streamed to the engine after every optimizer step (`lora.merge: true`).
 
-**Plan A'** (`memory=plan_a_manual_offload`): verl's manual `param_offload`/`optimizer_offload` (update on
-GPU, ~7 GB/card). **Plan B** (`memory=plan_b_lora`): LoRA r=64, documented fallback only; it weakens the
-reproduction claim.
+**Host RAM** (30 GB cgroup): FSDP worker ~10.5 GB, vLLM ~4.5, driver ~2.5, agent/TransferQueue/reward/
+dataloader workers ~5, Ray ~1.5, object store 1-2 -> ~26-27 GB. Ray gets `num_cpus: 16` *logical* CPUs
+because it reserves ~10 for its own actors (fewer deadlocks placement); the cgroup's 10 real cores limit use.
 
-**TODO(cluster)**: `make sbatch-bench` (tokens/s and peak memory for TP=4 and TP=1) and the smoke run's
-`memory_profile.md` (peak per GPU per phase, measured step time, the `save_freq` for ~30 min) decide
-`gpu_memory_utilization`, `max_num_seqs` and `save_freq`. A step is plausibly 40-90 min: 2048 sequences
-of up to 5000 tokens on Triton attention.
+**Fallback ladder** if the smoke run's `memory_profile.md` / `host_mem_peak.txt` disagree: lower
+`max_num_seqs` -> lower `gpu_memory_utilization` -> `actor.use_dynamic_bsz: false` with
+`ppo_micro_batch_size_per_gpu: 1` -> `max_response_length` (deviates from the paper).
+
+**TODO(cluster)**: `make sbatch-bench` (tokens/s at concurrency 1-64, KV size at util 0.80/0.85, preemptions
+at 4096-token responses) and the smoke run decide `gpu_memory_utilization`, `max_num_seqs` and `save_freq`.
+A step is plausibly 1-1.5 h: 2048 sequences of up to 5000 tokens on one card.
 
 ## 5. fp16 audit and stability
 
@@ -156,34 +164,33 @@ make sbatch-setup
 git add requirements/lock.txt && git commit -m "lock cluster env"
 make sbatch-data                       # only if prefetch finished after the setup job ran (it builds the parquet + a full preflight)
 
-# 2. measure before committing compute (each job mirrors to ~/mixed-cuts-data/runs/<run>/)
-make sbatch-bench                      # tokens/s + peak memory: TP=4 layout and TP=1; attention backend line
-make sbatch-smoke                      # 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS), plan A, TP=4
-MC_SMOKE_RUN_DIR=/scratch/$USER/mixed-cuts/runs/smoke-s42-<job> make gpu-test   # inside an allocation
-make sbatch-resume-test                # kills itself at step 15, resubmits, checks it resumed at 16
+# 2. measure before committing compute (each job mirrors to ~/mixed-cuts-data/runs/<run>/). Every
+#    make sbatch-* target adds the layout's flags (-A research --qos=low --gres=gpu:1 -c 10 ...) + the exclude list.
+make sbatch-bench                      # ~40 min: tokens/s at concurrency 1-64, KV size at util 0.80/0.85, TRITON_ATTN line
+make sbatch-smoke                      # ~45 min: 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS), then tests/gpu in the same job
+make sbatch-resume-test                # 2 x ~2 h: kills itself at step 15, resubmits on the same node, checks it resumed at 16
 
-# 3. the two arms (resubmit the same command to resume; use SEED=1,2,3 later for three seeds per arm)
+# 3. the two arms: ONE GPU PER USER on research, so one arm at a time per account (~4-6 days each, two
+#    submissions under the 4-day MaxWall; resubmit the same command to resume). SEED=1,2,3 later for three seeds.
 make sbatch-train CONFIG=math_grpo SEED=1
 make sbatch-train CONFIG=math_mixed_cuts SEED=1
 
 # 4. evaluate a checkpoint (16 samples per problem; pass@1, pass@16, maj@16 with 95% CIs).
-#    Checkpoints live on the node named in the run's node.txt; merge and evaluate there.
+#    Checkpoints live on the node named in the run's node.txt; merge (LoRA folded in) and evaluate there.
+#    The merge srun counts against the user's 10 CPUs: run it while no training job of yours is running.
 NODE=$(sed -n 's/^node=//p' ~/mixed-cuts-data/runs/math_mixed_cuts-s1/node.txt | tail -1)
-srun -A nlp -p u22 -w $NODE -c 8 -t 01:00:00 scripts/merge_ckpt.sh /scratch/$USER/mixed-cuts/runs/math_mixed_cuts-s1/checkpoints
+srun -A research --qos=low -p u22 -w $NODE -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh /scratch/$USER/mixed-cuts/runs/math_mixed_cuts-s1/checkpoints
 make sbatch-eval CKPT=/scratch/$USER/mixed-cuts/runs/math_mixed_cuts-s1/checkpoints/hf/global_step_100 NODE=$NODE SEED=0
 ```
 
 `make preflight` prints the full report (pins, GPU, single node, engine version, attention backend, storage,
 the composed config, the chat template). `make compose-check` validates every config without a GPU.
-**W&B.** One team project (`mixed-cuts`); put `WANDB_API_KEY` and `WANDB_ENTITY` in `.env` on Ada. Jobs log
-**offline** into `<run dir>/wandb/`; `metrics.jsonl` in the run dir stays the primary log. The login node
-cannot run `wandb` (its wheels need glibc >= 2.28; CentOS 7 has 2.17), so sync one of two ways:
-
-- **Compute nodes have internet** (see `jobs/<id>/env_facts.json` from the first job): add
-  `export WANDB_MODE=online` to `configs/local.env.sh` and runs stream live; nothing to sync.
-- **They don't**: from your laptop, `scripts/wandb_sync.sh <ssh-target> <ada-user> [run-name ...]` copies
-  the offline run folders down with rsync and syncs them. Rerun it any time; the run id is the run name,
-  so a resumed run keeps updating the same W&B run.
+**W&B.** One team project (`anlp-mixed-cuts/mixed-cuts`); `WANDB_API_KEY` and `WANDB_ENTITY` live in `.env` on
+Ada. Jobs log **online from the compute nodes** (they reach api.wandb.ai; measured): the run id is the run
+name, so a resumed run keeps updating the same W&B run, and `metrics.jsonl` in the run dir stays the primary
+log. A node whose preflight cannot reach api.wandb.ai falls back to offline for that job; push those later
+from your laptop with `scripts/wandb_sync.sh <ssh-target> <ada-user> [run-name ...]` (the login node cannot
+run `wandb`: its wheels need glibc >= 2.28, CentOS 7 has 2.17).
 
 ## 7. Reproduction targets (CUTS paper, Qwen3-1.7B non-thinking, trained on MATH)
 
@@ -230,15 +237,16 @@ A few whole groups (standard and CUTS siblings side by side) are dumped per step
 
 ```
 configs/ada.env.sh         all cluster paths / env vars         configs/train/*.yaml   Hydra overrides on verl's ppo_trainer
-configs/train/memory/      plan A (default), A', B              configs/eval/*.yaml    eval decoding (paper validation settings)
+configs/train/layout/      research_1gpu (default), nlp_4gpu    configs/eval/*.yaml    eval decoding (paper validation settings)
+configs/train/memory/      plan B LoRA (default), A, A'
 src/cuts/                  CUTS operator, state, stats channel, vLLM logits processor (verl-independent, CPU-tested)
 src/mixed_cuts/            verl integration: scheduler, agent loop hook, trainer, diagnostics, reward, GPQA parser,
                            stability watch, non-thinking check, entry point
 src/mc_data/  src/mc_eval/ datasets -> verl parquet schema; pass@1 / pass@16 / maj@16 harness (eval/run_eval.py)
 scripts/                   check_env (preflight), compose_config, prefetch, prepare_data, bench_rollout,
-                           profile_memory, check_resume, merge_ckpt
+                           profile_memory, check_resume, merge_ckpt (+ merge_lora for LoRA runs)
 slurm/                     common.sh + sbatch templates (setup, bench, smoke, train, eval, test_resume)
-tests/  tests/gpu/         CPU unit tests; GPU tests run after the smoke test
+tests/  tests/gpu/         CPU unit tests; GPU tests run inside the smoke job
 docs/decisions/            numbered decision records
 ```
 
