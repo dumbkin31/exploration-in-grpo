@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-setup
-#SBATCH -A nlp
-#SBATCH --qos=normal
+#SBATCH -A research
+#SBATCH --qos=low
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1

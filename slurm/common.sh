@@ -65,9 +65,11 @@ mc_job_init() {
   export MC_STAGED_DATA_DIR="${MC_SCRATCH_ROOT}/stage/data"
   export MC_ENV_FACTS_JSON="${MC_JOB_DIR}/env_facts.json"
   export MC_JOB_STDOUT="${SLURM_SUBMIT_DIR:-$PWD}/slurm-${SLURM_JOB_NAME:-job}-${MC_JOB_ID}.out"   # matches -o slurm-%x-%j.out
-  # W&B: offline, one run id across resubmissions (WANDB_RESUME=allow continues the same curves;
-  # steps re-logged after a kill are dropped by W&B; metrics.jsonl is the primary log).
-  export WANDB_DIR="${MC_RUN_DIR}/wandb"
+  # W&B: online from the node (offline fallback below), one run id across resubmissions
+  # (WANDB_RESUME=allow continues the same curves; steps re-logged after a kill are dropped by W&B;
+  # metrics.jsonl is the primary log). wandb creates its own `wandb/` under WANDB_DIR, so the run
+  # folders are <run dir>/wandb/{run,offline-run}-<ts>-<id>; verl's Tracking passes no dir/id/resume.
+  export WANDB_DIR="${MC_RUN_DIR}"
   export WANDB_RUN_ID="${MC_RUN_NAME}"
   export WANDB_RESUME="allow"
   export WANDB_NAME="${MC_RUN_NAME}"
@@ -103,7 +105,36 @@ PY
     export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
     mc_log "no internet on this node: HF_HUB_OFFLINE=1"
   fi
+  if [ "${WANDB_MODE:-online}" = "online" ] && python - "$MC_ENV_FACTS_JSON" <<'PY'
+import json, sys
+try:
+    facts = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+sys.exit(0 if facts.get("internet", {}).get("https://api.wandb.ai") is False else 1)
+PY
+  then
+    export WANDB_MODE=offline
+    mc_log "api.wandb.ai unreachable from this node: WANDB_MODE=offline (push later with scripts/wandb_sync.sh)"
+  fi
   mc_start_gpu_sampler
+}
+
+mc_record_host_peak() {
+  # The research/low cgroup is 30 GB and the LoRA plan budgets ~26-27 GB (decision 012): keep the evidence.
+  local out="${MC_JOB_DIR}/host_mem_peak.txt" cg f
+  cg="$(awk -F: '{print $NF; exit}' /proc/self/cgroup 2>/dev/null)"
+  for f in "/sys/fs/cgroup${cg}/memory.peak" "/sys/fs/cgroup/memory${cg}/memory.max_usage_in_bytes" \
+           /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory/memory.max_usage_in_bytes; do
+    if [ -r "${f}" ]; then
+      local bytes; bytes="$(cat "${f}")"
+      echo "peak_bytes=${bytes} source=${f}" > "${out}"
+      mc_log "host memory peak (cgroup): $((bytes / 1048576)) MiB"
+      return 0
+    fi
+  done
+  echo "peak_bytes=unknown (no readable cgroup counter; use: sacct -j ${MC_JOB_ID} --format=MaxRSS)" > "${out}"
+  mc_log "host memory peak: no readable cgroup counter; use sacct -j ${MC_JOB_ID} --format=MaxRSS"
 }
 
 mc_check_node_pin() {
@@ -223,6 +254,7 @@ mc_stage_out() {
   # them, records the engine facts and prunes stale checkpoints. Safe to call from the trap and EXIT.
   mc_stop_gpu_sampler
   mc_engine_log_facts || true
+  mc_record_host_peak
   if [ -f "${MC_JOB_STDOUT}" ]; then cp -f "${MC_JOB_STDOUT}" "${MC_JOB_DIR}/" 2>/dev/null || true; fi
   mc_prune_checkpoints || true
   if [ -n "${_MC_MIRROR_PID:-}" ] && kill -0 "${_MC_MIRROR_PID}" 2>/dev/null; then kill "${_MC_MIRROR_PID}" 2>/dev/null || true; fi
@@ -290,6 +322,12 @@ mc_train_main() {
   local extra=()
   [ -n "${MC_SAVE_FREQ:-}" ] && extra+=("save_freq=${MC_SAVE_FREQ}")
   [ -n "${MC_TOTAL_STEPS:-}" ] && extra+=("trainer.total_training_steps=${MC_TOTAL_STEPS}")
+  # layout/memory overrides of $MC_LAYOUT (configs/ada.env.sh); empty for the default research_1gpu
+  if [ -n "${MC_TRAIN_OVERRIDES:-}" ]; then
+    # shellcheck disable=SC2206
+    extra+=(${MC_TRAIN_OVERRIDES})
+    mc_log "layout ${MC_LAYOUT:-?}: ${MC_TRAIN_OVERRIDES}"
+  fi
   cd "${MC_REPO_ROOT}"
   mc_run_with_traps python -m mixed_cuts.main \
     --config-name "${config}" \

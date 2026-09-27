@@ -37,6 +37,15 @@ SYNTHETIC = [
 ]
 
 
+def _nvidia_smi_cmd() -> list[str]:
+    """Only this job's GPUs: research/low jobs share a 4-GPU node with other users (decision 012)."""
+    cmd = ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"]
+    vis = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if vis and not vis.startswith("MIG"):
+        cmd += ["-i", vis]
+    return cmd
+
+
 class GpuMemPoller(threading.Thread):
     """Samples nvidia-smi memory.used for every GPU until stopped; keeps the per-GPU max."""
 
@@ -50,7 +59,7 @@ class GpuMemPoller(threading.Thread):
         while not self._stop.is_set():
             try:
                 out = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"],
+                    _nvidia_smi_cmd(),
                     capture_output=True,
                     text=True,
                     timeout=5,
@@ -96,6 +105,10 @@ def main() -> int:
     ap.add_argument("--max-tokens", type=int, default=1024)
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.70)
     ap.add_argument("--max-model-len", type=int, default=4096)
+    ap.add_argument(
+        "--max-num-seqs", type=int, default=None, help="vLLM scheduler cap (training uses the layout's value)"
+    )
+    ap.add_argument("--max-num-batched-tokens", type=int, default=None, help="chunked-prefill budget")
     ap.add_argument("--enforce-eager", action="store_true")
     ap.add_argument("--tp", type=int, default=1, help="tensor parallel size (4 = the training layout)")
     ap.add_argument(
@@ -132,6 +145,8 @@ def main() -> int:
         dtype="float16",
         gpu_memory_utilization=args.gpu_memory_utilization,
         max_model_len=args.max_model_len,
+        **({"max_num_seqs": args.max_num_seqs} if args.max_num_seqs else {}),
+        **({"max_num_batched_tokens": args.max_num_batched_tokens} if args.max_num_batched_tokens else {}),
         enforce_eager=args.enforce_eager,
         tensor_parallel_size=args.tp,
         attention_config={"backend": args.attention_backend},

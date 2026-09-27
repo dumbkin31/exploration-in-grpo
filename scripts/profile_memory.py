@@ -34,10 +34,19 @@ from pathlib import Path
 PHASES = ("rollout", "old_log_prob", "ref_log_prob", "update_actor")
 
 
+def _nvidia_smi_cmd() -> list[str]:
+    """Only this job's GPUs: research/low jobs share a 4-GPU node with other users (decision 012)."""
+    cmd = ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"]
+    vis = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if vis and not vis.startswith("MIG"):
+        cmd += ["-i", vis]
+    return cmd
+
+
 def sample_gpu_mem() -> list[int] | None:
     try:
         out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"],
+            _nvidia_smi_cmd(),
             capture_output=True,
             text=True,
             timeout=5,
