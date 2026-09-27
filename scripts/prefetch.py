@@ -86,6 +86,12 @@ def main() -> int:
         help="sha256 files up to this size (model shards are size-checked only)",
     )
     ap.add_argument("--skip-model", action="store_true")
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=1 if os.environ.get("MC_ON_LOGIN_NODE") == "1" else 4,
+        help="parallel downloads; 1 on the Ada login node (512 MB virtual-memory cap per process)",
+    )
     args = ap.parse_args()
     if not args.stage_root:
         print("ERROR: --stage-root or MC_STAGE_ROOT required (source configs/ada.env.sh)", file=sys.stderr)
@@ -112,6 +118,7 @@ def main() -> int:
             repo_id=repo,
             local_dir=str(dst),
             token=token,
+            max_workers=args.workers,
             allow_patterns=["*.json", "*.safetensors", "*.txt", "*.jinja", "*.py", "*.md"],
         )
         manifest["models"][repo] = {
@@ -126,7 +133,9 @@ def main() -> int:
         print(f"== dataset {repo} -> {dst}")
         t0 = time.time()
         try:
-            snapshot_download(repo_id=repo, repo_type="dataset", local_dir=str(dst), token=token)
+            snapshot_download(
+                repo_id=repo, repo_type="dataset", local_dir=str(dst), token=token, max_workers=args.workers
+            )
         except GatedRepoError:
             print(f"   WARN gated repo {repo}: export HF_TOKEN (accept the terms on the Hub first); skipping")
             continue
