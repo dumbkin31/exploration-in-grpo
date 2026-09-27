@@ -24,11 +24,29 @@ def test_backwards_step_is_the_restart(tmp_path: Path):
 def test_seamless_resume_uses_the_second_jobs_start_time(tmp_path: Path):
     steps = list(range(1, 31))
     times = [1000.0 + 10 * i for i in range(15)] + [5000.0 + 10 * i for i in range(15)]
+    blocks = []
     for job, t in (("100", 900.0), ("101", 4990.0)):
         d = tmp_path / "jobs" / job
         d.mkdir(parents=True)
-        (d / "job_info.txt").write_text(f"job_id={job}\ndate={datetime.fromtimestamp(t):%Y-%m-%d %H:%M:%S}\n")
+        (d / "job_info.txt").write_text(f"job_id={job}\n")
+        blocks.append(
+            f"node=gnode084\nrun_dir=/scratch/x\njob={job}\ndate={datetime.fromtimestamp(t):%Y-%m-%d %H:%M:%S}\n"
+        )
+    (tmp_path / "node.txt").write_text("".join(blocks))
     assert _mod().find_restart(steps, times, tmp_path / "jobs") == 15  # row of step 16
+
+
+def test_seamless_resume_falls_back_to_job_info_mtime(tmp_path: Path):
+    import os
+
+    steps = list(range(1, 31))
+    times = [1000.0 + 10 * i for i in range(15)] + [5000.0 + 10 * i for i in range(15)]
+    for job, t in (("100", 900.0), ("101", 4990.0)):
+        d = tmp_path / "jobs" / job
+        d.mkdir(parents=True)
+        (d / "job_info.txt").write_text(f"job_id={job}\n")
+        os.utime(d / "job_info.txt", (t, t))
+    assert _mod().find_restart(steps, times, tmp_path / "jobs") == 15
 
 
 def test_no_second_job_means_no_restart(tmp_path: Path):

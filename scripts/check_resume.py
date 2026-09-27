@@ -53,12 +53,19 @@ def find_restart(steps: list[int], times: list[float], jobs_dir: Path) -> int | 
     )
     if len(infos) < 2:
         return None
+    second_job = infos[1].parent.name
+    # node.txt (mc_check_node_pin) holds one block per submission: node=, run_dir=, job=, date=%F %T
     started = None
-    for line in infos[1].read_text().splitlines():
-        if line.startswith("date="):
-            started = datetime.strptime(line[5:].strip(), "%Y-%m-%d %H:%M:%S").timestamp()
-    if started is None:
-        return None
+    node_txt = jobs_dir.parent / "node.txt"
+    if node_txt.exists():
+        block_job = None
+        for line in node_txt.read_text().splitlines():
+            if line.startswith("job="):
+                block_job = line[4:].strip()
+            elif line.startswith("date=") and block_job == second_job:
+                started = datetime.strptime(line[5:].strip(), "%Y-%m-%d %H:%M:%S").timestamp()
+    if started is None:  # job_info.txt is written at job init: its mtime is the second start
+        started = infos[1].stat().st_mtime
     for i, t in enumerate(times):
         if t and t >= started:
             return i if i > 0 else None
