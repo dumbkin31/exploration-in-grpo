@@ -81,6 +81,13 @@ what OOMed the update pass of `smoke_maxlen` job 2719481 (10.8 GiB peak) and wha
 peak at 9.9 GiB. `mixed_cuts.sdpa_patch.install`, run in every Ray worker through
 `ray_kwargs.ray_init.runtime_env.worker_process_setup_hook`, makes transformers repeat the KV heads instead.
 FlexAttention is not an option on Turing (Triton: *out of resource: shared memory*).
+
+**Result (smoke_maxlen job 2719716, gnode084, 2026-09-28, 16 forced 5,000-token responses, 1 step):** GPU peaks
+rollout 9.70 GiB, old-log-prob **2.93**, ref-log-prob **2.93**, update **6.29 GiB** (torch 4.28 allocated / 5.06
+reserved); anonymous host memory 18.5 GB of 30; timings rollout 357 s (16 x 5,000 tokens at ~224 tok/s: the
+long-context floor), old-log-prob 22 s, ref 20 s, update 64 s, weight sync 17 s. Extrapolated to the real
+step (2,048 sequences, mixed lengths): ~70 min rollout + ~11 + 11 min log-prob passes + ~35 min update, i.e.
+**~2 h per step**, 100 steps ~ 8-9 days = three 4-day submissions per arm with resume.
 The fused log-prob kernel stays: the padded path otherwise materialises the 6k x 152k fp32 logits three
 times per sequence (smoke_maxlen job 2719395).
 
