@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-eval
-#SBATCH -A nlp
-#SBATCH --qos=normal
+#SBATCH -A research
+#SBATCH --qos=low
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
-#SBATCH --gres=gpu:4
-#SBATCH -c 40
+#SBATCH --gres=gpu:1
+#SBATCH -c 10
 #SBATCH --mem-per-cpu=3000M
+#SBATCH --time=12:00:00
 #SBATCH --signal=B:SIGUSR1@300
 #SBATCH -o slurm-%x-%j.out
 # Evaluate a HF checkpoint dir on the benchmarks, one vLLM engine per GPU, benchmarks split

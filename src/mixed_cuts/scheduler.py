@@ -16,7 +16,7 @@ plain copy of the base sampling params, byte-for-byte what verl's own ``_run_pro
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
 from cuts.config import CutsParams
@@ -36,6 +36,20 @@ class SessionSpec:
 
 
 @dataclass(frozen=True)
+class StartupChecks:
+    """The ``mixed_cuts.checks:`` block: the two loud startup assertions of the brief (D2 and D1)."""
+
+    assert_non_thinking: bool = True
+    """D2: the first batch must contain no <think> tokens (Qwen3 non-thinking)."""
+    assert_recomputed_logprobs: bool = True
+    """D1: old_log_probs must be the actor's recomputation, never the engine's log(1/|S_t|)."""
+
+    @classmethod
+    def from_mapping(cls, cfg: Mapping[str, Any] | None) -> StartupChecks:
+        return cls() if cfg is None else cls(**{k: bool(cfg[k]) for k in cfg.keys()})
+
+
+@dataclass(frozen=True)
 class MixedCutsConfig:
     """The ``mixed_cuts:`` block of a training config (see configs/train/base_grpo.yaml)."""
 
@@ -45,6 +59,7 @@ class MixedCutsConfig:
     group_size: int | None = None
     """G, the GRPO group size. Defaults to ``n_std + n_cuts``; when given it must equal it (D4)."""
     cuts: CutsParams = field(default_factory=CutsParams)
+    checks: StartupChecks = field(default_factory=StartupChecks)
     dump_samples_per_step: int = 4
     """How many whole groups to dump to disk each step for manual reading."""
 
@@ -89,7 +104,13 @@ class MixedCutsConfig:
             cuts_kwargs.pop(k, None)
         if "stats_dir" in cuts_kwargs and cuts_kwargs["stats_dir"] is not None:
             cuts_kwargs["stats_dir"] = str(cuts_kwargs["stats_dir"])
-        return cls(cuts=CutsParams(**cuts_kwargs), **d)
+        checks = StartupChecks.from_mapping(d.pop("checks", None))
+        unknown = set(d) - {f.name for f in fields(cls)}
+        if unknown:  # fail at start-up with the key names, not deep inside a Ray actor
+            raise ValueError(
+                f"mixed_cuts: unknown keys {sorted(unknown)}; known: {sorted(f.name for f in fields(cls))}"
+            )
+        return cls(cuts=CutsParams(**cuts_kwargs), checks=checks, **d)
 
 
 def plan_group(

@@ -1,4 +1,5 @@
 # @package _global_
+# Memory plan A' (full fine-tune, manual offload): 4-card layout only (see plan_a_fullft_offload.yaml).
 # Memory plan A' (tuning fallback): full fine-tune with verl's MANUAL offload flags instead of
 # the FSDP2 CPUOffloadPolicy. Params, grads and the optimizer state move back to the GPUs for
 # the actor update (optimizer.step on GPU: faster, but ~7 GB/GPU for the 4-way sharded fp32

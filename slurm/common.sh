@@ -47,10 +47,33 @@ mc_check_driver() {
   mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu130 wheels (>= ${min})"
 }
 
+mc_check_cuda() {
+  # A driver that is new enough can still fail to initialise CUDA (a GPU that fell off the bus, nvidia-uvm
+  # missing, a stuck device): the bench job died with "CUDA unknown error" on gnode065 that way. Probe with
+  # the real torch before anything is written; a failing node is recorded like an old-driver one (011).
+  local py="${MC_VENV_DIR:-}/bin/python" out
+  [ -x "${py}" ] || { mc_log "cuda probe skipped: ${py} missing"; return 0; }
+  if out="$(timeout 120 "${py}" -c 'import torch; torch.cuda.init(); n=torch.cuda.device_count(); print(n, torch.cuda.get_device_name(0) if n else "-", [round(x/2**30,1) for x in torch.cuda.mem_get_info(0)] if n else "-")' 2>&1)"; then
+    mc_log "cuda probe on $(hostname): ${out##*$'\n'} (count, name, [free GiB, total GiB])"
+    return 0
+  fi
+  mc_log "ERROR: CUDA cannot initialise on $(hostname) (GPU ${CUDA_VISIBLE_DEVICES:-?}): ${out##*$'\n'}"
+  if [ -n "${MC_BAD_NODES_FILE:-}" ] && mkdir -p "$(dirname "${MC_BAD_NODES_FILE}")" 2>/dev/null; then
+    echo "$(hostname) cuda_init_failed gpu=${CUDA_VISIBLE_DEVICES:-?} job=${SLURM_JOB_ID:-?} $(date '+%F')" >> "${MC_BAD_NODES_FILE}"
+    mc_log "recorded in ${MC_BAD_NODES_FILE}: rerun the same make sbatch-* command, it now excludes this node"
+  fi
+  exit 6
+}
+
 mc_job_init() {
   # shellcheck source=/dev/null
   source "${MC_REPO_ROOT}/configs/ada.env.sh"
+  # SLURM exports the AMD device lists next to CUDA_VISIBLE_DEVICES for every --gres=gpu job; verl's
+  # Worker refuses to start when ROCR_VISIBLE_DEVICES and CUDA_VISIBLE_DEVICES are both set
+  # (verl/single_controller/base/worker.py). NVIDIA-only cluster: drop the AMD ones.
+  unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES GPU_DEVICE_ORDINAL
   mc_check_driver
+  mc_check_cuda
   export MC_JOB_ID="${SLURM_JOB_ID:-local-$$}"
   export MC_SEED="${MC_SEED:-42}"
   export MC_RUN_NAME="${1:-${MC_RUN_NAME:-${SLURM_JOB_NAME:-job}-s${MC_SEED}}}"
@@ -65,9 +88,11 @@ mc_job_init() {
   export MC_STAGED_DATA_DIR="${MC_SCRATCH_ROOT}/stage/data"
   export MC_ENV_FACTS_JSON="${MC_JOB_DIR}/env_facts.json"
   export MC_JOB_STDOUT="${SLURM_SUBMIT_DIR:-$PWD}/slurm-${SLURM_JOB_NAME:-job}-${MC_JOB_ID}.out"   # matches -o slurm-%x-%j.out
-  # W&B: offline, one run id across resubmissions (WANDB_RESUME=allow continues the same curves;
-  # steps re-logged after a kill are dropped by W&B; metrics.jsonl is the primary log).
-  export WANDB_DIR="${MC_RUN_DIR}/wandb"
+  # W&B: online from the node (offline fallback below), one run id across resubmissions
+  # (WANDB_RESUME=allow continues the same curves; steps re-logged after a kill are dropped by W&B;
+  # metrics.jsonl is the primary log). wandb creates its own `wandb/` under WANDB_DIR, so the run
+  # folders are <run dir>/wandb/{run,offline-run}-<ts>-<id>; verl's Tracking passes no dir/id/resume.
+  export WANDB_DIR="${MC_RUN_DIR}"
   export WANDB_RUN_ID="${MC_RUN_NAME}"
   export WANDB_RESUME="allow"
   export WANDB_NAME="${MC_RUN_NAME}"
@@ -103,7 +128,51 @@ PY
     export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
     mc_log "no internet on this node: HF_HUB_OFFLINE=1"
   fi
+  if [ "${WANDB_MODE:-online}" = "online" ] && python - "$MC_ENV_FACTS_JSON" <<'PY'
+import json, sys
+try:
+    facts = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+sys.exit(0 if facts.get("internet", {}).get("https://api.wandb.ai") is False else 1)
+PY
+  then
+    export WANDB_MODE=offline
+    mc_log "api.wandb.ai unreachable from this node: WANDB_MODE=offline (push later with scripts/wandb_sync.sh)"
+  fi
   mc_start_gpu_sampler
+}
+
+mc_record_host_peak() {
+  # The research/low cgroup is 30 GB (decision 012) and kernel 5.15's cgroup v2 has no memory.peak, so
+  # the GPU sampler sidecar (profile_memory.py --watch) also samples the job cgroup's memory.current;
+  # the peak is the max over this job's samples. sstat's MaxRSS (largest single process) is kept beside it.
+  local out="${MC_JOB_DIR}/host_mem_peak.txt" now="" peak="" rss=""
+  local cur="/sys/fs/cgroup/system.slice/slurmstepd.scope/job_${SLURM_JOB_ID:-x}/memory.current"
+  [ -r "${cur}" ] && now="$(( $(cat "${cur}") / 1048576 ))"
+  if [ -f "${MC_RUN_DIR}/gpu_mem.jsonl" ]; then
+    peak="$(python - "${MC_RUN_DIR}/gpu_mem.jsonl" "${MC_JOB_ID}" <<'PY'
+import json, sys
+best = 0
+for line in open(sys.argv[1]):
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    if str(d.get("job")) == sys.argv[2] and d.get("host_mib"):
+        best = max(best, int(d["host_mib"]))
+print(best or "")
+PY
+)"
+  fi
+  rss="$(sstat -n -P -j "${SLURM_JOB_ID:-x}.batch" -o MaxRSS 2>/dev/null | head -1)"
+  {
+    echo "cgroup_peak_mib=${peak:-unknown} (max of the sampled memory.current of this job)"
+    echo "cgroup_now_mib=${now:-unknown}"
+    echo "sstat_maxrss_batch=${rss:-unknown} (largest single process)"
+    echo "request=cpus:${SLURM_CPUS_PER_TASK:-?} mem_per_cpu:${SLURM_MEM_PER_CPU:-?}M"
+  } > "${out}"
+  mc_log "host memory: cgroup peak ${peak:-?} MiB (sampled), now ${now:-?} MiB, sstat MaxRSS ${rss:-?}"
 }
 
 mc_check_node_pin() {
@@ -183,7 +252,7 @@ mc_engine_log_facts() {
   local out="${MC_JOB_STDOUT}"
   [ -f "${out}" ] || return 0
   local attn mrv2
-  attn="$(grep -oE "Using [A-Z_]+ attention backend out of potential backends: \[[^]]*\]" "${out}" | head -1 || true)"
+  attn="$(grep -oE "Using AttentionBackendEnum\.[A-Z_]+ backend|Using [A-Z_]+ attention backend out of potential backends: \[[^]]*\]" "${out}" | head -1 || true)"
   if grep -q "Using V2 Model Runner" "${out}"; then mrv2=true; else mrv2=false; fi
   mc_log "engine facts: attention='${attn:-not found in log}' model_runner_v2=${mrv2}"
   python - "${MC_ENV_FACTS_JSON}" "${attn}" "${mrv2}" <<'PY'
@@ -223,6 +292,7 @@ mc_stage_out() {
   # them, records the engine facts and prunes stale checkpoints. Safe to call from the trap and EXIT.
   mc_stop_gpu_sampler
   mc_engine_log_facts || true
+  mc_record_host_peak
   if [ -f "${MC_JOB_STDOUT}" ]; then cp -f "${MC_JOB_STDOUT}" "${MC_JOB_DIR}/" 2>/dev/null || true; fi
   mc_prune_checkpoints || true
   if [ -n "${_MC_MIRROR_PID:-}" ] && kill -0 "${_MC_MIRROR_PID}" 2>/dev/null; then kill "${_MC_MIRROR_PID}" 2>/dev/null || true; fi
@@ -290,6 +360,12 @@ mc_train_main() {
   local extra=()
   [ -n "${MC_SAVE_FREQ:-}" ] && extra+=("save_freq=${MC_SAVE_FREQ}")
   [ -n "${MC_TOTAL_STEPS:-}" ] && extra+=("trainer.total_training_steps=${MC_TOTAL_STEPS}")
+  # layout/memory overrides of $MC_LAYOUT (configs/ada.env.sh); empty for the default research_1gpu
+  if [ -n "${MC_TRAIN_OVERRIDES:-}" ]; then
+    # shellcheck disable=SC2206
+    extra+=(${MC_TRAIN_OVERRIDES})
+    mc_log "layout ${MC_LAYOUT:-?}: ${MC_TRAIN_OVERRIDES}"
+  fi
   cd "${MC_REPO_ROOT}"
   mc_run_with_traps python -m mixed_cuts.main \
     --config-name "${config}" \

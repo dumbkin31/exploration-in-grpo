@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-resume-test
-#SBATCH -A nlp
-#SBATCH --qos=normal
+#SBATCH -A research
+#SBATCH --qos=low
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
-#SBATCH --gres=gpu:4
-#SBATCH -c 40
+#SBATCH --gres=gpu:1
+#SBATCH -c 10
 #SBATCH --mem-per-cpu=3000M
+#SBATCH --time=06:00:00
 #SBATCH --signal=B:SIGUSR1@300
 #SBATCH -o slurm-%x-%j.out
 # Checkpoint-resume verification (Task C): run the smoke config for 30 steps with save_freq 5,
 # kill the trainer through the real SIGUSR1 trap once step 15 is logged, then resubmit this
 # script with a dependency; the second job must resume at step 16 with the same W&B run id.
-#   sbatch slurm/test_resume.sbatch            # phase 1 (kills itself at step 15, resubmits)
+#   make sbatch-resume-test                     # phase 1 (kills itself at step 15, resubmits)
 #   ...the second job runs to step 30 and checks the invariants with scripts/check_resume.py
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
@@ -24,7 +25,9 @@ PHASE="${MC_RESUME_PHASE:-1}"
 if [ "${PHASE}" = "1" ]; then
   export MC_KILL_AFTER_STEP=15
   # phase 2 must land on THIS node: the checkpoints live on its scratch (docs/decisions/009)
-  sbatch --dependency=afterany:"${SLURM_JOB_ID}" -w "$(hostname)" --export=ALL,MC_RESUME_PHASE=2,MC_KILL_AFTER_STEP= slurm/test_resume.sbatch
+  source configs/ada.env.sh   # mc_sbatch_args: account/QoS/GPUs of $MC_LAYOUT + the driver exclude list
+  # shellcheck disable=SC2046
+  sbatch $(mc_sbatch_args) --dependency=afterany:"${SLURM_JOB_ID}" -w "$(hostname)" --export=ALL,MC_RESUME_PHASE=2,MC_KILL_AFTER_STEP= slurm/test_resume.sbatch
   exec bash slurm/run_train.sh smoke "$@"
 else
   unset MC_KILL_AFTER_STEP

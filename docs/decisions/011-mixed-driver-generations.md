@@ -13,6 +13,7 @@ fully allocated, drained or reserved), one CPU-only `srun` each:
 | 570.211.01 (CUDA 12.8) | gnode043 050 054 056 072 073 079 080 082 085 090 091 | **no** |
 | no kernel module loaded | gnode066 076 088 089 | **no** |
 | probe timed out | gnode052 057 | unknown |
+| 580.178.04 but **CUDA cannot initialise** (`nvidia-smi` healthy, modules and `/dev` nodes present, `torch.cuda.init()` -> "CUDA unknown error" for every process; found by the first bench job 2719206) | gnode065 | **no** (node fault; reported to the admins) |
 
 The generation does not follow any SLURM feature: `phase3` nodes are on both sides, and so are plain
 `2080ti` nodes. So `-C` cannot select it.
@@ -43,6 +44,8 @@ The generation does not follow any SLURM feature: `phase3` nodes are on both sid
    The guard runs before the run dir or `node.txt` is written, so a bad landing leaves no trace in the run.
 3. **The preflight reports the driver** (`check_driver`) and turns a CUDA init failure into a clean
    FAIL instead of a traceback.
+   `mc_check_cuda` (added after gnode065) runs the real `torch.cuda.init()` right after the driver check,
+   so a node whose GPU is dead despite a good driver is recorded in `bad_nodes.txt` and skipped the same way.
 4. Resubmission after a bad landing is manual for now (rerun the same `make sbatch-*`; the job dies in
    its first seconds). Automatic self-resubmission with `scontrol show job`'s `Command=` is possible but
    is a separate decision.

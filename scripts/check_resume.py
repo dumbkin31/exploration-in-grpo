@@ -9,7 +9,7 @@ Asserts, on the durable run dir shared by both jobs:
   * <checkpoints dir>/latest_checkpointed_iteration.txt == final_step and that directory exists
     (pass --checkpoints-dir when checkpoints live on node-local scratch, docs/decisions/009);
   * the checkpoint the resume started from existed (global_step_<last_ckpt>);
-  * exactly one W&B run id across every offline-run-* directory (WANDB_RUN_ID stable);
+  * exactly one W&B run id across every wandb/run-* (online) and offline-run-* directory (WANDB_RUN_ID stable);
   * two jobs/<id>/ directories (two submissions).
 Exit 0 on success, 1 with a readable list of failures otherwise.
 """
@@ -20,6 +20,17 @@ import argparse
 import json
 import sys
 from pathlib import Path
+
+
+def wandb_run_ids(run: Path) -> set[str]:
+    """Run ids of every W&B run folder under <run>/wandb: `run-<ts>-<id>` (online), `offline-run-<ts>-<id>`,
+    and the nested `wandb/wandb/...` layout older jobs produced."""
+    ids: set[str] = set()
+    for pattern in ("wandb/run-*", "wandb/offline-run-*", "wandb/wandb/run-*", "wandb/wandb/offline-run-*"):
+        for d in run.glob(pattern):
+            if d.is_dir():
+                ids.add(d.name.split("-", 2)[-1] if d.name.startswith("run-") else d.name.split("-", 3)[-1])
+    return ids
 
 
 def main() -> int:
@@ -79,11 +90,9 @@ def main() -> int:
         if not (ck / f"global_step_{latest}").is_dir():
             fails.append(f"checkpoint dir global_step_{latest} missing")
 
-    ids = set()
-    for d in (run / "wandb").glob("offline-run-*"):
-        ids.add(d.name.rsplit("-", 1)[-1])
+    ids = wandb_run_ids(run)
     if len(ids) != 1:
-        fails.append(f"expected exactly one W&B run id across offline runs, found {sorted(ids)}")
+        fails.append(f"expected exactly one W&B run id across the run folders, found {sorted(ids)}")
     jobs = sorted(p.name for p in (run / "jobs").glob("*")) if (run / "jobs").exists() else []
     if len(jobs) < 2:
         fails.append(f"expected 2 job dirs (two submissions), found {jobs}")

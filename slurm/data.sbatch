@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-data
-#SBATCH -A nlp
-#SBATCH --qos=normal
+#SBATCH -A research
+#SBATCH --qos=low
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
@@ -15,7 +15,7 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source configs/ada.env.sh
-source slurm/common.sh; mc_check_driver   # mixed driver generations, decision 011
+source slurm/common.sh; mc_check_driver; mc_check_cuda   # old drivers (011) and dead GPUs both exit 6 and record the node
 [ -f "${MC_STAGE_ROOT}/MANIFEST.json" ] || { echo "run 'make prefetch' on the login node first"; exit 1; }
 "${MC_VENV_DIR}/bin/python" scripts/prepare_data.py
 echo "== preflight with the staged model + data =="

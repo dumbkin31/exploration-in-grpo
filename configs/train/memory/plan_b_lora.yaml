@@ -1,27 +1,37 @@
 # @package _global_
-# Memory plan B (DOCUMENTED FALLBACK, not the default): LoRA r=64 on all linear layers of the
-# frozen fp16 base. ~0.9 GB/GPU sharded base + < 0.6 GB adapter state + activations; no CPU
-# offload. Reference log-probs come from the same model with the adapter disabled.
-# It weakens the reproduction claim (the paper fine-tunes all parameters); if adopted it is
-# reported as a limitation. UNVERIFIED on the cluster: the merged-weight sync to vLLM.
+# Memory plan B (the DEFAULT since docs/decisions/012): LoRA r=64 / alpha=128 on every linear layer of
+# the frozen base, trained under the FSDP2 CPUOffloadPolicy.
+#
+# Why the offload policy even for LoRA: verl keeps the base in `fsdp_config.model_dtype` (fp32 by
+# default; the LoRA masters follow it, and fp16 masters would lose most 1e-5 updates), and on a 1-GPU
+# world "sharded" means the whole 6.9 GB fp32 base, so verl's manual param_offload would put it on the
+# card for every forward. With offload_policy the base sits in pinned host RAM (~7.2 GB) and one decoder
+# layer is gathered in fp16 at a time; only the 69.7 M LoRA parameters carry grads and Adam state
+# (~0.85 GB). Verified in verl v0.9.0: transformer_impl.py:352-365,439-444.
+# The reference log-probs come from the same model with the adapter disabled (ref_in_actor when
+# lora_rank > 0: trainer_base.py:316-323, engine_workers.py:397-419), so there is no ref block here.
+# `lora.merge: true` streams merged full weights to vLLM after each update and lets the engine sleep at
+# level 2 (weights + KV freed during the update). Watchlist item: verl casts the merged tensors to bf16
+# before vLLM re-casts them to fp16 (one rounding per step; a one-line patch if it ever matters).
+# Deviation from the paper (full fine-tuning) is reported as a limitation (012).
 actor_rollout_ref:
   model:
     lora_rank: 64
     lora_alpha: 128
-    target_modules: all-linear
+    target_modules: all-linear       # PEFT excludes lm_head: 69.7 M trainable parameters
     lora:
       merge: true                    # sync merged full weights so vLLM serves a plain model
   actor:
     strategy: fsdp2
     optim:
-      lr: 1.0e-5                     # RL + LoRA usually wants a higher LR than full FT
+      lr: 1.0e-5                     # RL + LoRA wants a higher LR than full FT (1e-6)
     fsdp_config:
       strategy: fsdp2
-      offload_policy: false
-      param_offload: false
+      model_dtype: fp32              # explicit: LoRA masters in fp32  [checked]
+      offload_policy: true           # FSDP2 CPUOffloadPolicy(pin_memory=True): base + masters in host RAM  [checked on 1 GPU]
+      param_offload: false           # ignored under offload_policy (kept explicit)
       optimizer_offload: false
-  ref:
-    fsdp_config:
-      strategy: fsdp2
-      offload_policy: false
-      param_offload: true
+      reshard_after_forward: true    # one all-gathered layer at a time
+    checkpoint:
+      save_lora_only: false          # full PEFT state dict (~7.8 GB). `true` -> ~0.9 GB adapters only, the
+                                     # phase-2 option that would allow durable checkpoints on /home2 (012)

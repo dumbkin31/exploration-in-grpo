@@ -101,9 +101,8 @@ class MixedCutsPPOTrainerSync(PPOTrainerSync):
         super().__init__(config, *args, **kwargs)
         self.mixed_cuts_config = MixedCutsConfig.from_mapping(config.get("mixed_cuts", None))
         self.mixed_cuts_config.validate_against_rollout_n(int(config.actor_rollout_ref.rollout.n))
-        checks = (config.get("mixed_cuts", None) or {}).get("checks", None) or {}
-        self._check_non_thinking = bool(checks.get("assert_non_thinking", True))
-        self._check_recomputed = bool(checks.get("assert_recomputed_logprobs", True))
+        self._check_non_thinking = self.mixed_cuts_config.checks.assert_non_thinking
+        self._check_recomputed = self.mixed_cuts_config.checks.assert_recomputed_logprobs
 
         run_dir = config.get("paths", {}).get("run_dir", None) or config.trainer.default_local_dir
         self._mc_run_dir = str(run_dir)
