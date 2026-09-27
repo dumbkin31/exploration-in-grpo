@@ -60,6 +60,9 @@ def llm(tmp_path_factory):
         max_model_len=2048,
         logits_processors=[CutsLogitsProcessor],
         attention_config={"backend": "TRITON_ATTN"},
+        # verl builds its rollout engine with processed log-probs (the D1 hazard the demo test shows);
+        # vLLM's own default is raw_logprobs, under which only singleton steps sit on the -log|S_t| lattice
+        logprobs_mode="processed_logprobs",
         seed=0,
     )
     yield engine
