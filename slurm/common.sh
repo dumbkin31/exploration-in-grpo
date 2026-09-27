@@ -47,10 +47,29 @@ mc_check_driver() {
   mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu130 wheels (>= ${min})"
 }
 
+mc_check_cuda() {
+  # A driver that is new enough can still fail to initialise CUDA (a GPU that fell off the bus, nvidia-uvm
+  # missing, a stuck device): the bench job died with "CUDA unknown error" on gnode065 that way. Probe with
+  # the real torch before anything is written; a failing node is recorded like an old-driver one (011).
+  local py="${MC_VENV_DIR:-}/bin/python" out
+  [ -x "${py}" ] || { mc_log "cuda probe skipped: ${py} missing"; return 0; }
+  if out="$(timeout 120 "${py}" -c 'import torch; torch.cuda.init(); n=torch.cuda.device_count(); print(n, torch.cuda.get_device_name(0) if n else "-", [round(x/2**30,1) for x in torch.cuda.mem_get_info(0)] if n else "-")' 2>&1)"; then
+    mc_log "cuda probe on $(hostname): ${out##*$'\n'} (count, name, [free GiB, total GiB])"
+    return 0
+  fi
+  mc_log "ERROR: CUDA cannot initialise on $(hostname) (GPU ${CUDA_VISIBLE_DEVICES:-?}): ${out##*$'\n'}"
+  if [ -n "${MC_BAD_NODES_FILE:-}" ] && mkdir -p "$(dirname "${MC_BAD_NODES_FILE}")" 2>/dev/null; then
+    echo "$(hostname) cuda_init_failed gpu=${CUDA_VISIBLE_DEVICES:-?} job=${SLURM_JOB_ID:-?} $(date '+%F')" >> "${MC_BAD_NODES_FILE}"
+    mc_log "recorded in ${MC_BAD_NODES_FILE}: rerun the same make sbatch-* command, it now excludes this node"
+  fi
+  exit 6
+}
+
 mc_job_init() {
   # shellcheck source=/dev/null
   source "${MC_REPO_ROOT}/configs/ada.env.sh"
   mc_check_driver
+  mc_check_cuda
   export MC_JOB_ID="${SLURM_JOB_ID:-local-$$}"
   export MC_SEED="${MC_SEED:-42}"
   export MC_RUN_NAME="${1:-${MC_RUN_NAME:-${SLURM_JOB_NAME:-job}-s${MC_SEED}}}"
