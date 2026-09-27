@@ -29,7 +29,7 @@ log "uv $(uv --version) ; venv -> ${MC_VENV_DIR} ; python cache -> ${UV_PYTHON_I
 log "package index: ${UV_DEFAULT_INDEX} (strategy ${UV_INDEX_STRATEGY}); mirror speed: $(curl -sL -o /dev/null -m 8 -w '%{speed_download}' https://pypi.tuna.tsinghua.edu.cn/packages/d2/7f/577a61bf2c8eff26e942afe53a6b03f4dbf5b4f233b832c228417d0c954e/ray-2.56.1-cp312-cp312-manylinux2014_x86_64.whl || echo ?) B/s"
 
 log "== 1/6 venv + pinned requirements (requirements/base.txt)"
-uv venv --python "${MC_PYTHON_VERSION}" "${MC_VENV_DIR}"
+uv venv --clear --python "${MC_PYTHON_VERSION}" "${MC_VENV_DIR}"   # --clear: a killed earlier build leaves a half-made venv
 uv pip install --python "${PY}" -r requirements/base.txt
 log "== 2/6 verl ${VERL_TAG} (no deps) + this package"
 uv pip install --python "${PY}" --no-deps "verl @ git+https://github.com/volcengine/verl.git@${VERL_TAG}"
