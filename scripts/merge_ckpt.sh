@@ -22,10 +22,23 @@ DST="$RUN_DIR/hf/global_step_${STEP}"
 [ -d "$SRC" ] || { echo "missing $SRC" >&2; exit 1; }
 PY="${MC_VENV_DIR:-.venv}/bin/python"
 echo "merging $SRC -> $DST"
-"$PY" -m verl.model_merger merge --backend fsdp --local_dir "$SRC" --target_dir "$DST"
-# LoRA runs (memory=plan_b_lora, the default): the merger leaves base weights + lora_adapter/ side by
-# side; fold the adapter in so vLLM/eval see the trained model (decision 012).
-"$PY" "$(dirname "$0")/merge_lora.py" "$DST"
+BASE="${MC_STAGED_MODEL_DIR:-${MC_MODEL_DIR:-}}"
+if [ -f "$SRC/lora_train_meta.json" ] && "$PY" - "$SRC" <<'PY'
+import glob, sys, torch
+pts = sorted(glob.glob(sys.argv[1] + "/model_world_size_*_rank_0.pt"))
+sd = torch.load(pts[0], map_location="cpu", weights_only=False) if pts else {}
+sys.exit(0 if sd and all(("lora_" in k or ".adapter_" in k) for k in sd) else 1)
+PY
+then
+  # save_lora_only checkpoint (the default since decision 012): the .pt holds adapters only, so verl's
+  # merger would assert on the missing base keys. Rebuild the PEFT adapter and merge it into the base model.
+  [ -d "$BASE" ] || { echo "LoRA-only checkpoint needs the base model: set MC_MODEL_DIR (source configs/ada.env.sh)" >&2; exit 1; }
+  "$PY" "$(dirname "$0")/merge_lora.py" --verl-actor-dir "$SRC" --base "$BASE" --out "$DST"
+else
+  "$PY" -m verl.model_merger merge --backend fsdp --local_dir "$SRC" --target_dir "$DST"
+  # full-state LoRA checkpoints: the merger leaves base weights + lora_adapter/ side by side; fold the adapter in
+  "$PY" "$(dirname "$0")/merge_lora.py" "$DST"
+fi
 # verl's merger writes weights + config; make sure the tokenizer travels with the model.
 if [ -n "${MC_MODEL_DIR:-}" ] && [ ! -f "$DST/tokenizer_config.json" ]; then
   cp -n "$MC_MODEL_DIR"/tokenizer* "$MC_MODEL_DIR"/*.jinja "$MC_MODEL_DIR"/vocab.json "$MC_MODEL_DIR"/merges.txt "$DST"/ 2>/dev/null || true
