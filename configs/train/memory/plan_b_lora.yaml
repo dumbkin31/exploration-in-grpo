@@ -33,5 +33,7 @@ actor_rollout_ref:
       optimizer_offload: false
       reshard_after_forward: true    # one all-gathered layer at a time
     checkpoint:
-      save_lora_only: false          # full PEFT state dict (~7.8 GB). `true` -> ~0.9 GB adapters only, the
-                                     # phase-2 option that would allow durable checkpoints on /home2 (012)
+      save_lora_only: true           # adapters + optimizer only (~0.9 GB). A full PEFT state-dict save gathers a
+                                     # 6.9 GB fp32 copy on the host; stacked on the weight sync it OOM-killed the
+                                     # 30 GB research cgroup at the end of every step (arm jobs 2719894/2719898).
+                                     # Small checkpoints also live on /home2: no node pinning (012).  [checked on 1 GPU]

@@ -3,6 +3,9 @@
 > **Amended by [010](010-share1-is-login-node-local.md)** (same day, later): `/share1` turned out to be a
 > local disk of the login node, invisible from compute nodes, so the durable side of this layout is
 > `/home2/<user>/mixed-cuts-data` (25 GB / 300k files), not `/share1`. Everything else here stands.
+> **Amended by [012](012-research-qos-one-gpu-lora.md)** (2026-09-28): the LoRA layouts save adapter-only
+> checkpoints (~0.9 GB) into the durable run dir on `/home2` (`MC_CHECKPOINT_HOME=durable`); node pinning
+> now applies only to full-fine-tune runs.
 
 **Measured on Ada (2026-09-27)**: `/share1/<user>` has a quota of 25,000 MB (hard 27,000 MB) and
 3,000 files, not the 100 GB the wiki claimed. One full-fine-tune checkpoint (fp32 master + Adam

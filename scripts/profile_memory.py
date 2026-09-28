@@ -99,14 +99,15 @@ def sample_host_mib(f: Path | None) -> int | None:
         return None
 
 
-def sample_host_anon_mib(f: Path | None) -> int | None:
-    """Anonymous (non-reclaimable) memory of the job cgroup: what the OOM killer counts. mmapped model
-    files inflate memory.current and RSS but the kernel reclaims them under pressure."""
+def sample_host_anon_mib(f: Path | None, key: str = "anon") -> int | None:
+    """Non-reclaimable memory of the job cgroup from memory.stat: `anon` (process heaps, pinned buffers)
+    or `shmem` (Ray's object store in /dev/shm). Both count for the OOM killer; mmapped model files
+    inflate memory.current and RSS but the kernel reclaims them under pressure."""
     if f is None:
         return None
     try:
         for line in (f.parent / "memory.stat").read_text().splitlines():
-            if line.startswith("anon "):
+            if line.startswith(key + " "):
                 return int(line.split()[1]) // 1048576
     except (OSError, ValueError):
         pass
@@ -155,6 +156,9 @@ def watch(path: Path, interval: float, job: str) -> int:
                     anon = sample_host_anon_mib(host_file)
                     if anon is not None:
                         row["host_anon_mib"] = anon
+                    shm = sample_host_anon_mib(host_file, "shmem")
+                    if shm is not None:
+                        row["host_shmem_mib"] = shm
                 if i % every == 0:
                     row["top_rss"] = sample_top_rss()
                 f.write(json.dumps(row) + "\n")
@@ -234,10 +238,12 @@ def report(run_dir: Path) -> str:
                 lines.append(f"| `{cmd}` | {rss} |")
         anons = [s_["host_anon_mib"] for s_ in samples if s_.get("host_anon_mib") is not None]
         if anons:
+            shms = [s_.get("host_shmem_mib") or 0 for s_ in samples]
             lines.append("")
             lines.append(
-                f"Anonymous (non-reclaimable) memory of the job cgroup: peak {max(anons)} MiB, median "
-                f"{sorted(anons)[len(anons) // 2]} MiB; the rest of memory.current is file-backed (mmapped model files)."
+                f"Non-reclaimable memory of the job cgroup: anon peak {max(anons)} MiB (median "
+                f"{sorted(anons)[len(anons) // 2]}), shmem (Ray object store) peak {max(shms)} MiB; the rest of "
+                "memory.current is file-backed (mmapped model files)."
             )
         lines.append(
             f"Host RSS of the job cgroup (sampled memory.current): peak {max(hosts)} MiB, "

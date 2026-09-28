@@ -53,6 +53,7 @@ def test_defaults_are_the_1gpu_lora_layout(compose, name, monkeypatch):
     assert cfg.actor_rollout_ref.rollout.tensor_model_parallel_size == 1
     assert cfg.actor_rollout_ref.model.lora_rank == 64
     assert cfg.actor_rollout_ref.actor.fsdp_config.offload_policy is True
+    assert cfg.actor_rollout_ref.actor.checkpoint.save_lora_only is True
     assert mod.check(cfg) == []
 
 

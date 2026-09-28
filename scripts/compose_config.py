@@ -169,6 +169,10 @@ def check(cfg) -> list[str]:
             fail(
                 "the 1-GPU layout needs model.use_fused_kernels=true: the padded path materialises 6k x 152k fp32 logits three times (OOM on 11 GiB)"
             )
+        if not (arr.actor.get("checkpoint") or {}).get("save_lora_only"):
+            fail(
+                "the 1-GPU layout needs actor.checkpoint.save_lora_only=true: a full state-dict save gathers 6.9 GB on the host and OOM-kills the 30 GB cgroup at the weight sync"
+            )
         if int(ray_init.get("object_store_memory") or 0) > 6_000_000_000:
             fail(
                 f"ray object_store_memory {ray_init.get('object_store_memory')} > 6 GB on the 30 GB host budget"
