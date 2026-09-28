@@ -166,13 +166,18 @@ make sbatch-data                       # only if prefetch finished after the set
 
 # 2. measure before committing compute (each job mirrors to ~/mixed-cuts-data/runs/<run>/). Every
 #    make sbatch-* target adds the layout's flags (-A research --qos=low --gres=gpu:1 -c 10 ...) + the exclude list.
+#    A job that lands on an old-driver or dead-GPU node records it and resubmits itself elsewhere (up to 5
+#    times; MC_AUTO_RESUBMIT=0 turns this off; decision 011).
 make sbatch-bench                      # ~40 min: tokens/s at concurrency 1-64, KV size at util 0.80/0.85, TRITON_ATTN line
 make sbatch-smoke                      # ~45 min: 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS), then tests/gpu in the same job
-make sbatch-resume-test                # 2 x ~2 h: kills itself at step 15, resubmits on the same node, checks it resumed at 16
+make sbatch-resume-test                # ~2 x 25 min: kills itself at step 15, resubmits itself, checks it resumed at 16
 
-# 3. the two arms: ONE GPU PER USER on research, so one arm at a time per account (~4-6 days each, two
-#    submissions under the 4-day MaxWall; resubmit the same command to resume). SEED=1,2,3 later for three seeds.
+# 3. the two arms: ONE GPU PER USER on research, so one arm at a time per account (~2 h 20 min per step, ~10
+#    days per arm: three submissions under the 4-day MaxWall; resubmit the same command to resume). A same-name
+#    twin under MC_LAYOUT=nlp_1gpu waits behind the running job (singleton) and continues the run when it
+#    ends (012). SEED=1,2,3 later for three seeds.
 make sbatch-train CONFIG=math_grpo SEED=1
+MC_LAYOUT=nlp_1gpu make sbatch-train CONFIG=math_grpo SEED=1   # optional: the automatic continuation (60 GB host RAM)
 make sbatch-train CONFIG=math_mixed_cuts SEED=1
 
 # 4. evaluate a checkpoint (16 samples per problem; pass@1, pass@16, maj@16 with 95% CIs).
