@@ -126,18 +126,30 @@ def main() -> int:
     t0 = time.time()
     print(f"loading base from {src} in {args.dtype}")
     base = AutoModelForCausalLM.from_pretrained(src, torch_dtype=dtype, device_map="cpu")
+    cfg = json.loads((adapter / "adapter_config.json").read_text())
+    # probe: one target-module weight before/after the merge; an unchanged weight means the adapter was
+    # not applied (wrong keys, zero lora_B) and eval would score the base model
+    probe_name, probe_before = next(
+        (n, w.detach().clone())
+        for n, w in base.named_parameters()
+        if n.endswith(f"{sorted(cfg.get('target_modules') or ['q_proj'])[0]}.weight")
+    )
     print(f"applying adapter {adapter}")
     model = PeftModel.from_pretrained(base, adapter)
     merged = model.merge_and_unload()
+    probe_after = dict(merged.named_parameters())[probe_name].detach()
+    probe_diff = float((probe_after.float() - probe_before.float()).abs().max())
+    print(f"probe {probe_name}: max |merged - base| = {probe_diff:.3e}")
     n_params = sum(p.numel() for p in merged.parameters())
     out.mkdir(parents=True, exist_ok=True)
     merged.save_pretrained(out, safe_serialization=True)
     AutoTokenizer.from_pretrained(src).save_pretrained(out)
-    cfg = json.loads((adapter / "adapter_config.json").read_text())
     marker.write_text(
         json.dumps(
             {
                 "merged_from": str(adapter),
+                "probe": probe_name,
+                "probe_max_abs_diff": probe_diff,
                 "r": cfg.get("r"),
                 "lora_alpha": cfg.get("lora_alpha"),
                 "target_modules": cfg.get("target_modules"),
@@ -149,6 +161,12 @@ def main() -> int:
         )
     )
     print(f"merged {n_params / 1e9:.2f} B params -> {out} in {time.time() - t0:.0f}s")
+    if probe_diff == 0.0:
+        print(
+            f"ERROR: {probe_name} is identical to the base after the merge: the adapter did nothing",
+            file=sys.stderr,
+        )
+        return 2
     return 0
 
 
