@@ -111,9 +111,19 @@ times per sequence (smoke_maxlen job 2719395).
   Consequence: an arm is submitted on ONE account (a twin on the other account would sit at `Dependency`
   until the first one ended, unpinned); twins are for the stateless jobs (bench, smoke). Measured: the resume test (2719790 -> 2719803) killed at 15, resumed at 16,
   ran to 30 with one W&B run id; a LoRA checkpoint is 7.3 GB on scratch.
-* Checkpoints stay on node-local scratch with node pinning (009): 7.8 GB per step would not fit the home
-  quota. Phase-2 option once the pipeline is proven: `save_lora_only: true` (~0.9 GB) and
-  `MC_CHECKPOINT_HOME=durable`, which removes the pin.
+* **Arm 1 (jobs 2719894 and 2719898, 2026-09-28) died twice at the end of a step** with
+  `slurmstepd: oom-kill` (host cgroup, 30 GB), inside `checkpoint_manager.update_weights` right after the
+  checkpoint save, from ~18 GB of anonymous memory in steady state. The full PEFT state-dict save gathers
+  a 6.9 GB fp32 copy on the host and the weight sync stacks its merge and 2 GB bucket copies on top.
+  Since then: `checkpoint.save_lora_only: true` (adapters + optimizer, ~0.9 GB),
+  `rollout.checkpoint_engine.update_weights_bucket_megabytes: 512`, and **`MC_CHECKPOINT_HOME=durable` for
+  the LoRA layouts**: checkpoints live in the run dir on `/home2`, resumes and evaluations run on any good
+  node, no `-w` pin (`compose_config.py` refuses a 1-GPU layout without `save_lora_only`).
+  `scripts/merge_ckpt.sh` rebuilds the PEFT adapter from the LoRA-only `.pt` and merges it into the base
+  model (`merge_lora.py --verl-actor-dir`); verl's own merger asserts on the missing base keys.
+  Step time measured on the arm: rollout 59 min, old log-probs 16.5, ref 15.3, update 49.6 ->
+  **~2 h 20 min per step** (100 steps ~ 10 days: three 4-day submissions per arm).
+* Full-fine-tune runs (`MC_LAYOUT=nlp_4gpu`) keep node-local scratch with node pinning (009).
 
 ## Schedule and what the write-up must say
 
