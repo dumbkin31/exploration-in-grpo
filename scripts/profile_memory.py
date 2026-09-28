@@ -114,11 +114,27 @@ def sample_host_anon_mib(f: Path | None, key: str = "anon") -> int | None:
     return None
 
 
+def proc_rss_breakdown(pid: str, proc: Path = Path("/proc")) -> tuple[int | None, int | None]:
+    """(RssAnon, RssShmem) of one process in MiB from /proc/<pid>/status. Pinned host memory from torch's
+    CUDA host allocator is a shared mapping and shows up as RssShmem, not RssAnon."""
+    anon = shm = None
+    try:
+        for line in (proc / str(pid) / "status").read_text().splitlines():
+            if line.startswith("RssAnon:"):
+                anon = int(line.split()[1]) // 1024
+            elif line.startswith("RssShmem:"):
+                shm = int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return anon, shm
+
+
 def sample_top_rss(n: int = 8) -> list[list]:
-    """[[rss_mib, short command], ...] of this user's biggest processes (attributes the host budget)."""
+    """[[rss_mib, short command, anon_mib, shmem_mib], ...] of this user's biggest processes (attributes
+    the host budget; anon/shmem are None where /proc is unreadable)."""
     try:
         out = subprocess.run(
-            ["ps", "-u", os.environ.get("USER", str(os.getuid())), "-o", "rss=,args=", "--sort=-rss"],
+            ["ps", "-u", os.environ.get("USER", str(os.getuid())), "-o", "pid=,rss=,args=", "--sort=-rss"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -127,16 +143,17 @@ def sample_top_rss(n: int = 8) -> list[list]:
         return []
     rows: list[list] = []
     for line in out.splitlines()[:n]:
-        parts = line.split(None, 1)
-        if len(parts) != 2:
+        parts = line.split(None, 2)
+        if len(parts) != 3:
             continue
-        rss_kib, args = parts
+        pid, rss_kib, args = parts
         cmd = args.strip()
         for marker in ("ray::", "vllm", "-m mixed_cuts.main", "raylet", "gcs_server", "python"):
             if marker in cmd:
                 cmd = marker if marker != "ray::" else cmd[cmd.index("ray::") : cmd.index("ray::") + 40]
                 break
-        rows.append([int(rss_kib) // 1024, cmd[:60]])
+        anon, shm = proc_rss_breakdown(pid)
+        rows.append([int(rss_kib) // 1024, cmd[:60], anon, shm])
     return rows
 
 
@@ -226,23 +243,27 @@ def report(run_dir: Path) -> str:
                     host_peak[name] = max(host_peak[name], s["host_mib"])
         lines.append("")
         # biggest processes seen (max RSS per command over the snapshots)
-        top: dict[str, int] = {}
+        top: dict[str, list[int]] = {}
         for s_ in samples:
-            for rss, cmd in s_.get("top_rss") or []:
-                top[cmd] = max(top.get(cmd, 0), int(rss))
+            for row in s_.get("top_rss") or []:
+                rss, cmd = row[0], row[1]
+                anon = row[2] if len(row) > 2 and row[2] is not None else 0
+                shm = row[3] if len(row) > 3 and row[3] is not None else 0
+                cur = top.setdefault(cmd, [0, 0, 0])
+                cur[0], cur[1], cur[2] = max(cur[0], int(rss)), max(cur[1], int(anon)), max(cur[2], int(shm))
         if top:
             lines.append("")
-            lines.append("| process (max RSS over the run) | MiB |")
-            lines.append("|---|---|")
-            for cmd, rss in sorted(top.items(), key=lambda kv: -kv[1])[:10]:
-                lines.append(f"| `{cmd}` | {rss} |")
+            lines.append("| process (max over the run) | RSS MiB | anon MiB | shmem MiB |")
+            lines.append("|---|---|---|---|")
+            for cmd, (rss, anon, shm) in sorted(top.items(), key=lambda kv: -kv[1][0])[:10]:
+                lines.append(f"| `{cmd}` | {rss} | {anon} | {shm} |")
         anons = [s_["host_anon_mib"] for s_ in samples if s_.get("host_anon_mib") is not None]
         if anons:
             shms = [s_.get("host_shmem_mib") or 0 for s_ in samples]
             lines.append("")
             lines.append(
                 f"Non-reclaimable memory of the job cgroup: anon peak {max(anons)} MiB (median "
-                f"{sorted(anons)[len(anons) // 2]}), shmem (Ray object store) peak {max(shms)} MiB; the rest of "
+                f"{sorted(anons)[len(anons) // 2]}), shmem (pinned host memory + Ray object store) peak {max(shms)} MiB; the rest of "
                 "memory.current is file-backed (mmapped model files)."
             )
         lines.append(
