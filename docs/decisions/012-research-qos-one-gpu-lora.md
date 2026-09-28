@@ -124,6 +124,23 @@ times per sequence (smoke_maxlen job 2719395).
   Step time measured on the arm: rollout 59 min, old log-probs 16.5, ref 15.3, update 49.6 ->
   **~2 h 20 min per step** (100 steps ~ 10 days: three 4-day submissions per arm).
 * Full-fine-tune runs (`MC_LAYOUT=nlp_4gpu`) keep node-local scratch with node pinning (009).
+* **Host-memory margin after the fix (resume test 2720711 -> 2720815, gnode087, 2026-09-28: `RESUME CHECK OK`,
+  810 MB checkpoints on /home2).** The sidecar's new `shmem` column shows **11.2 GB of shared memory from the
+  first 20 s of `init_model`**, constant for the whole job, next to an anonymous peak of 18.5 GB: together
+  **29,730 of 30,000 MiB**. The failed arm's anonymous memory at full scale peaked at the same 18.6 GB, so
+  batch size barely moves the host budget; the margin is ~270 MiB either way. Source of the shared memory
+  (verified): verl builds FSDP2's policy as `CPUOffloadPolicy(pin_memory=True)` unconditionally
+  (`transformer_impl.py:443`), and torch 2.11's `CachingHostAllocator` rounds every pinned allocation up to a
+  power of two and caches freed blocks (`ATen/core/CachingHostAllocator.h:302`). Pinned host memory is a
+  shared mapping, so it counts as `shmem`, not `anon`. The fp32 base is 6.9 GB; the power-of-two rounding of
+  the embedding (1.24 -> 2.15 GB) and the MLP weights (50 -> 67 MB each) accounts for ~9.2 GB, the rest is
+  presumably cached free blocks from `fsdp2_load_full_state_dict`'s GPU round trip (to be confirmed with
+  `torch.cuda.host_memory_stats()`). Candidate fixes, not applied: release the pinned cache after model init
+  (~2 GB), or unpinned offload (~4.3 GB, slower host-to-device copies).
+* **Arms may now be queued on both accounts.** The one-account rule above existed because an unpinned twin
+  could not reach scratch checkpoints. With durable checkpoints, a same-name twin under `MC_LAYOUT=nlp_1gpu`
+  (60 GB host memory) held back by `--dependency=singleton` is a valid automatic continuation: it starts only
+  after the running job ends and resumes from the last checkpoint on any node.
 
 ## Schedule and what the write-up must say
 
