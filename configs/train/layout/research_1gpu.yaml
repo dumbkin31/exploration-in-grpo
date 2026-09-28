@@ -21,6 +21,8 @@ actor_rollout_ref:
     max_num_batched_tokens: 4096     # >= max_prompt_length (chunked prefill); half the workspace of 8192
     agent:
       num_workers: 1                 # one asyncio worker drives the single replica; each is a Ray actor of ~0.7 GB RSS
+    checkpoint_engine:
+      update_weights_bucket_megabytes: 512   # verl default 2048: the sync buckets are a transient on top of ~18 GB steady
 data:
   dataloader_num_workers: 0          # in-process parquet loading: no forked workers on the 30 GB budget
 ray_kwargs:
