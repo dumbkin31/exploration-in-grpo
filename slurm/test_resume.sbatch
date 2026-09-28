@@ -26,6 +26,12 @@ if [ "${PHASE}" = "1" ]; then
   export MC_KILL_AFTER_STEP=15
   # with scratch checkpoints phase 2 must land on THIS node (009); LoRA-only checkpoints live on /home2 (012)
   source configs/ada.env.sh   # mc_sbatch_args: account/QoS/GPUs of $MC_LAYOUT + the driver exclude list
+  # node checks BEFORE queueing phase 2: on a bad node this job records the node, resubmits phase 1
+  # elsewhere and exits, instead of leaving a phase 2 behind that starts with no phase-1 data
+  source slurm/common.sh
+  unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES GPU_DEVICE_ORDINAL
+  mc_check_driver
+  mc_check_cuda
   # shellcheck disable=SC2046
   PIN=""; [ "${MC_CHECKPOINT_HOME:-scratch}" = scratch ] && PIN="-w $(hostname)"   # durable checkpoints resume anywhere
   # shellcheck disable=SC2086

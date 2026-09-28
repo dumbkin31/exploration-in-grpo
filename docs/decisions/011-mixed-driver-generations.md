@@ -46,9 +46,24 @@ The generation does not follow any SLURM feature: `phase3` nodes are on both sid
    FAIL instead of a traceback.
    `mc_check_cuda` (added after gnode065) runs the real `torch.cuda.init()` right after the driver check,
    so a node whose GPU is dead despite a good driver is recorded in `bad_nodes.txt` and skipped the same way.
-4. Resubmission after a bad landing is manual for now (rerun the same `make sbatch-*`; the job dies in
-   its first seconds). Automatic self-resubmission with `scontrol show job`'s `Command=` is possible but
-   is a separate decision.
+4. **Resubmission after a bad landing is automatic (2026-09-28, user decision).** Manual resubmission cost
+   the first arm 5.5 idle hours: job 2721197 landed on gnode047 (driver 570, never probed) at 17:37 and
+   died in its first second, and nobody resubmitted until 23:02. Now `mc_bad_node_exit` (slurm/common.sh)
+   records the node and `mc_resubmit_elsewhere` resubmits the same job before exiting 6: the script from
+   `scontrol show job`'s `Command=`, the same name and `TimeLimit`, `--export=ALL` (the job's own
+   environment: `MC_CONFIG`, `MC_SEED`, `MC_LAYOUT`, `MC_RESUME_PHASE`, ...) and `mc_sbatch_args`, whose
+   exclude list now contains the node. Limits: at most `MC_RESUBMIT_MAX` (5) attempts per submission
+   (`MC_RESUBMIT_ATTEMPT` counts them), never for a job pinned with `-w` (its checkpoints or checkpoint
+   under evaluation live on that node), off with `MC_AUTO_RESUBMIT=0`; `MC_RESUBMIT_DRY_RUN=1` prints the
+   command instead (checked on Ada against the queued arm job 2721833: identical flags to `make sbatch-train`).
+   Training jobs (`MC_RESUBMIT_SERIAL=1`, set by `train.sbatch`) keep their queue order: a pending
+   same-name twin held by `--dependency=singleton` would start before a new submission, and a singleton
+   resubmission would wait behind that twin, because singleton also waits for earlier *pending* jobs of
+   the same name (observed: twin 2721834 sat at `singleton(unfulfilled)` while 2721833 was only pending).
+   So the new job is submitted `--hold`, every pending same-name job is re-pointed to
+   `afterany:<new>,singleton`, and the new job is released; if re-pointing fails the new job is cancelled
+   rather than risk two live jobs on one run dir. The resume test now runs the node checks before it
+   queues phase 2 (2720629 had queued phase 2 first, which then ran on the same dead gnode077).
 
 ## Consequences
 

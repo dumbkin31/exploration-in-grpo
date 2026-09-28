@@ -38,11 +38,7 @@ mc_check_driver() {
   major="${drv%%.*}"
   if [ -z "${drv}" ] || ! [ "${major}" -ge "${min}" ] 2>/dev/null; then
     mc_log "ERROR: $(hostname) has NVIDIA driver '${drv:-none}' (need >= ${min} for the cu130 wheels; decision 011)"
-    if [ -n "${MC_BAD_NODES_FILE:-}" ] && mkdir -p "$(dirname "${MC_BAD_NODES_FILE}")" 2>/dev/null; then
-      echo "$(hostname) driver=${drv:-none} job=${SLURM_JOB_ID:-?} $(date '+%F')" >> "${MC_BAD_NODES_FILE}"
-      mc_log "recorded in ${MC_BAD_NODES_FILE}: rerun the same make sbatch-* command, it now excludes this node"
-    fi
-    exit 6
+    mc_bad_node_exit "driver=${drv:-none}"
   fi
   mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu130 wheels (>= ${min})"
 }
@@ -58,11 +54,79 @@ mc_check_cuda() {
     return 0
   fi
   mc_log "ERROR: CUDA cannot initialise on $(hostname) (GPU ${CUDA_VISIBLE_DEVICES:-?}): ${out##*$'\n'}"
+  mc_bad_node_exit "cuda_init_failed gpu=${CUDA_VISIBLE_DEVICES:-?}"
+}
+
+mc_bad_node_exit() {
+  # Record this node in MC_BAD_NODES_FILE (every later submission excludes it), resubmit this job
+  # elsewhere (mc_resubmit_elsewhere), exit 6. Runs before anything is written to the run dir.
   if [ -n "${MC_BAD_NODES_FILE:-}" ] && mkdir -p "$(dirname "${MC_BAD_NODES_FILE}")" 2>/dev/null; then
-    echo "$(hostname) cuda_init_failed gpu=${CUDA_VISIBLE_DEVICES:-?} job=${SLURM_JOB_ID:-?} $(date '+%F')" >> "${MC_BAD_NODES_FILE}"
-    mc_log "recorded in ${MC_BAD_NODES_FILE}: rerun the same make sbatch-* command, it now excludes this node"
+    echo "$(hostname) $1 job=${SLURM_JOB_ID:-?} $(date '+%F')" >> "${MC_BAD_NODES_FILE}"
+    mc_log "recorded in ${MC_BAD_NODES_FILE}: later submissions exclude this node"
   fi
+  mc_resubmit_elsewhere || mc_log "auto-resubmit failed: rerun the same make sbatch-* command (it now excludes this node)"
   exit 6
+}
+
+mc_resubmit_elsewhere() {
+  # Resubmit THIS job with the same script, name, time limit and environment and the updated exclude
+  # list, so a job that lands on an old-driver or dead-GPU node does not sit dead until someone notices
+  # (the arm lost 5.5 h that way on 2026-09-28). Off with MC_AUTO_RESUBMIT=0; at most MC_RESUBMIT_MAX
+  # (5) attempts per original submission; never for a job pinned with -w (its data lives on that node).
+  # MC_RESUBMIT_SERIAL=1 (train.sbatch: one job per run name at a time) keeps the run's queue order:
+  # a pending twin (e.g. the nlp continuation, held by --dependency=singleton) would otherwise start
+  # before the resubmission, and a singleton resubmission would wait behind that twin. So the new job
+  # is submitted held, every pending same-name job is re-pointed to afterany:<new>,singleton, then the
+  # new job is released; if re-pointing fails the new job is cancelled (two live jobs on one run dir
+  # would corrupt it).
+  [ "${MC_AUTO_RESUBMIT:-1}" = "1" ] || { mc_log "auto-resubmit off (MC_AUTO_RESUBMIT=0)"; return 0; }
+  [ -n "${SLURM_JOB_ID:-}" ] || return 0
+  local attempt="${MC_RESUBMIT_ATTEMPT:-0}" max="${MC_RESUBMIT_MAX:-5}"
+  if [ "${attempt}" -ge "${max}" ]; then
+    mc_log "auto-resubmit: ${attempt} of ${max} attempts used; not resubmitting"
+    return 1
+  fi
+  declare -F mc_sbatch_args >/dev/null || source "${MC_REPO_ROOT}/configs/ada.env.sh"
+  local info cmd tlimit reqnodes
+  info="$(scontrol show job -o "${SLURM_JOB_ID}" 2>/dev/null)" || { mc_log "auto-resubmit: scontrol show job failed"; return 1; }
+  cmd="$(printf '%s\n' "${info}" | tr ' ' '\n' | sed -n 's/^Command=//p' | head -1)"
+  tlimit="$(printf '%s\n' "${info}" | tr ' ' '\n' | sed -n 's/^TimeLimit=//p' | head -1)"
+  reqnodes="$(printf '%s\n' "${info}" | tr ' ' '\n' | sed -n 's/^ReqNodeList=//p' | head -1)"
+  if [ -n "${reqnodes}" ] && [ "${reqnodes}" != "(null)" ]; then
+    mc_log "auto-resubmit skipped: the job was pinned to ${reqnodes} with -w (its checkpoints live there)"
+    return 1
+  fi
+  [ -f "${cmd}" ] || { mc_log "auto-resubmit: batch script '${cmd}' not found"; return 1; }
+  local others="" dep="" hold=""
+  if [ "${MC_RESUBMIT_SERIAL:-0}" = "1" ]; then
+    others="$(squeue -h -u "${USER:-$(id -un)}" -n "${SLURM_JOB_NAME}" -t PD -o '%i' 2>/dev/null | grep -vx "${SLURM_JOB_ID}" | tr '\n' ' ' || true)"
+    if [ -z "${others// /}" ]; then dep="--dependency=singleton"; else hold="--hold"; fi
+  fi
+  if [ "${MC_RESUBMIT_DRY_RUN:-0}" = "1" ]; then   # print, submit nothing (checks the parsing against a real job)
+    # shellcheck disable=SC2046
+    echo "DRY RUN: sbatch --parsable $(mc_sbatch_args) -J ${SLURM_JOB_NAME} ${tlimit:+-t ${tlimit}} ${dep} ${hold} --export=ALL,MC_RESUBMIT_ATTEMPT=$((attempt + 1)) ${cmd}"
+    [ -n "${hold}" ] && echo "DRY RUN: then re-point pending [${others}] to afterany:<new>,singleton and release <new>"
+    return 0
+  fi
+  local new
+  # shellcheck disable=SC2046,SC2086  # word splitting of the flag lists is intended
+  new="$(cd "${SLURM_SUBMIT_DIR:-${MC_REPO_ROOT}}" && sbatch --parsable $(mc_sbatch_args) -J "${SLURM_JOB_NAME}" \
+           ${tlimit:+-t "${tlimit}"} ${dep} ${hold} --export=ALL,MC_RESUBMIT_ATTEMPT=$((attempt + 1)) "${cmd}")" \
+    || { mc_log "auto-resubmit: sbatch failed"; return 1; }
+  new="${new%%;*}"
+  if [ -n "${hold}" ]; then
+    local j
+    for j in ${others}; do
+      if ! scontrol update JobId="${j}" Dependency="afterany:${new},singleton"; then
+        mc_log "auto-resubmit: could not re-point pending job ${j} behind ${new}; cancelling ${new} to keep one job per run"
+        scancel "${new}" || true
+        return 1
+      fi
+      mc_log "auto-resubmit: pending job ${j} now waits for ${new} (afterany + singleton)"
+    done
+    scontrol release "${new}" || { mc_log "auto-resubmit: scontrol release ${new} failed; release it by hand"; return 1; }
+  fi
+  mc_log "auto-resubmitted as job ${new} (attempt $((attempt + 1)) of ${max}) with $(mc_sbatch_exclude)"
 }
 
 mc_job_init() {
