@@ -24,10 +24,12 @@ export MC_SAVE_FREQ=5 MC_TOTAL_STEPS=30
 PHASE="${MC_RESUME_PHASE:-1}"
 if [ "${PHASE}" = "1" ]; then
   export MC_KILL_AFTER_STEP=15
-  # phase 2 must land on THIS node: the checkpoints live on its scratch (docs/decisions/009)
+  # with scratch checkpoints phase 2 must land on THIS node (009); LoRA-only checkpoints live on /home2 (012)
   source configs/ada.env.sh   # mc_sbatch_args: account/QoS/GPUs of $MC_LAYOUT + the driver exclude list
   # shellcheck disable=SC2046
-  sbatch $(mc_sbatch_args) --dependency=afterany:"${SLURM_JOB_ID}" -w "$(hostname)" --export=ALL,MC_RESUME_PHASE=2,MC_KILL_AFTER_STEP= slurm/test_resume.sbatch
+  PIN=""; [ "${MC_CHECKPOINT_HOME:-scratch}" = scratch ] && PIN="-w $(hostname)"   # durable checkpoints resume anywhere
+  # shellcheck disable=SC2086
+  sbatch $(mc_sbatch_args) --dependency=afterany:"${SLURM_JOB_ID}" ${PIN} --export=ALL,MC_RESUME_PHASE=2,MC_KILL_AFTER_STEP= slurm/test_resume.sbatch
   exec bash slurm/run_train.sh smoke "$@"
 else
   unset MC_KILL_AFTER_STEP

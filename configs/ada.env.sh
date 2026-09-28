@@ -40,7 +40,8 @@ export MC_RUNS_DIR="${MC_RUNS_DIR:-${MC_STAGE_ROOT}/runs}"              # durabl
 # the small outputs (metrics, stats, dumps, W&B) are mirrored to MC_RUNS_DIR every few minutes.
 #   scratch : run dir = $MC_SCRATCH_RUNS_DIR/<run>, resubmissions must land on the same node (-w)
 #   durable : run dir = $MC_RUNS_DIR/<run> (only if a durable quota of >= ~150 GB ever appears)
-export MC_CHECKPOINT_HOME="${MC_CHECKPOINT_HOME:-scratch}"
+# MC_CHECKPOINT_HOME is set per layout below: `durable` for the LoRA layouts (0.9 GB checkpoints fit
+# /home2, no node pinning), `scratch` for the full-fine-tune layout (21 GB checkpoints).
 export MC_SCRATCH_RUNS_DIR="${MC_SCRATCH_RUNS_DIR:-${MC_SCRATCH_ROOT}/runs}"
 export MC_MIRROR_INTERVAL="${MC_MIRROR_INTERVAL:-600}"                  # seconds between mirrors
 
@@ -119,16 +120,19 @@ case "${MC_LAYOUT}" in
     export MC_SLURM_ACCOUNT=research MC_SLURM_QOS=low MC_SLURM_GPUS=1 MC_SLURM_CPUS=10
     export MC_TRAIN_OVERRIDES=""                       # the config defaults already select this layout
     export MC_REWARD_WORKERS=2
+    export MC_CHECKPOINT_HOME=durable                  # LoRA-only checkpoints (~0.9 GB) on /home2: resumes on any node
     ;;
   nlp_1gpu)
     export MC_SLURM_ACCOUNT=nlp MC_SLURM_QOS=normal MC_SLURM_GPUS=1 MC_SLURM_CPUS=20   # 20 x 3000M = 60 GB host RAM
     export MC_TRAIN_OVERRIDES=""                       # the config defaults (layout=research_1gpu) fit 1 GPU
     export MC_REWARD_WORKERS=2
+    export MC_CHECKPOINT_HOME=durable
     ;;
   nlp_4gpu)        # override any of these in configs/local.env.sh (sourced last), not in the environment
     export MC_SLURM_ACCOUNT=nlp MC_SLURM_QOS=normal MC_SLURM_GPUS=4 MC_SLURM_CPUS=40
     export MC_TRAIN_OVERRIDES="layout=nlp_4gpu memory=plan_a_fullft_offload"
     export MC_REWARD_WORKERS=4
+    export MC_CHECKPOINT_HOME=scratch                  # full-FT checkpoints (~21 GB) only fit node-local scratch (009)
     ;;
   *)
     echo "configs/ada.env.sh: unknown MC_LAYOUT='${MC_LAYOUT}' (research_1gpu | nlp_1gpu | nlp_4gpu)" >&2
