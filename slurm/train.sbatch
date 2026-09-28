@@ -17,6 +17,8 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 CONFIG="${MC_CONFIG:?set MC_CONFIG (e.g. sbatch --export=ALL,MC_CONFIG=math_mixed_cuts,MC_SEED=1 slurm/train.sbatch)}"
+# one job per run name at a time: a bad-node auto-resubmission keeps the run's queue order (common.sh)
+export MC_RESUBMIT_SERIAL=1
 # exec (not a child bash): SLURM delivers --signal=B:SIGUSR1 to THIS shell's PID, and the
 # stage-out traps are installed inside run_train.sh, so it must run in this process.
 exec bash slurm/run_train.sh "${CONFIG}" "$@"
