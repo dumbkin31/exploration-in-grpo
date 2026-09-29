@@ -57,6 +57,21 @@ def test_jarvis_selects_the_h100_setup(tmp_path: Path):
     assert v["WANDB_PROJECT"] == "mixed-cuts"
 
 
+def test_kaggle_selects_the_t4_setup(tmp_path: Path):
+    v = _source(
+        tmp_path,
+        MC_SITE="kaggle",
+        MC_STAGE_ROOT=str(tmp_path / "stage"),
+        MC_SCRATCH_ROOT=str(tmp_path / "scratch"),
+        UV_PYTHON_INSTALL_DIR=str(tmp_path / "uvpy"),
+    )
+    assert v["MC_SITE"] == "kaggle" and v["MC_HW_PROFILE"] == "sm75" and v["MC_LAYOUT"] == "kaggle_t4"
+    assert v["MC_TRAIN_OVERRIDES"] == "layout=kaggle_t4", (
+        "the Ada LoRA plan and fp16 profile are the defaults"
+    )
+    assert v["MC_CHECKPOINT_HOME"] == "durable" and v["MC_RUN_TAG"] == "t4"
+
+
 def test_preflight_profiles():
     sys.path.insert(0, str(REPO / "scripts"))
     import check_env
