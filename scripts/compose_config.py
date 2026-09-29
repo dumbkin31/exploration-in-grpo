@@ -148,9 +148,9 @@ def check(cfg) -> list[str]:
     if ray_init.get("num_cpus") is None:
         fail("ray_kwargs.ray_init.num_cpus must be set (SLURM cgroups; verl's own advice)")
     hook = (ray_init.get("runtime_env") or {}).get("worker_process_setup_hook")
-    if hook != "mixed_cuts.sdpa_patch.install":
+    if hook != "mixed_cuts.worker_hooks.install":
         fail(
-            f"ray_kwargs.ray_init.runtime_env.worker_process_setup_hook must be mixed_cuts.sdpa_patch.install (sm_75 SDPA, decision 012): {hook}"
+            f"ray_kwargs.ray_init.runtime_env.worker_process_setup_hook must be mixed_cuts.worker_hooks.install (sm_75 SDPA + LoRA sync without the CPU backup, decision 012): {hook}"
         )
     lora_rank = int(arr.model.get("lora_rank", 0) or 0)
     if n_gpus == 1:
