@@ -1,8 +1,10 @@
 # ---------------------------------------------------------------------------
-# Base GRPO config for Qwen3-1.7B on Ada's RTX 2080 Ti nodes (sm_75, 11 GiB, fp16 only). The GPU count
-# comes from configs/train/layout/ (default research_1gpu: ONE card per job, decision 012; nlp_4gpu: the
-# original 4-card layout of decision 002) and the memory plan from configs/train/memory/ (default
-# plan_b_lora; plan_a_* need the 4-card layout).
+# Base GRPO config for Qwen3-1.7B. Built for Ada's RTX 2080 Ti nodes (sm_75, 11 GiB, fp16 only), which
+# stay the default; one H100 on Jarvislabs is the other target (decision 013). The GPU count comes from
+# configs/train/layout/ (default research_1gpu: ONE card per job, decision 012; nlp_4gpu: the original
+# 4-card layout of decision 002; h100_1gpu), the memory plan from configs/train/memory/ (default
+# plan_b_lora; plan_a_* need the 4-card layout; plan_b_lora_gpu on 80 GB), and precision + attention
+# from configs/train/hardware/ (default sm75; h100).
 #
 # Layers on verl v0.9.0's `ppo_trainer` tree (through hydra.searchpath, declared by the leaf
 # configs and the launcher) and picks a memory plan from configs/train/memory/. The two
@@ -19,6 +21,7 @@ defaults:
   - layout: research_1gpu            # configs/train/layout/: GPU count, TP, vLLM budget, Ray cpus (012)
   - memory: plan_b_lora              # configs/train/memory/: B = LoRA + CPUOffloadPolicy (default), A = full FT
   - _self_
+  - hardware: sm75                   # configs/train/hardware/: precision + attention; AFTER this body so h100 can replace it (013)
 
 # ---- run identity (injected by the launcher; `make train CONFIG=... SEED=...`) ----------------
 seed: 42                             # the ONE seed knob: wired into data/rollout/actor/ref/engine below
@@ -87,7 +90,7 @@ algorithm:
 actor_rollout_ref:
   model:
     path: ${paths.model_dir}
-    use_remove_padding: false        # sm_75: verl's rmpad path needs FlashAttention-2 (sm_80)  [checked]
+    # use_remove_padding, override_config.attn_implementation: set by configs/train/hardware/
     enable_gradient_checkpointing: true   # mandatory on 11 GiB
     # sm_75: without remove-padding, verl materialises the full (tokens x 151,936) logits in fp32 for the
     # log-probs AND, unchunked, for the entropy (entropy_from_logits_with_chunking only exists in the rmpad
@@ -96,8 +99,6 @@ actor_rollout_ref:
     use_fused_kernels: true
     fused_kernel_options:
       impl_backend: torch            # triton backend untested on sm_75
-    override_config:
-      attn_implementation: sdpa      # sm_75: no flash_attention_2  [checked]
 
   actor:
     ppo_mini_batch_size: 32          # paper: 32 prompts -> 4 optimizer steps per training step
@@ -115,33 +116,22 @@ actor_rollout_ref:
     entropy_from_logits_with_chunking: true   # 152k vocab x 6k tokens in fp32 does not fit otherwise
     entropy_checkpointing: true
     data_loader_seed: ${seed}
-    optim:
-      lr: 1.0e-6                     # ladder: 5e-7 if unstable (006)
+    optim:                           # lr: set by the memory plan (full FT 1e-6 as in the paper, LoRA 1e-5; 012/013)
       weight_decay: 0.01
-    fsdp_config:
-      dtype: float16                 # sm_75: no bf16  [checked: no bf16 anywhere]
+    fsdp_config:                     # dtype + mixed_precision: set by configs/train/hardware/
       seed: ${seed}
-      mixed_precision:
-        param_dtype: fp16
-        reduce_dtype: fp32
-        buffer_dtype: fp32
 
   ref:                               # required by the KL loss; sharded + offloaded like the actor
     log_prob_use_dynamic_bsz: true
     log_prob_max_token_len_per_gpu: 6144
     log_prob_micro_batch_size_per_gpu: null
-    fsdp_config:
-      dtype: float16                 # sm_75
+    fsdp_config:                     # dtype + mixed_precision: set by configs/train/hardware/
       seed: ${seed}
-      mixed_precision:
-        param_dtype: fp16
-        reduce_dtype: fp32
-        buffer_dtype: fp32
 
   rollout:
     name: vllm
     n: ${mixed_cuts.group_size}      # G  [checked]
-    dtype: float16                   # sm_75: vLLM raises on bf16 below cc 8.0  [checked]
+    # dtype: set by configs/train/hardware/ (float16 on sm_75, bfloat16 on the H100)
     temperature: 1.0                 # paper
     top_p: 1.0                       # paper: nucleus truncation deliberately disabled
     top_k: -1
@@ -164,7 +154,7 @@ actor_rollout_ref:
       vllm:
         logits_processors:
           - cuts.vllm_logits_processor:CutsLogitsProcessor   # [checked]
-        attention_backend: TRITON_ATTN   # sm_75: the only V1 backend that supports cc 7.5 (004)  [checked]
+        # attention_backend: set by configs/train/hardware/ (TRITON_ATTN on sm_75, FLASH_ATTN on the H100)
     val_kwargs:                      # paper: validation temperature 1.0 / top-p 0.8 / top-k 20  [checked]
       n: 4
       do_sample: true

@@ -10,13 +10,15 @@ allocation. Works without verl installed by pointing ``--verl-config-dir`` at a 
     python scripts/compose_config.py math_mixed_cuts --verl-config-dir /path/to/verl/trainer/config
 
 Invariants checked with --check (see the [checked] marks in configs/train/base_grpo.yaml):
-  * fp16 only: no 'bfloat16'/'bf16' anywhere, sdpa attention, no remove-padding (sm_75)
+  * hardware profile (hw_profile, configs/train/hardware/): sm75 = fp16 only (no 'bfloat16'/'bf16'
+    anywhere) + TRITON_ATTN; h100 = bf16 compute + FLASH_ATTN; both: sdpa, no remove-padding
+  * actor.optim.lr matches the memory plan (LoRA 1e-5, full FT 1e-6): catches a later layer overriding it
   * D4: n_std + n_cuts == group_size == rollout.n; CUTS K/delta/T_warm = paper values
   * D1: rollout_correction.rollout_is/rollout_rs null, bypass_mode false, calculate_log_probs false
   * D2: rollout T=1.0/top_p=1.0, validation 1.0/0.8/20, non-thinking, KL low_var_kl 1e-3
-  * layout: one node, TP == n_gpus_per_node == MC_SLURM_GPUS (1 on research/low with LoRA + the FSDP2
-    offload policy, 4 on nlp), TRITON_ATTN, sleep mode, gradient checkpointing, dynamic bsz with token
-    budgets >= max_prompt_length + max_response_length (or the documented micro-batch-1 fallback)
+  * layout: one node, TP == n_gpus_per_node == MC_SLURM_GPUS (1 GPU: LoRA; on sm75 also the FSDP2 offload
+    policy and the research/low host limits; 4 on nlp), sleep mode, gradient checkpointing, dynamic bsz
+    with token budgets >= max_prompt_length + max_response_length (or the documented micro-batch-1 fallback)
   * one seed interpolated into data/rollout/actor/ref; resume_mode auto; outputs under paths.run_dir
 """
 
@@ -63,25 +65,52 @@ def _walk(node, path=""):
 
 
 def check(cfg) -> list[str]:
-    """Invariants that keep the two arms runnable on the 2080 Ti layouts and faithful to the brief."""
+    """Invariants that keep the two arms runnable on their hardware profile and faithful to the brief."""
     problems: list[str] = []
     arr = cfg.actor_rollout_ref
 
     def fail(msg: str) -> None:
         problems.append(msg)
 
-    # --- fp16 only (sm_75) ---
-    for path, value in _walk(arr, "actor_rollout_ref"):
-        if isinstance(value, str) and value.lower() in ("bf16", "bfloat16"):
-            fail(f"{path} = {value} (bf16 is unsupported on sm_75)")
-    if arr.rollout.dtype != "float16":
-        fail(f"rollout.dtype = {arr.rollout.dtype}")
-    for role in ("actor", "ref"):
-        mp = arr[role].fsdp_config.get("mixed_precision") or {}
-        if mp.get("param_dtype") != "fp16":
-            fail(f"{role}.fsdp_config.mixed_precision.param_dtype must be fp16")
+    # --- hardware profile (configs/train/hardware/): precision and attention ---
+    profile = cfg.get("hw_profile")
+    if profile == "sm75":  # RTX 2080 Ti: fp16 only
+        for path, value in _walk(arr, "actor_rollout_ref"):
+            if isinstance(value, str) and value.lower() in ("bf16", "bfloat16"):
+                fail(f"{path} = {value} (bf16 is unsupported on sm_75)")
+        if arr.rollout.dtype != "float16":
+            fail(f"rollout.dtype = {arr.rollout.dtype}")
+        for role in ("actor", "ref"):
+            mp = arr[role].fsdp_config.get("mixed_precision") or {}
+            if mp.get("param_dtype") != "fp16":
+                fail(f"{role}.fsdp_config.mixed_precision.param_dtype must be fp16")
+        if arr.rollout.engine_kwargs.vllm.get("attention_backend") != "TRITON_ATTN":
+            fail(
+                "rollout.engine_kwargs.vllm.attention_backend must be TRITON_ATTN (the only V1 backend for sm_75)"
+            )
+    elif profile == "h100":  # H100: bf16 compute, fp32 masters (decision 013)
+        if arr.rollout.dtype != "bfloat16":
+            fail(f"rollout.dtype = {arr.rollout.dtype} (the h100 profile runs bf16)")
+        for role in ("actor", "ref"):
+            fc = arr[role].fsdp_config
+            mp = fc.get("mixed_precision") or {}
+            if mp.get("param_dtype") != "bf16" or str(fc.get("dtype")) != "bfloat16":
+                fail(
+                    f"{role}.fsdp_config dtype/mixed_precision.param_dtype must be bfloat16/bf16 on the h100 profile"
+                )
+        if arr.rollout.engine_kwargs.vllm.get("attention_backend") != "FLASH_ATTN":
+            fail("rollout.engine_kwargs.vllm.attention_backend must be FLASH_ATTN on the h100 profile")
+    else:
+        fail(f"hw_profile = {profile!r}: pick hardware=sm75 or hardware=h100 (configs/train/hardware/)")
+    env_hw = os.environ.get("MC_HW_PROFILE")
+    if env_hw and profile != env_hw:
+        fail(
+            f"hw_profile = {profile!r} but this machine's env file sets MC_HW_PROFILE={env_hw!r} (MC_TRAIN_OVERRIDES)"
+        )
     if arr.model.get("override_config", {}).get("attn_implementation") != "sdpa":
-        fail("model.override_config.attn_implementation must be sdpa (no FlashAttention-2 on sm_75)")
+        fail(
+            "model.override_config.attn_implementation must be sdpa (no flash-attn package; same forward on both profiles)"
+        )
     if arr.model.use_remove_padding:
         fail("model.use_remove_padding must be false (needs FA2 varlen kernels)")
 
@@ -154,12 +183,13 @@ def check(cfg) -> list[str]:
         )
     lora_rank = int(arr.model.get("lora_rank", 0) or 0)
     if n_gpus == 1:
-        # research/low: 1 GPU, 10 CPUs, 30 GB host RAM (decision 012)
+        # both 1-GPU targets train the same LoRA (decisions 012, 013)
         if lora_rank <= 0:
             fail(
-                "the 1-GPU layout needs LoRA (memory=plan_b_lora): full FT needs 27.6 GB of host RAM for the optimizer alone"
+                "the 1-GPU layouts train LoRA (memory=plan_b_lora / plan_b_lora_gpu): on research/low full FT needs "
+                "27.6 GB of host RAM for the optimizer alone, and the H100 runs keep the Ada plan for comparability"
             )
-        if not arr.actor.fsdp_config.get("offload_policy"):
+        if profile == "sm75" and not arr.actor.fsdp_config.get("offload_policy"):
             fail(
                 "the 1-GPU layout needs actor.fsdp_config.offload_policy=true (the fp32 base must live in host RAM)"
             )
@@ -173,14 +203,22 @@ def check(cfg) -> list[str]:
             fail(
                 "the 1-GPU layout needs actor.checkpoint.save_lora_only=true: a full state-dict save gathers 6.9 GB on the host and OOM-kills the 30 GB cgroup at the weight sync"
             )
-        if int(ray_init.get("object_store_memory") or 0) > 6_000_000_000:
-            fail(
-                f"ray object_store_memory {ray_init.get('object_store_memory')} > 6 GB on the 30 GB host budget"
-            )
-        if int(arr.rollout.agent.get("num_workers", 1)) > 2:
-            fail("rollout.agent.num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
-        if int(cfg.data.get("dataloader_num_workers", 0) or 0) > 2:
-            fail("data.dataloader_num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
+        if profile == "sm75":  # research/low: 10 CPUs and a 30 GB host cgroup (012)
+            if int(ray_init.get("object_store_memory") or 0) > 6_000_000_000:
+                fail(
+                    f"ray object_store_memory {ray_init.get('object_store_memory')} > 6 GB on the 30 GB host budget"
+                )
+            if int(arr.rollout.agent.get("num_workers", 1)) > 2:
+                fail("rollout.agent.num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
+            if int(cfg.data.get("dataloader_num_workers", 0) or 0) > 2:
+                fail("data.dataloader_num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
+    lr = float(arr.actor.optim.lr)
+    want_lr = 1e-5 if lora_rank > 0 else 1e-6
+    if abs(lr - want_lr) > 1e-12:
+        fail(
+            f"actor.optim.lr = {lr:g} but the {'LoRA' if lora_rank > 0 else 'full fine-tune'} plan uses {want_lr:g}: "
+            "a later config layer overrides the memory plan (decision 013)"
+        )
     if lora_rank > 0:
         if str(arr.actor.fsdp_config.get("model_dtype", "fp32")) != "fp32":
             fail(
@@ -188,10 +226,6 @@ def check(cfg) -> list[str]:
             )
         if arr.actor.strategy != "fsdp2":
             fail(f"the LoRA plan needs actor.strategy fsdp2: {arr.actor.strategy}")
-    if arr.rollout.engine_kwargs.vllm.get("attention_backend") != "TRITON_ATTN":
-        fail(
-            "rollout.engine_kwargs.vllm.attention_backend must be TRITON_ATTN (the only V1 backend for sm_75)"
-        )
     if not arr.rollout.free_cache_engine:
         fail("rollout.free_cache_engine must be true (vLLM must sleep during the update on 11 GiB)")
     if not arr.model.enable_gradient_checkpointing:
@@ -292,7 +326,10 @@ def main() -> int:
         print(f"== {args.config}: {'OK' if not problems else str(len(problems)) + ' problem(s)'} ==")
         return 1 if problems else 0
     node = OmegaConf.select(cfg, args.select) if args.select else cfg
-    print(OmegaConf.to_yaml(node, resolve=False))
+    if OmegaConf.is_config(node):
+        print(OmegaConf.to_yaml(node, resolve=False))
+    else:  # a leaf value (e.g. --select trainer.total_training_steps, read by jarvis/train.sh)
+        print(node)
     return 0
 
 

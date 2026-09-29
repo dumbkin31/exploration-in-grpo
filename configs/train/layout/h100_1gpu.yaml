@@ -1,0 +1,31 @@
+# @package _global_
+# Layout: ONE NVIDIA H100 SXM 80 GB per run on Jarvislabs (16 vCPU and 200 GB RAM per GPU; decision 013).
+# Pairs with memory=plan_b_lora_gpu and hardware=h100. The two arms run as two independent runs, one per
+# GPU (a 2-GPU instance or two 1-GPU instances), each with its own Ray instance.
+#
+# Rollout budget: the actor stays resident on the GPU (fp32 base 6.9 GB + LoRA masters, grads and Adam
+# ~1.1 GB), so vLLM gets 0.60 x 80 GB = 48 GB: 3.4 GB bf16 weights + ~2 GB activations/graphs + ~42 GB KV
+# = ~360k tokens (Qwen3-1.7B: 112 KiB per token), enough for 256 concurrent sequences at typical lengths.
+# vLLM sleeps (level 2) during the update, so the trainer then has the whole card.
+trainer:
+  n_gpus_per_node: 1
+actor_rollout_ref:
+  rollout:
+    tensor_model_parallel_size: 1    # one replica = the whole world  [checked: == n_gpus_per_node]
+    gpu_memory_utilization: 0.60
+    max_num_seqs: 256
+    max_num_batched_tokens: 16384
+    agent:
+      num_workers: 4                 # asyncio workers feeding 256 concurrent sequences
+    checkpoint_engine:
+      update_weights_bucket_megabytes: 2048   # verl default; host memory is not the constraint here
+data:
+  dataloader_num_workers: 2
+ray_kwargs:
+  ray_init:
+    num_cpus: 16                     # the instance's 16 vCPU per GPU (logical, for placement)
+    object_store_memory: 16000000000 # 200 GB host RAM per GPU
+transfer_queue:
+  backend:
+    SimpleStorage:
+      num_data_storage_units: 2

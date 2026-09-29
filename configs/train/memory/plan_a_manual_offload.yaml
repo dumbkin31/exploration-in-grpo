@@ -10,6 +10,8 @@ actor_rollout_ref:
     lora_rank: 0
   actor:
     strategy: fsdp2
+    optim:
+      lr: 1.0e-6                     # paper (full fine-tuning); ladder: 5e-7 if unstable (006)
     fsdp_config:
       strategy: fsdp2
       offload_policy: false
