@@ -33,11 +33,11 @@ then
   # save_lora_only checkpoint (the default since decision 012): the .pt holds adapters only, so verl's
   # merger would assert on the missing base keys. Rebuild the PEFT adapter and merge it into the base model.
   [ -d "$BASE" ] || { echo "LoRA-only checkpoint needs the base model: set MC_MODEL_DIR (source configs/ada.env.sh)" >&2; exit 1; }
-  "$PY" "$(dirname "$0")/merge_lora.py" --verl-actor-dir "$SRC" --base "$BASE" --out "$DST"
+  "$PY" "$(dirname "$0")/merge_lora.py" --verl-actor-dir "$SRC" --base "$BASE" --out "$DST" --dtype "${MC_MERGE_DTYPE:-float16}"
 else
   "$PY" -m verl.model_merger merge --backend fsdp --local_dir "$SRC" --target_dir "$DST"
   # full-state LoRA checkpoints: the merger leaves base weights + lora_adapter/ side by side; fold the adapter in
-  "$PY" "$(dirname "$0")/merge_lora.py" "$DST"
+  "$PY" "$(dirname "$0")/merge_lora.py" "$DST" --dtype "${MC_MERGE_DTYPE:-float16}"
 fi
 # verl's merger writes weights + config; make sure the tokenizer travels with the model.
 if [ -n "${MC_MODEL_DIR:-}" ] && [ ! -f "$DST/tokenizer_config.json" ]; then

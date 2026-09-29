@@ -1,0 +1,10 @@
+# Evaluation on one H100 (Jarvislabs, decision 013): the paper's decoding settings from default.yaml,
+# bf16 weights and vLLM's FLASH_ATTN backend instead of the 2080 Ti's fp16 + TRITON_ATTN.
+defaults:
+  - default
+  - _self_
+
+engine:
+  dtype: bfloat16
+  gpu_memory_utilization: 0.85
+  attention_config: {backend: FLASH_ATTN}
