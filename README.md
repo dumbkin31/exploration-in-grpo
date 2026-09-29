@@ -20,12 +20,16 @@ original 4-GPU full-fine-tune layout stays selectable (`MC_LAYOUT=nlp_4gpu`):
 Both arms spend the same generation budget (asserted at config load), so any difference is the method.
 Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions/README.md).
 
-> **Status**: implemented and CPU-verified, not yet run on the cluster. Verified on a laptop: 103 CPU
-> tests (`make test`), Hydra composition + invariants of every training config against verl v0.9.0's
-> config tree (`make compose-check`), and the chat-template check against the real Qwen3-1.7B tokenizer.
-> NOT yet verified: anything that needs a GPU: the logits processor in a live engine, the verl hooks end
-> to end, fp16 stability, vLLM sleep mode on sm_75, throughput, resume. The order of first runs is in
-> section 6. Items marked **TODO(cluster)** need a measurement from Ada.
+> **Status (2026-09-30)**: code complete; the two 100-step arms have not been trained yet.
+> * **Verified on Ada (2080 Ti, fp16)**: environment and data build, rollout benchmark, smoke training
+>   and all 8 engine-level GPU tests, a full-length stress test at 5,000-token responses, a kill-and-resume
+>   test (LoRA-only checkpoints, one W&B run), and one full-scale training step of the GRPO arm. Ada
+>   access has since ended (decision 013).
+> * **Ready, not yet run on the hardware**: Jarvislabs H100 (bf16, section 6b, decision 013) and Kaggle T4
+>   (fp16, section 6c, decision 014). Each has a smoke script that checks the setup in ~15-20 minutes.
+> * **Verified locally**: `make test` (unit tests, including the Jarvislabs and Kaggle launchers against
+>   stand-in trainers), `make compose-check` (every config on Ada, H100 and T4), `make lint`.
+> * **Recommended plan**: both arms on Jarvislabs H100s in parallel; Kaggle for smoke tests and evaluations.
 
 ---
 
@@ -212,7 +216,8 @@ bash jarvis/status.sh -w     # step, minutes per step, ETA, checkpoint, launcher
 # after training (each eval needs a free GPU; ~20-40 min each):
 bash jarvis/eval.sh base 0                                  # the untrained model, reference row
 bash jarvis/eval.sh math_grpo-h100-s1 0 & bash jarvis/eval.sh math_mixed_cuts-h100-s1 1; wait
-.venv/bin/python scripts/compare_runs.py --wandb   # report tables + GPU-hours; eval metrics into W&B
+.venv/bin/python scripts/compare_runs.py --wandb --rate 112.59   # report tables + cost; eval metrics into W&B
+bash jarvis/status.sh        # includes GPU-hours and INR spent so far (MC_GPU_RATE_INR, default spot 112.59)
 ```
 
 Run names are `math_grpo-h100-s1` and `math_mixed_cuts-h100-s1`; W&B runs of the same names in
@@ -237,6 +242,28 @@ Every session sets itself up from scratch (`kaggle/setup.sh`, ~10-15 min). A T4 
 so a 100-step arm needs ~300 T4-hours: train both arms on Jarvislabs and use Kaggle for smoke tests and
 evaluations (decision 014). On Jarvislabs, `MC_HUB_REPO` in `.env` makes `jarvis/train.sh` push each finished
 run to the Hub for that.
+
+## 6d. Results for the report
+
+After training and evaluation, on whichever machine holds the run dirs (or after
+`scripts/hub_sync.py pull --run <run>` on a laptop):
+
+```bash
+make compare RATE=112.59     # comparison.md/.json: eval table, response lengths, training summary, compute + cost
+make plots                   # figures/*.png: reward, advantage collapse, saturation, entropy, length, validation
+```
+
+| Proposal metric | Where it comes from |
+|---|---|
+| Pass@1, Pass@16 (with 95% CIs) | `compare_runs.py` evaluation table (`eval/run_eval.py`, 16 samples per problem) |
+| Majority vote maj@16 | same table |
+| Average trajectory length (tokens) | response-length table: all / correct / incorrect, % truncated; training curve `response_length/mean` |
+| Policy entropy | training curve `actor/entropy` (`plot_runs.py`), final-window mean in the training table |
+| Advantage collapse rate (ACR) | training curve and table: `mixed_cuts/advantage_collapse_rate`, `ACR_100`, all-correct / all-wrong shares |
+| Compute-credit justification | compute table: training + evaluation GPU-hours, cost at `--rate`; check against the invoice |
+
+`scripts/compare_runs.py --wandb` also writes the evaluation numbers into each run's W&B summary and logs
+the tables to a `comparison-<tag>` run. Compare only models evaluated on the same platform.
 
 ## 7. Reproduction targets (CUTS paper, Qwen3-1.7B non-thinking, trained on MATH)
 
