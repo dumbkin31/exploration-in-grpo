@@ -141,6 +141,27 @@ times per sequence (smoke_maxlen job 2719395).
   could not reach scratch checkpoints. With durable checkpoints, a same-name twin under `MC_LAYOUT=nlp_1gpu`
   (60 GB host memory) held back by `--dependency=singleton` is a valid automatic continuation: it starts only
   after the running job ends and resumes from the last checkpoint on any node.
+* **Third OOM, and its real cause (job 2721833, gnode061, 2026-09-29 01:45).** The arm completed step 1 at
+  full scale (rollout, both log-prob passes, update; the per-process sidecar showed the FSDP worker holding
+  all 11.2 GB of pinned shared memory and 5.6 GB private, so no stray copy of the weights), saved the
+  810 MB step-1 checkpoint, and was OOM-killed ~48 s later inside the weight sync. Steady host memory during
+  the step was 29.4 of 30 GB; at the sync the job had ~2.5 GB of headroom. Verified in verl v0.9.0:
+  `FSDPEngine._merged_lora_per_tensor_param` (`transformer_impl.py:1048`) streams merged weights inside
+  `merged_lora_context(self.module, backup_adapters=True)`, whose `backup_base_model_weights` clones every
+  non-LoRA parameter to a fresh CPU tensor: 6.9 GB fp32 in one go, with no config switch. The small-batch
+  resume test survived only because its memory at sync time was ~4 GB lower.
+  **Fix (user-approved hook, `mixed_cuts.lora_sync_patch`):** replace `transformer_impl`'s reference to the
+  context with one that passes `backup_adapters=False`. verl's own fallback then runs: after streaming,
+  `fsdp_merge_unmerge(do_merge=False)` calls PEFT's `LoraLayer.unmerge`, which subtracts the same
+  `scaling * B @ A` that `merge` added. Cost: at most ~1 ulp of fp32 rounding per step in the frozen base
+  (measured round trip over 100 cycles: < 1e-6 relative; fp16 sampling resolves ~1e-3). The wrapper raises
+  if any LoRA layer is still merged after a sync, so a failed unmerge cannot silently double-count the
+  adapter. It is the only caller of the context in verl; `collect_merged_lora_params`, the other user of the
+  backup, has no callers. The patch installs lazily (a one-shot import finder on the engine module), because
+  importing the FSDP engine in every Ray worker would itself cost host memory. `MC_LORA_SYNC_BACKUP=1`
+  restores verl's behaviour. Both arms run with it, so the comparison stays like for like. Ray takes one
+  setup hook, so `mixed_cuts.worker_hooks.install` runs this and the SDPA patch; compose-check requires it.
+  A test asserts verl's source still hardcodes the backup, so a verl upgrade re-opens this decision.
 
 ## Schedule and what the write-up must say
 
