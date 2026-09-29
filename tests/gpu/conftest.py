@@ -50,16 +50,18 @@ def llm(tmp_path_factory):
         pytest.skip("model not staged (MC_STAGED_MODEL_DIR / MC_MODEL_DIR)")
     from cuts.vllm_logits_processor import CutsLogitsProcessor
 
+    # the engine settings of the hardware profile the training runs use (configs/train/hardware/)
+    h100 = os.environ.get("MC_HW_PROFILE", "sm75") == "h100"
     engine = vllm.LLM(
         model=path,
-        dtype="float16",  # sm_75: no bf16
+        dtype="bfloat16" if h100 else "float16",  # sm_75: no bf16
         tensor_parallel_size=1,
         # 0.6 x 11 GiB = 6.3 GiB: the 3.2 GiB fp16 model + CUDA-graph profiling + ~1.9 GiB KV. At 0.4 (a leftover from the
         # 4-way-sharded era) vLLM 0.24 reports "Available KV cache memory: -0.14 GiB" on a whole 2080 Ti (smoke job 2719792).
         gpu_memory_utilization=0.6,
         max_model_len=2048,
         logits_processors=[CutsLogitsProcessor],
-        attention_config={"backend": "TRITON_ATTN"},
+        attention_config={"backend": "FLASH_ATTN" if h100 else "TRITON_ATTN"},
         # verl builds its rollout engine with processed log-probs (the D1 hazard the demo test shows);
         # vLLM's own default is raw_logprobs, under which only singleton steps sit on the -log|S_t| lattice
         logprobs_mode="processed_logprobs",

@@ -1,0 +1,30 @@
+# @package _global_
+# Hardware profile sm75: the RTX 2080 Ti nodes on Ada (cc 7.5, 11 GiB, no bf16). The default.
+# These keys used to sit in base_grpo.yaml's body; they live in a group applied AFTER that body so
+# another profile (hardware=h100) can replace them. Composing with this profile reproduces the Ada
+# configs exactly (decision 013).
+hw_profile: sm75
+actor_rollout_ref:
+  model:
+    use_remove_padding: false        # sm_75: verl's rmpad path needs FlashAttention-2 (sm_80)  [checked]
+    override_config:
+      attn_implementation: sdpa      # sm_75: no flash_attention_2  [checked]
+  actor:
+    fsdp_config:
+      dtype: float16                 # sm_75: no bf16  [checked: no bf16 anywhere]
+      mixed_precision:
+        param_dtype: fp16
+        reduce_dtype: fp32
+        buffer_dtype: fp32
+  ref:
+    fsdp_config:
+      dtype: float16                 # sm_75
+      mixed_precision:
+        param_dtype: fp16
+        reduce_dtype: fp32
+        buffer_dtype: fp32
+  rollout:
+    dtype: float16                   # sm_75: vLLM raises on bf16 below cc 8.0  [checked]
+    engine_kwargs:
+      vllm:
+        attention_backend: TRITON_ATTN   # sm_75: the only V1 backend that supports cc 7.5 (004)  [checked]

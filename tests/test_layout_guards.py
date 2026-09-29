@@ -32,6 +32,13 @@ def _can_compose() -> bool:
     return _verl_config_dir() is not None or importlib.util.find_spec("verl") is not None
 
 
+@pytest.fixture(autouse=True)
+def _neutral_env(monkeypatch):
+    """The env files export MC_HW_PROFILE / MC_SLURM_GPUS (sm75 on Ada, h100 on Jarvislabs); each test sets its own."""
+    monkeypatch.delenv("MC_HW_PROFILE", raising=False)
+    monkeypatch.delenv("MC_SLURM_GPUS", raising=False)
+
+
 @pytest.fixture(scope="module")
 def compose():
     if not _can_compose():
@@ -82,3 +89,97 @@ def test_smoke_save_freq_follows_the_top_level_knob(compose, monkeypatch):
     monkeypatch.delenv("MC_SLURM_GPUS", raising=False)
     _mod, cfg = compose("smoke", "save_freq=5")
     assert cfg.trainer.save_freq == 5
+
+
+H100 = ("layout=h100_1gpu", "memory=plan_b_lora_gpu", "hardware=h100")
+
+
+@pytest.mark.parametrize("name", ["smoke", "math_grpo", "math_mixed_cuts"])
+def test_h100_variants_pass_the_checks(compose, name, monkeypatch):
+    monkeypatch.setenv("MC_HW_PROFILE", "h100")
+    monkeypatch.setenv("MC_SLURM_GPUS", "1")
+    mod, cfg = compose(name, *H100)
+    a = cfg.actor_rollout_ref
+    assert cfg.hw_profile == "h100" and a.rollout.dtype == "bfloat16"
+    assert a.actor.fsdp_config.mixed_precision.param_dtype == "bf16"
+    assert a.rollout.engine_kwargs.vllm.attention_backend == "FLASH_ATTN"
+    assert a.actor.fsdp_config.offload_policy is False and a.model.lora_rank == 64
+    assert abs(a.actor.optim.lr - 1e-5) < 1e-12
+    assert mod.check(cfg) == []
+
+
+def test_the_arms_differ_only_in_the_group_split_on_the_h100(compose):
+    _mod, grpo = compose("math_grpo", *H100)
+    _mod, mixed = compose("math_mixed_cuts", *H100)
+    assert (grpo.mixed_cuts.n_std, grpo.mixed_cuts.n_cuts) == (16, 0)
+    assert (mixed.mixed_cuts.n_std, mixed.mixed_cuts.n_cuts) == (8, 8)
+    grpo.mixed_cuts.n_std, grpo.mixed_cuts.n_cuts = 8, 8
+    assert grpo == mixed
+
+
+def test_learning_rate_follows_the_memory_plan(compose):
+    """Until 2026-09-29 base_grpo.yaml's body overrode plan_b_lora's 1e-5 with 1e-6 (decision 013)."""
+    _mod, lora = compose("math_grpo")
+    _mod, full = compose("math_mixed_cuts", "layout=nlp_4gpu", "memory=plan_a_fullft_offload")
+    assert abs(lora.actor_rollout_ref.actor.optim.lr - 1e-5) < 1e-12
+    assert abs(full.actor_rollout_ref.actor.optim.lr - 1e-6) < 1e-12
+
+
+def test_a_learning_rate_that_disagrees_with_the_plan_is_refused(compose):
+    mod, cfg = compose("math_grpo", "actor_rollout_ref.actor.optim.lr=1e-6")
+    assert any("later config layer" in p for p in mod.check(cfg))
+
+
+def test_profile_must_match_the_machine(compose, monkeypatch):
+    monkeypatch.setenv("MC_HW_PROFILE", "h100")
+    mod, cfg = compose("math_grpo")  # the sm75 defaults on an H100 machine
+    assert any("MC_HW_PROFILE" in p for p in mod.check(cfg))
+
+
+def _leaves(d, prefix=""):
+    if isinstance(d, dict):
+        for k, v in d.items():
+            yield from _leaves(v, f"{prefix}.{k}" if prefix else k)
+    else:
+        yield prefix, d
+
+
+@pytest.mark.parametrize(
+    ("overrides", "groups"),
+    [
+        ((), {"layout": "research_1gpu", "memory": "plan_b_lora", "hardware": "sm75"}),
+        (
+            ("layout=nlp_4gpu", "memory=plan_a_fullft_offload"),
+            {"layout": "nlp_4gpu", "memory": "plan_a_fullft_offload"},
+        ),
+        (("layout=nlp_4gpu", "memory=plan_a_manual_offload"), {"memory": "plan_a_manual_offload"}),
+        (H100, {"layout": "h100_1gpu", "memory": "plan_b_lora_gpu", "hardware": "h100"}),
+    ],
+)
+def test_no_group_value_is_silently_overridden(compose, overrides, groups):
+    """Every key a layout/memory/hardware file sets must survive composition (the lr bug, decision 013)."""
+    import yaml
+    from omegaconf import OmegaConf
+
+    _mod, cfg = compose("math_mixed_cuts", *overrides)
+    composed = OmegaConf.to_container(cfg, resolve=False)
+    shadowed = []
+    for group, option in groups.items():
+        for key, want in _leaves(yaml.safe_load((REPO / f"configs/train/{group}/{option}.yaml").read_text())):
+            got = composed
+            for part in key.split("."):
+                got = got.get(part) if isinstance(got, dict) else None
+            if got != want:
+                shadowed.append(f"{group}/{option}: {key} = {want!r}, composed {got!r}")
+    assert shadowed == []
+
+
+def test_select_prints_a_leaf_value(compose, monkeypatch, capsys):
+    """jarvis/train.sh reads the step count with --select trainer.total_training_steps."""
+    mod, _cfg = compose("math_grpo")
+    argv = ["compose_config.py", "math_grpo", *H100, "--select", "trainer.total_training_steps"]
+    if _verl_config_dir():
+        argv += ["--verl-config-dir", _verl_config_dir()]
+    monkeypatch.setattr("sys.argv", argv)
+    assert mod.main() == 0
+    assert capsys.readouterr().out.strip() == "100"

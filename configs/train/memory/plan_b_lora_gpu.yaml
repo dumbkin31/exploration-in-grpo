@@ -1,0 +1,25 @@
+# @package _global_
+# Memory plan B on an 80 GB GPU (decision 013): the SAME LoRA as plan_b_lora (r=64, alpha=128,
+# all-linear, lr 1e-5, merged-weight sync, LoRA-only checkpoints), so the H100 arms train the same
+# model the Ada plan did. Only the placement differs: the fp32 base (6.9 GB) and the LoRA state stay
+# on the GPU, because host offload would copy the base over PCIe for every micro-batch.
+actor_rollout_ref:
+  model:
+    lora_rank: 64
+    lora_alpha: 128
+    target_modules: all-linear       # PEFT excludes lm_head: 69.7 M trainable parameters
+    lora:
+      merge: true                    # sync merged full weights so vLLM serves a plain model
+  actor:
+    strategy: fsdp2
+    optim:
+      lr: 1.0e-5                     # as plan_b_lora
+    fsdp_config:
+      strategy: fsdp2
+      model_dtype: fp32              # LoRA masters in fp32  [checked]
+      offload_policy: false          # everything on the GPU
+      param_offload: false
+      optimizer_offload: false
+      reshard_after_forward: true    # a no-op on one GPU (world size 1)
+    checkpoint:
+      save_lora_only: true           # adapters + optimizer (~0.9 GB per checkpoint)

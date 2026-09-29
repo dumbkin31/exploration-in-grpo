@@ -24,7 +24,8 @@ actor_rollout_ref:
   actor:
     strategy: fsdp2
     optim:
-      lr: 1.0e-5                     # RL + LoRA wants a higher LR than full FT (1e-6)
+      lr: 1.0e-5                     # RL + LoRA wants a higher LR than full FT (1e-6). Until 2026-09-29 the
+                                     # base config's body silently overrode this with 1e-6 (decision 013).
     fsdp_config:
       strategy: fsdp2
       model_dtype: fp32              # explicit: LoRA masters in fp32  [checked]

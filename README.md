@@ -7,9 +7,10 @@ vLLM logits processor, schedules mixed standard/CUTS rollout groups inside verl'
 diagnostics that say *why* a run behaves the way it does (advantage collapse, the Eq. 5 variance
 decomposition, candidate-set sizes), not just final accuracy.
 
-Two deliverables, each trained on **one RTX 2080 Ti (11 GiB, sm_75, fp16 only) with LoRA** under SLURM
-(account `research`: one GPU per user, [012](docs/decisions/012-research-qos-one-gpu-lora.md)); the original
-4-GPU full-fine-tune layout stays selectable (`MC_LAYOUT=nlp_4gpu`):
+Two deliverables, each trained with **LoRA on one GPU**: an **H100 on Jarvislabs** (bf16, the arms in
+parallel; [013](docs/decisions/013-jarvislabs-h100.md), section 6b) or **one RTX 2080 Ti (11 GiB, sm_75, fp16
+only)** under SLURM on Ada (account `research`, [012](docs/decisions/012-research-qos-one-gpu-lora.md)); the
+original 4-GPU full-fine-tune layout stays selectable (`MC_LAYOUT=nlp_4gpu`):
 
 | Arm | Config | Group of 16 |
 |---|---|---|
@@ -196,6 +197,28 @@ name, so a resumed run keeps updating the same W&B run, and `metrics.jsonl` in t
 log. A node whose preflight cannot reach api.wandb.ai falls back to offline for that job; push those later
 from your laptop with `scripts/wandb_sync.sh <ssh-target> <ada-user> [run-name ...]` (the login node cannot
 run `wandb`: its wheels need glibc >= 2.28, CentOS 7 has 2.17).
+
+## 6b. Quickstart on Jarvislabs (one H100 per arm; decision 013)
+
+```bash
+# on the instance (keep everything under /home: it survives a pause)
+git clone <this repo> /home/mixed-cuts && cd /home/mixed-cuts
+cp /path/to/.env .env        # WANDB_API_KEY, WANDB_ENTITY=anlp-mixed-cuts, HF_TOKEN (GPQA is gated)
+bash jarvis/setup.sh         # driver >= 580 check, exact Ada lock, model + data, tests, GPU preflight
+bash jarvis/smoke.sh         # ~15 min: 2 tiny steps on the H100 layout + the GPU tests
+bash jarvis/start.sh         # 2 GPUs: math_grpo on GPU 0, math_mixed_cuts on GPU 1 (background)
+                             # two 1-GPU instances: ARMS=math_grpo / ARMS=math_mixed_cuts bash jarvis/start.sh
+bash jarvis/status.sh -w     # step, minutes per step, ETA, checkpoint, launcher alive
+# after training (each eval needs a free GPU; ~20-40 min each):
+bash jarvis/eval.sh base 0                                  # the untrained model, reference row
+bash jarvis/eval.sh math_grpo-h100-s1 0 & bash jarvis/eval.sh math_mixed_cuts-h100-s1 1; wait
+.venv/bin/python scripts/compare_runs.py --wandb   # report tables + GPU-hours; eval metrics into W&B
+```
+
+Run names are `math_grpo-h100-s1` and `math_mixed_cuts-h100-s1`; W&B runs of the same names in
+`anlp-mixed-cuts/mixed-cuts` log live. After a pause or a spot preemption, rerun `bash jarvis/start.sh`:
+each stopped arm resumes from its newest checkpoint (saved every step, 0.9 GB). Check the minutes per
+step after 3 steps against the budget in decision 013.
 
 ## 7. Reproduction targets (CUTS paper, Qwen3-1.7B non-thinking, trained on MATH)
 
