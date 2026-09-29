@@ -208,4 +208,4 @@ trainer:
 ray_kwargs:
   ray_init:
     runtime_env:
-      worker_process_setup_hook: mixed_cuts.sdpa_patch.install
+      worker_process_setup_hook: mixed_cuts.worker_hooks.install   # SDPA on sm_75 + LoRA sync without a 6.9 GB CPU backup (012)
