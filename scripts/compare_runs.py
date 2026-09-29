@@ -7,7 +7,7 @@
 Reads, under $MC_RUNS_DIR:
   <run>/eval/global_step_<N>/summary.json    (jarvis/eval.sh; the newest step is used)
   <run>/metrics.jsonl                         (one row per training step)
-  base-qwen3-1.7b/eval/base/summary.json      (jarvis/eval.sh base; optional reference row)
+  base-qwen3-1.7b-<tag>/eval/base/summary.json (jarvis|kaggle/eval.sh base; optional reference row)
 Writes <out>/comparison.md and <out>/comparison.json:
   1. evaluation: pass@1 [95% CI], pass@16, maj@16 per benchmark and model
   2. training: final-window means of reward, advantage collapse rate, entropy, response length
@@ -197,7 +197,7 @@ def main() -> int:
     tag = os.environ.get("MC_RUN_TAG", "h100")
     ap.add_argument("--runs-dir", default=os.environ.get("MC_RUNS_DIR"))
     ap.add_argument("--runs", nargs="+", default=[f"math_grpo-{tag}-s1", f"math_mixed_cuts-{tag}-s1"])
-    ap.add_argument("--base", default="base-qwen3-1.7b", help="reference eval dir name ('' to skip)")
+    ap.add_argument("--base", default=f"base-qwen3-1.7b-{tag}", help="reference eval dir name ('' to skip)")
     ap.add_argument("--window", type=int, default=10, help="final steps averaged in the training table")
     ap.add_argument("--out", default=None, help="default: <runs-dir>/comparison")
     ap.add_argument(

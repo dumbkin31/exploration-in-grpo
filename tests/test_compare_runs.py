@@ -48,13 +48,15 @@ def test_tables_use_the_newest_eval_and_final_window(tmp_path: Path):
     mod = _load()
     _run(tmp_path, "math_grpo-h100-s1", 0.72, acr=0.40)
     _run(tmp_path, "math_mixed_cuts-h100-s1", 0.75, acr=0.20)
-    base = tmp_path / "base-qwen3-1.7b" / "eval" / "base"
+    base = tmp_path / "base-qwen3-1.7b-h100" / "eval" / "base"
     base.mkdir(parents=True)
     (base / "summary.json").write_text(json.dumps(_summary(0.70)))
-    md, data = mod.build(tmp_path, ["math_grpo-h100-s1", "math_mixed_cuts-h100-s1"], "base-qwen3-1.7b", 10)
+    md, data = mod.build(
+        tmp_path, ["math_grpo-h100-s1", "math_mixed_cuts-h100-s1"], "base-qwen3-1.7b-h100", 10
+    )
     assert data["eval"]["math_mixed_cuts-h100-s1"]["checkpoint"] == "global_step_100"
     assert "| math_mixed_cuts-h100-s1 | global_step_100 | 75.0 [73.0, 77.0] | 90.0 | 80.0 |" in md
-    assert "| base-qwen3-1.7b | base | 70.0" in md
+    assert "| base-qwen3-1.7b-h100 | base | 70.0" in md
     t = data["train"]["math_grpo-h100-s1"]
     assert t["last_step"] == 12 and abs(t["advantage collapse rate"] - 0.40) < 1e-9
     assert t["last validation (MATH-500 mean@4)"] == 0.71
