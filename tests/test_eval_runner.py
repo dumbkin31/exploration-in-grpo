@@ -46,3 +46,42 @@ def test_run_all_writes_samples_and_results(tmp_path):
         r["frac_valid_responses"] == 7 / 8 and r["digit_rule_ceiling"] == 1.0 and r["pp_per_problem"] == 50.0
     )
     assert "one problem = 50.0 pp" in r["notes"] and "ceiling 100.0%" in table
+
+
+class _CountingGenerator:
+    """Like VllmGenerator: returns texts and exposes per-sample token counts and stop reasons."""
+
+    def __call__(self, conversations, n, sampling_cfg):
+        self.last_num_tokens = [[10, 20, 30, 40], [100, 200, 300, 5000]]
+        self.last_finish_reasons = [["stop"] * 4, ["stop", "stop", "stop", "length"]]
+        return _stub_generator(conversations, n, sampling_cfg)
+
+
+def test_token_lengths_by_correctness_and_truncation(tmp_path):
+    rows = [
+        Row(DS_MATH500, "q1", "\\frac{1}{2}", "test", "a").to_record(),
+        Row(DS_MATH500, "q2", "10", "test", "b").to_record(),
+    ]
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    pd.DataFrame(rows).to_parquet(data_dir / "math500.parquet", index=False)
+    cfg = {"n_samples": 4, "k_values": [1, 4], "sampling": {"temperature": 0.7}, "reward": {"timeout": 30}}
+    r = run_all(["math500"], data_dir, _CountingGenerator(), cfg, tmp_path / "out")["math500"]
+    assert r["mean_response_tokens"] == (10 + 20 + 30 + 40 + 100 + 200 + 300 + 5000) / 8
+    assert r["mean_response_tokens_correct"] == (10 + 20 + 40) / 3  # samples 0, 1, 3 of problem 0 are right
+    assert r["frac_truncated"] == 1 / 8
+    first = json.loads((tmp_path / "out" / "math500" / "samples.jsonl").read_text().splitlines()[0])
+    assert first["n_tokens"] == 10 and first["finish_reason"] == "stop"
+
+
+def test_a_plain_stub_has_no_token_stats(tmp_path):
+    rows = [
+        Row(DS_MATH500, "q1", "\\frac{1}{2}", "test", "a").to_record(),
+        Row(DS_MATH500, "q2", "10", "test", "b").to_record(),
+    ]
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    pd.DataFrame(rows).to_parquet(data_dir / "math500.parquet", index=False)
+    cfg = {"n_samples": 4, "k_values": [1, 4], "sampling": {"temperature": 0.7}, "reward": {"timeout": 30}}
+    r = run_all(["math500"], data_dir, _stub_generator, cfg, tmp_path / "out")["math500"]
+    assert r["mean_response_tokens"] is None and r["frac_truncated"] is None

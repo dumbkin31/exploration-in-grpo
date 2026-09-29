@@ -60,6 +60,13 @@ def run_benchmark(
     texts = generate(conversations, n, sampling_cfg)
     gen_secs = time.time() - t0
     assert len(texts) == len(df), f"generator returned {len(texts)} results for {len(df)} prompts"
+    # token counts and stop reasons from the vLLM generator (a plain stub callable has none)
+    num_tokens = getattr(generate, "last_num_tokens", None)
+    finish = getattr(generate, "last_finish_reasons", None)
+    tok_all: list[int] = []
+    tok_correct: list[int] = []
+    tok_wrong: list[int] = []
+    n_truncated = 0
 
     per_problem = []
     n_tokens_proxy = 0
@@ -79,6 +86,12 @@ def run_benchmark(
                 preds.append(r["pred"] or None)
                 n_valid += int(r["valid"])
                 n_tokens_proxy += len(text)
+                ntok = num_tokens[i][j] if num_tokens else None
+                why = finish[i][j] if finish else None
+                if ntok is not None:
+                    tok_all.append(ntok)
+                    (tok_correct if r["score"] == 1.0 else tok_wrong).append(ntok)
+                n_truncated += int(why == "length")
                 f.write(
                     json.dumps(
                         {
@@ -90,6 +103,8 @@ def run_benchmark(
                             "has_boxed": r["has_boxed"],
                             "valid": r["valid"],
                             "ground_truth": gt,
+                            "n_tokens": ntok,
+                            "finish_reason": why,
                             "text": text,
                         },
                         ensure_ascii=False,
@@ -119,6 +134,11 @@ def run_benchmark(
         "notes": ci_note(name, n_problems),
         "generation_seconds": gen_secs,
         "mean_response_chars": n_tokens_proxy / max(1, len(df) * n),
+        # the proposal's "average trajectory length (tokens)", split by correctness, plus truncation at max_tokens
+        "mean_response_tokens": _mean(tok_all),
+        "mean_response_tokens_correct": _mean(tok_correct),
+        "mean_response_tokens_incorrect": _mean(tok_wrong),
+        "frac_truncated": (n_truncated / max(1, len(df) * n)) if finish else None,
         "config": cfg,
         "parquet": str(parquet_path),
         "timestamp": time.time(),
@@ -128,6 +148,10 @@ def run_benchmark(
         "%s: %s", name, {k: round(v, 4) for k, v in result["metrics"].items() if isinstance(v, float)}
     )
     return result
+
+
+def _mean(xs: list[int]) -> float | None:
+    return sum(xs) / len(xs) if xs else None
 
 
 def run_all(

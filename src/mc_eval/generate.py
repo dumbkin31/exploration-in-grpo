@@ -15,7 +15,11 @@ GenerateFn = Callable[[Sequence[Messages], int, dict[str, Any]], list[list[str]]
 
 
 class VllmGenerator:
-    """Wraps ``vllm.LLM`` for chat-formatted, n-sample generation with fp16 on sm_75."""
+    """Wraps ``vllm.LLM`` for chat-formatted, n-sample generation (dtype and backend from the eval config).
+
+    After each call, ``last_num_tokens`` / ``last_finish_reasons`` hold the generated-token count and the
+    stop reason of every sample (same nesting as the returned texts).
+    """
 
     def __init__(
         self, model_path: str, engine_cfg: dict[str, Any], chat_template_kwargs: dict[str, Any] | None = None
@@ -53,4 +57,7 @@ class VllmGenerator:
                 where="in eval generation",
             )
             self._checked_thinking = True
+        # per sample: generated tokens and why it stopped ("length" = cut at max_tokens), read by the runner
+        self.last_num_tokens = [[len(o.token_ids) for o in req.outputs] for req in outputs]
+        self.last_finish_reasons = [[o.finish_reason for o in req.outputs] for req in outputs]
         return [[o.text for o in req.outputs] for req in outputs]
