@@ -1,3 +1,7 @@
+> **Superseded as the training platform by [013](013-jarvislabs-h100.md)** (2026-09-29, no Ada access): both arms
+> run on Jarvislabs H100s. 013 also found that every LoRA config here composed with lr 1e-6, not the 1e-5 stated
+> below (base_grpo.yaml's body overrode the memory plan); fixed there.
+
 # 012: The `research` account gives one GPU per user, so the arms train with LoRA on one 2080 Ti
 
 **Decided 2026-09-27 with the user**: every job runs on SLURM account `research` (QoS `low`) instead of the
