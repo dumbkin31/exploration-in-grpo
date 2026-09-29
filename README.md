@@ -220,6 +220,24 @@ Run names are `math_grpo-h100-s1` and `math_mixed_cuts-h100-s1`; W&B runs of the
 each stopped arm resumes from its newest checkpoint (saved every step, 0.9 GB). Check the minutes per
 step after 3 steps against the budget in decision 013.
 
+## 6c. Kaggle (T4 notebooks; decision 014)
+
+Import `kaggle/mixed_cuts_kaggle.ipynb` into Kaggle (File -> Import Notebook). Settings: **GPU T4 x2**,
+**Internet on**, Secrets `WANDB_API_KEY` and `HF_TOKEN` (write access). In the parameters cell set
+`HUB_REPO` (a private HF model repo, e.g. `<hf-user>/mixed-cuts-runs`) and `MODE`:
+
+| MODE | What it does | Quota |
+|---|---|---|
+| `smoke` | 2 tiny training steps on the T4 layout + the GPU tests | ~0.5 h |
+| `eval` | up to two models at once, one per T4: `"base"`, `"math_grpo-t4-s1"`, `"math_grpo-h100-s1"` (pulled from the Hub) | ~3 h per model |
+| `train` | one arm per session; pulls the newest checkpoint from the Hub, pushes every new one, stops before the 12-hour limit | 12 h per session |
+
+Run it with **Save Version -> Save & Run All** so it runs in the background, and again for the next session.
+Every session sets itself up from scratch (`kaggle/setup.sh`, ~10-15 min). A T4 step is estimated at ~3-3.5 h,
+so a 100-step arm needs ~300 T4-hours: train both arms on Jarvislabs and use Kaggle for smoke tests and
+evaluations (decision 014). On Jarvislabs, `MC_HUB_REPO` in `.env` makes `jarvis/train.sh` push each finished
+run to the Hub for that.
+
 ## 7. Reproduction targets (CUTS paper, Qwen3-1.7B non-thinking, trained on MATH)
 
 Pass@1 (Table 1):
