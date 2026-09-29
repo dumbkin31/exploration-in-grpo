@@ -26,7 +26,7 @@ BENCH  ?= math500,aime24,aime25,amc23,gpqa_diamond
 N_SAMPLES ?= 16
 
 .PHONY: help setup-dev setup-login setup lock test gpu-test lint compose-check preflight check-env prefetch prefetch-base data \
-        bench smoke train eval sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup sbatch-data sbatch-resume-test clean-cache
+        bench smoke train eval compare plots sbatch-smoke sbatch-train sbatch-eval sbatch-bench sbatch-setup sbatch-data sbatch-resume-test clean-cache
 
 help: ## show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n",$$1,$$2}'
@@ -107,6 +107,13 @@ train: ## train with configs/train/$(CONFIG).yaml (inside an allocation): make t
 
 eval: ## eval CKPT (HF dir) on BENCH with N_SAMPLES samples per problem
 	@. $(ENV_FILE); $(PY) eval/run_eval.py --ckpt "$(CKPT)" --benchmarks "$(BENCH)" --n-samples $(N_SAMPLES) --seed $(SEED)
+
+# ------------------------------------------------------------------- results
+compare: ## report tables from the runs' evals + training logs: make compare [RUNS_DIR=...] [RATE=112.59] [RUNS="a b"]
+	@. $(ENV_FILE); $(PY) scripts/compare_runs.py $(if $(RUNS_DIR),--runs-dir $(RUNS_DIR),) $(if $(RATE),--rate $(RATE),) $(if $(RUNS),--runs $(RUNS),)
+
+plots: ## training-curve figures for the report: make plots [RUNS_DIR=...] [RUNS="a b"] (needs matplotlib)
+	@. $(ENV_FILE); $(PY) scripts/plot_runs.py $(if $(RUNS_DIR),--runs-dir $(RUNS_DIR),) $(if $(RUNS),--runs $(RUNS),)
 
 # ------------------------------------------------------------------ sbatch wrappers
 # mc_sbatch_args (configs/ada.env.sh) = account/QoS/GPUs/CPUs/memory of $MC_LAYOUT + the node exclude list;

@@ -18,9 +18,16 @@ def _load():
 
 def _summary(p1: float) -> dict:
     m = {"pass@1": p1, "pass@1_ci95": [p1 - 0.02, p1 + 0.02], "pass@16": 0.9, "maj@16": p1 + 0.05}
+    lengths = {
+        "mean_response_tokens": 700.0,
+        "mean_response_tokens_correct": 600.0,
+        "mean_response_tokens_incorrect": 1200.0,
+        "frac_truncated": 0.01,
+        "generation_seconds": 1800.0,
+    }
     return {
-        "math500": {"metrics": m, "n_problems": 500},
-        "aime24": {"metrics": dict(m, **{"pass@1": p1 / 4}), "n_problems": 30},
+        "math500": {"metrics": m, "n_problems": 500, **lengths},
+        "aime24": {"metrics": dict(m, **{"pass@1": p1 / 4}), "n_problems": 30, "generation_seconds": 1800.0},
     }
 
 
@@ -70,3 +77,16 @@ def test_missing_eval_and_metrics_render_as_dashes(tmp_path: Path):
     md, data = mod.build(tmp_path, ["math_grpo-h100-s1"], None, 10)
     assert "| math_grpo-h100-s1 | not evaluated |" in md
     assert data["train"]["math_grpo-h100-s1"]["gpu_hours"] is None
+
+
+def test_lengths_and_compute_with_a_rate(tmp_path: Path):
+    mod = _load()
+    _run(tmp_path, "math_grpo-h100-s1", 0.72, acr=0.40)
+    md, data = mod.build(tmp_path, ["math_grpo-h100-s1"], None, 10, rate=112.59)
+    assert "| math_grpo-h100-s1 | 700 / 600 / 1200 (1.0%) | - |" in md, "aime24 has no token stats: '-'"
+    ev = data["eval"]["math_grpo-h100-s1"]
+    assert abs(ev["generation_hours"] - 1.0) < 1e-9, "two benchmarks x 1800 s"
+    total = 12 * 360 / 3600 + 1.0
+    assert abs(data["compute"]["gpu_hours_total"] - total) < 1e-9
+    assert abs(data["compute"]["cost_inr"] - 112.59 * total) < 1e-6
+    assert "cost at INR 112.59/GPU-h" in md

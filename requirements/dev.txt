@@ -17,3 +17,5 @@ ruff>=0.6
 # For the tokenizer-only chat-template preflight check on a laptop (scripts/check_env.py --only-config):
 transformers==5.5.3
 huggingface_hub>=0.30
+# Report figures (scripts/plot_runs.py); not part of the cluster environment:
+matplotlib>=3.8

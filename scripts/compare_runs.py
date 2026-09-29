@@ -11,7 +11,8 @@ Reads, under $MC_RUNS_DIR:
 Writes <out>/comparison.md and <out>/comparison.json:
   1. evaluation: pass@1 [95% CI], pass@16, maj@16 per benchmark and model
   2. training: final-window means of reward, advantage collapse rate, entropy, response length
-  3. compute: GPU-hours per run from the logged step times (for the report's compute-credit section)
+  3. response length in tokens per benchmark (all / correct / incorrect, % truncated)
+  4. compute: training and evaluation GPU-hours per model, and the cost with --rate (compute-credit section)
 With --wandb, each run's evaluation lands in its W&B run summary (eval/<benchmark>/<metric>) and the
 tables are logged to a separate run "comparison-<tag>" in the same project.
 """
@@ -37,6 +38,12 @@ TRAIN_KEYS = {
     "response length": "response_length/mean",
 }
 VAL_KEY = "val-core/math500/reward/mean@4"
+LENGTH_KEYS = (
+    "mean_response_tokens",
+    "mean_response_tokens_correct",
+    "mean_response_tokens_incorrect",
+    "frac_truncated",
+)
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -104,7 +111,9 @@ def fmt(v: Any, digits: int = 3) -> str:
     return str(v)
 
 
-def build(runs_dir: Path, runs: list[str], base: str | None, window: int) -> tuple[str, dict[str, Any]]:
+def build(
+    runs_dir: Path, runs: list[str], base: str | None, window: int, rate: float | None = None
+) -> tuple[str, dict[str, Any]]:
     models: list[tuple[str, str | None, dict[str, Any] | None]] = []
     if base:
         label, summ = latest_eval(runs_dir / base)
@@ -137,7 +146,33 @@ def build(runs_dir: Path, runs: list[str], base: str | None, window: int) -> tup
         data["eval"][name] = {
             "checkpoint": label,
             "benchmarks": {b: (summ or {}).get(b, {}).get("metrics") for b in benchmarks},
+            "lengths": {
+                b: {k: (summ or {}).get(b, {}).get(k) for k in LENGTH_KEYS}
+                for b in benchmarks
+                if (summ or {}).get(b)
+            },
+            "generation_hours": sum(float(v.get("generation_seconds") or 0) for v in (summ or {}).values())
+            / 3600,
         }
+
+    lines += ["", "## Response length (tokens)", ""]
+    lines.append("Mean generated tokens per sample: all / correct / incorrect, and % cut off at max_tokens.")
+    lines.append("")
+    lines += ["| model | " + " | ".join(benchmarks) + " |", "|---|" + "---|" * len(benchmarks)]
+    for name, _label, _summ in models:
+        cells = []
+        for b in benchmarks:
+            ln = data["eval"][name]["lengths"].get(b) or {}
+            if ln.get("mean_response_tokens") is None:
+                cells.append("-")
+                continue
+            trunc = ln.get("frac_truncated")
+            cells.append(
+                f"{ln['mean_response_tokens']:.0f} / {fmt(ln.get('mean_response_tokens_correct'), 0)} / "
+                f"{fmt(ln.get('mean_response_tokens_incorrect'), 0)}"
+                + (f" ({100 * trunc:.1f}%)" if trunc is not None else "")
+            )
+        lines.append(f"| {name} | " + " | ".join(cells) + " |")
 
     lines += ["", "## Training", "", f"Means over the last {window} logged steps.", ""]
     cols = ["last step", *TRAIN_KEYS, "last validation (MATH-500 mean@4)"]
@@ -147,20 +182,30 @@ def build(runs_dir: Path, runs: list[str], base: str | None, window: int) -> tup
         data["train"][run] = t
         lines.append(f"| {run} | {t['last_step']} | " + " | ".join(fmt(t[c]) for c in cols[1:]) + " |")
 
+    lines += ["", "## Compute", ""]
+    cost_col = f" | cost at INR {rate:g}/GPU-h" if rate else ""
     lines += [
-        "",
-        "## Compute",
-        "",
-        "| run | GPU-hours (sum of logged step times) | minutes per step |",
-        "|---|---|---|",
+        f"| model | training GPU-hours | minutes per step | evaluation GPU-hours{cost_col} |",
+        "|---|---|---|---|" + ("---|" if rate else ""),
     ]
-    for run in runs:
-        t = data["train"][run]
-        lines.append(f"| {run} | {fmt(t['gpu_hours'], 1)} | {fmt(t['mean_minutes_per_step'], 1)} |")
+    total = 0.0
+    for name, _label, _summ in models:
+        t = data["train"].get(name) or {}
+        train_h = t.get("gpu_hours") or 0.0
+        eval_h = data["eval"][name]["generation_hours"]
+        total += train_h + eval_h
+        cost = f" | {rate * (train_h + eval_h):,.0f}" if rate else ""
+        lines.append(
+            f"| {name} | {fmt(t.get('gpu_hours'), 1)} | {fmt(t.get('mean_minutes_per_step'), 1)} | {eval_h:.1f}{cost} |"
+        )
+    data["compute"] = {"gpu_hours_total": total, "rate_inr": rate, "cost_inr": rate * total if rate else None}
     lines += [
         "",
-        "GPU-hours count training steps only; setup, smoke tests, validation outside steps and evaluation",
-        "come on top. Multiply by the hourly rate that was billed for the compute-credit section.",
+        f"Total: {total:.1f} GPU-hours"
+        + (f", INR {rate * total:,.0f}" if rate else "")
+        + ". Training hours are the",
+        "sum of logged step times; evaluation hours are vLLM generation time. Setup, smoke tests, model",
+        "loading and idle time come on top: take the billed total from the provider's invoice.",
     ]
     return "\n".join(lines) + "\n", data
 
@@ -177,6 +222,9 @@ def push_wandb(data: dict[str, Any], markdown: str, tag: str) -> None:
             for col in EVAL_COLS:
                 if m and col in m:
                     summary[f"eval/{bench}/{col}"] = m[col]
+            tokens = ((ev.get("lengths") or {}).get(bench) or {}).get("mean_response_tokens")
+            if tokens is not None:
+                summary[f"eval/{bench}/mean_response_tokens"] = tokens
         if summary:
             r = wandb.init(entity=entity, project=project, id=run, resume="allow")
             r.summary.update({**summary, "eval/checkpoint": ev.get("checkpoint")})
@@ -203,12 +251,18 @@ def main() -> int:
     ap.add_argument(
         "--wandb", action="store_true", help="write eval metrics into the W&B runs + a comparison run"
     )
+    ap.add_argument(
+        "--rate",
+        type=float,
+        default=float(os.environ["MC_GPU_RATE_INR"]) if os.environ.get("MC_GPU_RATE_INR") else None,
+        help="INR per GPU-hour for the cost column (e.g. 112.59: H100 spot on Jarvislabs); default MC_GPU_RATE_INR",
+    )
     args = ap.parse_args()
     if not args.runs_dir:
         print("ERROR: --runs-dir or MC_RUNS_DIR required (source configs/ada.env.sh)", file=sys.stderr)
         return 2
     runs_dir = Path(args.runs_dir)
-    markdown, data = build(runs_dir, args.runs, args.base or None, args.window)
+    markdown, data = build(runs_dir, args.runs, args.base or None, args.window, args.rate)
     out = Path(args.out) if args.out else runs_dir / "comparison"
     out.mkdir(parents=True, exist_ok=True)
     (out / "comparison.md").write_text(markdown)
