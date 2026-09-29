@@ -9,8 +9,9 @@ math kernel: +8.8 GiB for one attention call at 6,024 tokens, which is the updat
 smoke_maxlen job 2719481. With the KV heads repeated (what transformers does when a mask is present)
 the memory-efficient kernel is used.
 
-Installed in every Ray worker through ``ray_kwargs.ray_init.runtime_env.worker_process_setup_hook``
-(configs/train/base_grpo.yaml), so the FSDP worker has it before the model is built. Idempotent.
+Installed in every Ray worker by ``mixed_cuts.worker_hooks.install``, the
+``ray_kwargs.ray_init.runtime_env.worker_process_setup_hook`` (configs/train/base_grpo.yaml), so the
+FSDP worker has it before the model is built. Idempotent.
 """
 
 from __future__ import annotations
