@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Preflight check for the Mixed-CUTS pipeline on Ada.
+"""Preflight check for the Mixed-CUTS pipeline (Ada 2080 Ti, or one H100 on Jarvislabs).
 
 Runs at the top of every SLURM job (and via `make check-env`). It fails FAST with a
 readable message instead of letting a job die 40 minutes in. Every check prints one of
@@ -8,8 +8,9 @@ readable message instead of letting a job die 40 minutes in. Every check prints 
     WARN  <what>: <why>          (does not fail the run)
     FAIL  <what>: <why>          (exit code 1 at the end)
 
-Checks are grouped: python packages and pins, GPU (must be RTX 2080 Ti class, sm_75, with
-sm_75 kernels present in the torch wheel), staged model/data paths, storage mounts, and
+Checks are grouped: python packages and pins, GPU (must match the hardware profile MC_HW_PROFILE:
+sm75 = RTX 2080 Ti with sm_75 kernels in the torch wheel, the default; h100 = cc 9.0 with sm_90 kernels
+and bf16; decision 013), staged model/data paths, storage mounts, and
 internet reachability. Storage and internet results are also written as a small JSON file
 so the sbatch scripts can branch on them (e.g. HF_HUB_OFFLINE).
 
@@ -52,7 +53,32 @@ EXPECTED_VERSIONS = {
 # Import-only (no version pin enforced here).
 EXPECTED_IMPORTS = ["transfer_queue", "hydra", "omegaconf", "datasets", "wandb", "cuts", "mixed_cuts"]
 
-REQUIRED_CC = (7, 5)  # RTX 2080 Ti. The 1080 Ti nodes (6,1) are unsupported by CUDA 13 and vLLM.
+# Hardware profiles (configs/train/hardware/, chosen by MC_HW_PROFILE from the env file).
+PROFILES = {
+    # RTX 2080 Ti. The 1080 Ti nodes (6,1) are unsupported by CUDA 13 and vLLM.
+    "sm75": {
+        "cc": (7, 5),
+        "arch": "sm_75",
+        "gpu": "RTX 2080 Ti (7.5, 11 GiB)",
+        "bf16": False,
+        "backend": "TRITON_ATTN",
+    },
+    "h100": {
+        "cc": (9, 0),
+        "arch": "sm_90",
+        "gpu": "H100 (9.0, 80 GB)",
+        "bf16": True,
+        "backend": "FLASH_ATTN",
+    },
+}
+
+
+def hw_profile() -> tuple[str, dict]:
+    name = os.environ.get("MC_HW_PROFILE", "sm75")
+    return name, PROFILES.get(name, PROFILES["sm75"])
+
+
+REQUIRED_CC = PROFILES["sm75"]["cc"]  # kept for callers of the old constant
 
 
 class Report:
@@ -117,14 +143,27 @@ def check_pins(r: Report) -> None:
 def check_driver(r: Report) -> None:
     """The pinned wheels are CUDA 13.0 builds: driver >= 580 (mixed generations on Ada, decision 011)."""
     need = int(os.environ.get("MC_MIN_DRIVER_MAJOR", "580"))
+    drv = None
     try:
         text = Path("/proc/driver/nvidia/version").read_text()
+        m = re.search(r"Kernel Module\s+([0-9.]+)", text)
+        drv = m.group(1) if m else None
     except OSError:
-        r.fail("nvidia driver", "/proc/driver/nvidia/version missing: no NVIDIA kernel module on this node")
-        r.facts["nvidia_driver"] = None
-        return
-    m = re.search(r"Kernel Module\s+([0-9.]+)", text)
-    drv = m.group(1) if m else "?"
+        pass
+    if drv is None:  # containers (Jarvislabs) may not expose /proc/driver/nvidia
+        try:
+            drv = subprocess.run(
+                ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            ).stdout.split()[0]
+        except (OSError, IndexError, subprocess.SubprocessError):
+            r.fail(
+                "nvidia driver", "neither /proc/driver/nvidia/version nor nvidia-smi: no NVIDIA driver here"
+            )
+            r.facts["nvidia_driver"] = None
+            return
     r.facts["nvidia_driver"] = drv
     major = int(drv.split(".")[0]) if drv[:1].isdigit() else 0
     if major >= need:
@@ -186,11 +225,16 @@ def check_gpu(r: Report) -> None:
         r.ok(f"torch CUDA runtime {cuda_rt} (default cu130 wheel)")
     else:
         r.warn("torch CUDA runtime", f"{cuda_rt}; the pinned default wheel is CUDA 13.0")
+    prof_name, prof = hw_profile()
+    r.facts["hw_profile"] = prof_name
     arch_list = torch.cuda.get_arch_list()
-    if "sm_75" in arch_list:
-        r.ok(f"sm_75 kernels present in torch wheel: {arch_list}")
+    if prof["arch"] in arch_list:
+        r.ok(f"{prof['arch']} kernels present in torch wheel: {arch_list}")
     else:
-        r.fail("torch arch list", f"sm_75 missing from {arch_list}; this wheel cannot run on a 2080 Ti")
+        r.fail(
+            "torch arch list",
+            f"{prof['arch']} missing from {arch_list}; this wheel cannot run on a {prof['gpu']}",
+        )
     try:
         torch.cuda.init()
     except RuntimeError as e:  # e.g. "The NVIDIA driver on your system is too old" on a 570 node
@@ -202,18 +246,25 @@ def check_gpu(r: Report) -> None:
         cc = torch.cuda.get_device_capability(i)
         name = torch.cuda.get_device_name(i)
         mem_gb = torch.cuda.get_device_properties(i).total_memory / 2**30
-        if cc == REQUIRED_CC:
+        if cc == prof["cc"]:
             r.ok(f"gpu{i}: {name}, cc {cc[0]}.{cc[1]}, {mem_gb:.1f} GiB")
         elif cc < (7, 0):
             r.fail(
                 f"gpu{i}",
                 f"{name} cc {cc} is below 7.0: unsupported by vLLM and CUDA 13 (did the job land on a 1080 Ti node? use -C 2080ti)",
             )
+        elif prof["bf16"] and cc < (8, 0):
+            r.fail(f"gpu{i}", f"{name} cc {cc} has no bf16: the {prof_name} profile needs cc >= 8.0")
         else:
-            r.warn(f"gpu{i}", f"{name} cc {cc}; configs are tuned for the 2080 Ti (7.5, 11 GiB)")
+            r.warn(f"gpu{i}", f"{name} cc {cc}; profile {prof_name} is tuned for the {prof['gpu']}")
     if n:
         _check_sdpa_kernels(r, torch)
-    if n and torch.cuda.is_bf16_supported():
+    if prof["bf16"]:
+        if n and torch.cuda.is_bf16_supported():
+            r.ok(f"bf16 supported -> the {prof_name} profile trains and samples in bf16")
+        else:
+            r.fail("bf16", f"not supported on this GPU, but the {prof_name} profile runs bf16")
+    elif n and torch.cuda.is_bf16_supported():
         r.warn("bf16", "reported as supported; configs still force fp16 for reproducibility across nodes")
     else:
         r.ok("bf16 unsupported on this GPU -> all configs use float16 (as required)")
@@ -222,7 +273,12 @@ def check_gpu(r: Report) -> None:
         from vllm.platforms import current_platform  # type: ignore
 
         if current_platform.has_device_capability(80):
-            r.warn("vllm attention", "cc>=8.0 -> FLASH_ATTN; the plan was validated for TRITON_ATTN on sm_75")
+            if prof["backend"] == "FLASH_ATTN":
+                r.ok(f"vllm attention backend on cc>=8.0 -> FLASH_ATTN (the {prof_name} profile pins it)")
+            else:
+                r.warn(
+                    "vllm attention", "cc>=8.0 -> FLASH_ATTN; the plan was validated for TRITON_ATTN on sm_75"
+                )
         else:
             r.ok("vllm attention backend on cc<8.0 -> TRITON_ATTN (FLASH_ATTN/FLASHINFER need sm_80)")
     except Exception as e:  # noqa: BLE001
@@ -279,6 +335,8 @@ def check_storage(r: Report) -> None:
             f"{cache_root} is not on node-local /scratch although this node has one: a login-node environment "
             "leaked into the job (configs/ada.env.sh re-derives it by hostname; do not pin it in the environment)",
         )
+    if os.environ.get("MC_SITE", "ada") != "ada":
+        return
     # /home2 is the only durable file system compute nodes can see (docs/decisions/010): 25 GB and
     # 300k files per user hold the venv (~9.6 GB), the staged model/data (~5.2 GB) and every run's
     # durable outputs. Warn before the quota bites.
@@ -465,12 +523,18 @@ def check_attention_backend(r: Report) -> None:
             r.warn(f"backend {name}", f"probe failed: {type(e).__name__}")
         (supported if ok else []).append(name)
     r.facts["attention_backends_supporting_cc"] = supported
-    if supported and supported[0] == "TRITON_ATTN":
+    want = hw_profile()[1]["backend"]
+    if supported and supported[0] == want:
+        r.ok(f"attention backend for cc {cc.major}.{cc.minor}: {want} (first in priority among {supported})")
+    elif want in supported:
         r.ok(
-            f"attention backend for cc {cc.major}.{cc.minor}: TRITON_ATTN (first in priority among {supported})"
+            f"attention backend {want} supports cc {cc.major}.{cc.minor} (configs pin it; priority order {supported})"
         )
     elif supported:
-        r.warn("attention backend", f"first supported backend is {supported[0]}, configs pin TRITON_ATTN")
+        r.fail(
+            "attention backend",
+            f"configs pin {want}, which does not support cc {cc.major}.{cc.minor}: {supported}",
+        )
     else:
         r.fail("attention backend", f"no V1 attention backend supports cc {cc.major}.{cc.minor}")
 
@@ -546,7 +610,7 @@ def check_config(r: Report, name: str | None) -> None:
         r.fail(f"config {name}", p)
     if not problems:
         r.ok(
-            f"config {name} composes and passes every invariant (fp16, D1, D2, D4, {n_gpus}-GPU layout, seeds, resume)"
+            f"config {name} composes and passes every invariant ({cfg.get('hw_profile')} profile, D1, D2, D4, {n_gpus}-GPU layout, seeds, resume)"
         )
 
 

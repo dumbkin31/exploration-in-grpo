@@ -18,6 +18,18 @@
 _mc_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export MC_REPO_ROOT="${MC_REPO_ROOT:-$_mc_repo_root}"
 
+# --- site switch ------------------------------------------------------------------
+# Every script sources this file. MC_SITE=jarvis (exported by jarvis/*.sh and the instance's ~/.bashrc)
+# hands over to configs/jarvis.env.sh: one H100 per run on Jarvislabs, no SLURM (decision 013).
+if [ "${MC_SITE:-ada}" = "jarvis" ]; then
+  unset _mc_repo_root
+  # shellcheck source=jarvis.env.sh
+  . "${MC_REPO_ROOT}/configs/jarvis.env.sh"
+  return 0 2>/dev/null || exit 0
+fi
+export MC_SITE=ada
+export MC_HW_PROFILE="${MC_HW_PROFILE:-sm75}"   # configs/train/hardware/sm75.yaml; checked by compose_config + check_env
+
 # --- who / where -------------------------------------------------------------
 export MC_USER="${MC_USER:-${USER:-$(id -un)}}"
 export MC_STAGE_ROOT="${MC_STAGE_ROOT:-${HOME}/mixed-cuts-data}"          # durable NFS, visible on every node

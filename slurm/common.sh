@@ -35,6 +35,8 @@ mc_check_driver() {
   # node.txt behind. The node is recorded in MC_BAD_NODES_FILE, which `make sbatch-*` excludes from then on.
   local drv major min="${MC_MIN_DRIVER_MAJOR:-580}"
   drv="$(sed -n 's/.*Kernel Module *\([0-9.]*\).*/\1/p' /proc/driver/nvidia/version 2>/dev/null || true)"
+  # containers (Jarvislabs) may not expose /proc/driver/nvidia: ask nvidia-smi instead
+  [ -n "${drv}" ] || drv="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ' || true)"
   major="${drv%%.*}"
   if [ -z "${drv}" ] || ! [ "${major}" -ge "${min}" ] 2>/dev/null; then
     mc_log "ERROR: $(hostname) has NVIDIA driver '${drv:-none}' (need >= ${min} for the cu130 wheels; decision 011)"
@@ -138,7 +140,8 @@ mc_job_init() {
   unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES GPU_DEVICE_ORDINAL
   mc_check_driver
   mc_check_cuda
-  export MC_JOB_ID="${SLURM_JOB_ID:-local-$$}"
+  # outside SLURM (Jarvislabs) the launcher names the attempt and its log (jarvis/train.sh)
+  export MC_JOB_ID="${SLURM_JOB_ID:-${MC_JOB_ID:-local-$$}}"
   export MC_SEED="${MC_SEED:-42}"
   export MC_RUN_NAME="${1:-${MC_RUN_NAME:-${SLURM_JOB_NAME:-job}-s${MC_SEED}}}"
   export MC_DURABLE_DIR="${MC_DURABLE_DIR:-${MC_RUNS_DIR}/${MC_RUN_NAME}}"   # /home2 (NFS): mirror of small outputs
@@ -151,7 +154,11 @@ mc_job_init() {
   export MC_STAGED_MODEL_DIR="${MC_SCRATCH_ROOT}/stage/models/$(basename "${MC_MODEL_DIR}")"
   export MC_STAGED_DATA_DIR="${MC_SCRATCH_ROOT}/stage/data"
   export MC_ENV_FACTS_JSON="${MC_JOB_DIR}/env_facts.json"
-  export MC_JOB_STDOUT="${SLURM_SUBMIT_DIR:-$PWD}/slurm-${SLURM_JOB_NAME:-job}-${MC_JOB_ID}.out"   # matches -o slurm-%x-%j.out
+  if [ -n "${SLURM_JOB_ID:-}" ]; then
+    export MC_JOB_STDOUT="${SLURM_SUBMIT_DIR:-$PWD}/slurm-${SLURM_JOB_NAME:-job}-${MC_JOB_ID}.out"   # matches -o slurm-%x-%j.out
+  else
+    export MC_JOB_STDOUT="${MC_JOB_STDOUT:-$PWD/train-${MC_JOB_ID}.out}"
+  fi
   # W&B: online from the node (offline fallback below), one run id across resubmissions
   # (WANDB_RESUME=allow continues the same curves; steps re-logged after a kill are dropped by W&B;
   # metrics.jsonl is the primary log). wandb creates its own `wandb/` under WANDB_DIR, so the run
@@ -292,6 +299,16 @@ mc_stop_gpu_sampler() {
   _MC_SAMPLER_PID=""
 }
 
+_mc_copy_tree() {
+  # rsync where it exists (Ada); plain cp elsewhere (Jarvislabs images may lack rsync, and system
+  # packages installed outside /home are lost on a pause)
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --info=stats1 "$1/" "$2/"
+  else
+    mkdir -p "$2" && cp -a "$1/." "$2/"
+  fi
+}
+
 mc_stage_in() {
   if [ ! -d "${MC_STAGE_ROOT}" ]; then
     mc_log "ERROR: ${MC_STAGE_ROOT} is not visible on $(hostname). Export MC_STAGE_ROOT to a path this node can read."
@@ -302,10 +319,10 @@ mc_stage_in() {
   fi
   mkdir -p "${MC_STAGED_MODEL_DIR}" "${MC_STAGED_DATA_DIR}"
   mc_log "stage-in model -> ${MC_STAGED_MODEL_DIR}"
-  rsync -a --info=stats1 "${MC_MODEL_DIR}/" "${MC_STAGED_MODEL_DIR}/"
+  _mc_copy_tree "${MC_MODEL_DIR}" "${MC_STAGED_MODEL_DIR}"
   if [ -d "${MC_DATA_DIR}" ]; then
     mc_log "stage-in data  -> ${MC_STAGED_DATA_DIR}"
-    rsync -a --info=stats1 "${MC_DATA_DIR}/" "${MC_STAGED_DATA_DIR}/"
+    _mc_copy_tree "${MC_DATA_DIR}" "${MC_STAGED_DATA_DIR}"
   else
     mc_log "WARN: ${MC_DATA_DIR} missing (run 'make data'); continuing without data"
   fi
@@ -415,7 +432,8 @@ mc_train_main() {
   # Usage: mc_train_main <config-name> [extra hydra overrides...]; needs MC_SEED (default 42).
   local config="${1:?config name}"; shift || true
   export MC_SEED="${MC_SEED:-42}"
-  mc_job_init "${MC_RUN_NAME:-${config}-s${MC_SEED}}"
+  # MC_RUN_TAG (configs/jarvis.env.sh: h100) keeps runs on other hardware apart: math_grpo-h100-s1
+  mc_job_init "${MC_RUN_NAME:-${config}${MC_RUN_TAG:+-${MC_RUN_TAG}}-s${MC_SEED}}"
   mc_stage_in
   # Config-specific preflight (compose + invariants + chat template) now that the model is staged.
   python "${MC_REPO_ROOT}/scripts/check_env.py" --no-pins --no-gpu --no-staged --only-config \
