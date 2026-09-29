@@ -6,7 +6,7 @@
 #
 # A run's LoRA-only checkpoint is merged into the base model in bf16 first (scripts/merge_ckpt.sh).
 # Results: <runs>/<run>/eval/global_step_<N>/{summary.json,<benchmark>/results.json}; the base model's
-# under <runs>/base-qwen3-1.7b/eval/. scripts/compare_runs.py turns them into the report table.
+# under <runs>/base-qwen3-1.7b-h100/eval/. scripts/compare_runs.py turns them into the report table.
 set -euo pipefail
 TARGET="${1:?usage: jarvis/eval.sh base|<run name> [gpu] [step]}"
 GPU="${2:-0}"
@@ -18,7 +18,7 @@ source configs/ada.env.sh
 export CUDA_VISIBLE_DEVICES="${GPU}" PATH="${MC_VENV_DIR}/bin:${PATH}"
 if [ "${TARGET}" = "base" ]; then
   CKPT="${MC_MODEL_DIR}"
-  OUT="${MC_RUNS_DIR}/base-qwen3-1.7b/eval/base"
+  OUT="${MC_RUNS_DIR}/base-qwen3-1.7b-${MC_RUN_TAG}/eval/base"   # per platform: bf16 H100 vs fp16 T4
 else
   CKDIR="${MC_RUNS_DIR}/${TARGET}/checkpoints"
   [ -d "${CKDIR}" ] || { echo "no checkpoints under ${CKDIR}" >&2; exit 1; }

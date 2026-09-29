@@ -53,7 +53,14 @@ for attempt in $(seq 1 "${max}"); do
   log "attempt ${attempt}/${max}: ${MC_JOB_ID} (resuming after checkpoint: ${last}); log ${MC_JOB_STDOUT}"
   bash slurm/run_train.sh "${CONFIG}" > "${MC_JOB_STDOUT}" 2>&1
   rc=$?
-  if finished; then log "finished: step ${total} checkpointed (rc=${rc})"; exit 0; fi
+  if finished; then
+    log "finished: step ${total} checkpointed (rc=${rc})"
+    if [ -n "${MC_HUB_REPO:-}" ]; then   # optional copy on the Hub (e.g. to evaluate it on Kaggle, decision 014)
+      "${MC_VENV_DIR}/bin/python" scripts/hub_sync.py push --run "${MC_RUN_NAME}" >> "${LOG_DIR}/launcher.log" 2>&1 \
+        && log "pushed to ${MC_HUB_REPO}" || log "WARN: hub push failed"
+    fi
+    exit 0
+  fi
   log "attempt ${attempt} ended with rc=${rc} before step ${total}; tail of its log:"
   tail -n 15 "${MC_JOB_STDOUT}" | tee -a "${LOG_DIR}/launcher.log"
   # leftovers of THIS run's Ray instance only (the other arm has its own RAY_TMPDIR)

@@ -95,6 +95,18 @@ H100 = ("layout=h100_1gpu", "memory=plan_b_lora_gpu", "hardware=h100")
 
 
 @pytest.mark.parametrize("name", ["smoke", "math_grpo", "math_mixed_cuts"])
+def test_kaggle_t4_variants_pass_the_checks(compose, name, monkeypatch):
+    monkeypatch.setenv("MC_HW_PROFILE", "sm75")
+    monkeypatch.setenv("MC_SLURM_GPUS", "1")
+    mod, cfg = compose(name, "layout=kaggle_t4")
+    a = cfg.actor_rollout_ref
+    assert cfg.hw_profile == "sm75" and a.rollout.dtype == "float16"
+    assert a.actor.fsdp_config.offload_policy is True and a.model.lora_rank == 64
+    assert abs(a.actor.optim.lr - 1e-5) < 1e-12
+    assert mod.check(cfg) == []
+
+
+@pytest.mark.parametrize("name", ["smoke", "math_grpo", "math_mixed_cuts"])
 def test_h100_variants_pass_the_checks(compose, name, monkeypatch):
     monkeypatch.setenv("MC_HW_PROFILE", "h100")
     monkeypatch.setenv("MC_SLURM_GPUS", "1")
@@ -154,6 +166,7 @@ def _leaves(d, prefix=""):
         ),
         (("layout=nlp_4gpu", "memory=plan_a_manual_offload"), {"memory": "plan_a_manual_offload"}),
         (H100, {"layout": "h100_1gpu", "memory": "plan_b_lora_gpu", "hardware": "h100"}),
+        (("layout=kaggle_t4",), {"layout": "kaggle_t4", "memory": "plan_b_lora", "hardware": "sm75"}),
     ],
 )
 def test_no_group_value_is_silently_overridden(compose, overrides, groups):

@@ -1,0 +1,30 @@
+# @package _global_
+# Layout: ONE NVIDIA T4 16 GB per run in a Kaggle notebook (4 vCPUs, ~30 GB host RAM per session;
+# decision 014). Same hardware profile (sm75) and memory plan (plan_b_lora: LoRA + FSDP2 CPU offload)
+# as Ada's research_1gpu, which is where their memory behaviour was measured: ~18 GB anonymous + ~11 GB
+# pinned host memory per run, so ONE training run per session (the second T4 can evaluate).
+#
+# Rollout budget: the actor lives in pinned host RAM, so vLLM gets 0.80 x ~15 GiB = ~12 GiB: 3.4 GB fp16
+# weights + ~1 GB activations/graphs + ~7.5 GB KV = ~65k tokens (Qwen3-1.7B: 112 KiB per token).
+trainer:
+  n_gpus_per_node: 1
+actor_rollout_ref:
+  rollout:
+    tensor_model_parallel_size: 1    # one replica = the whole world  [checked: == n_gpus_per_node]
+    gpu_memory_utilization: 0.80
+    max_num_seqs: 48
+    max_num_batched_tokens: 4096     # >= max_prompt_length (chunked prefill)
+    agent:
+      num_workers: 1
+    checkpoint_engine:
+      update_weights_bucket_megabytes: 512   # a host-memory transient; host RAM is the tight budget here
+data:
+  dataloader_num_workers: 0
+ray_kwargs:
+  ray_init:
+    num_cpus: 16                     # LOGICAL cpus for Ray's placement (it reserves ~10); 4 real vCPUs
+    object_store_memory: 2000000000  # /dev/shm counts against the session's RAM
+transfer_queue:
+  backend:
+    SimpleStorage:
+      num_data_storage_units: 1

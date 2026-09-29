@@ -21,12 +21,16 @@ export MC_REPO_ROOT="${MC_REPO_ROOT:-$_mc_repo_root}"
 # --- site switch ------------------------------------------------------------------
 # Every script sources this file. MC_SITE=jarvis (exported by jarvis/*.sh and the instance's ~/.bashrc)
 # hands over to configs/jarvis.env.sh: one H100 per run on Jarvislabs, no SLURM (decision 013).
-if [ "${MC_SITE:-ada}" = "jarvis" ]; then
-  unset _mc_repo_root
-  # shellcheck source=jarvis.env.sh
-  . "${MC_REPO_ROOT}/configs/jarvis.env.sh"
-  return 0 2>/dev/null || exit 0
-fi
+# MC_SITE=kaggle (exported by kaggle/*.sh) hands over to configs/kaggle.env.sh: T4s in Kaggle
+# notebooks, 12-hour sessions, runs carried between sessions on the Hugging Face Hub (decision 014).
+case "${MC_SITE:-ada}" in
+  jarvis|kaggle)
+    unset _mc_repo_root
+    # shellcheck source=/dev/null
+    . "${MC_REPO_ROOT}/configs/${MC_SITE}.env.sh"
+    return 0 2>/dev/null || exit 0
+    ;;
+esac
 export MC_SITE=ada
 export MC_HW_PROFILE="${MC_HW_PROFILE:-sm75}"   # configs/train/hardware/sm75.yaml; checked by compose_config + check_env
 
