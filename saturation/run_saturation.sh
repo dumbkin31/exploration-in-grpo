@@ -126,9 +126,9 @@ run_dataset() {
   total_rows=$("${PYTHON}" - "${DATA_DIR}/${dataset}.parquet" <<'PY'
 import sys
 
-import pandas as pd
+import pyarrow.parquet as parquet
 
-print(len(pd.read_parquet(sys.argv[1], columns=[])))
+print(parquet.ParquetFile(sys.argv[1]).metadata.num_rows)
 PY
   )
   if [[ -z "${dataset_end}" || "${dataset_end}" -gt "${total_rows}" ]]; then
