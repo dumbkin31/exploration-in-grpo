@@ -11,18 +11,27 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-def analyze_dataset(eval_dir: Path, dataset: str, output_dir: Path) -> dict:
-    samples_path = eval_dir / dataset / "samples.jsonl"
-    if not samples_path.exists():
-        raise FileNotFoundError(f"Missing evaluation output: {samples_path}")
+def _sample_paths(eval_dir: Path, dataset: str) -> list[Path]:
+    dataset_dir = eval_dir / dataset
+    paths = []
+    direct = dataset_dir / "samples.jsonl"
+    if direct.exists():
+        paths.append(direct)
+    paths.extend(path for path in sorted(dataset_dir.rglob("samples.jsonl")) if path != direct)
+    if not paths:
+        raise FileNotFoundError(f"Missing evaluation output under {dataset_dir}")
+    return paths
 
+
+def analyze_dataset(eval_dir: Path, dataset: str, output_dir: Path) -> dict:
     groups = defaultdict(list)
 
-    with samples_path.open(encoding="utf-8") as handle:
-        for line in handle:
-            record = json.loads(line)
-            key = record.get("index") or f"problem-{record['problem']}"
-            groups[str(key)].append(float(record["correct"]))
+    for samples_path in _sample_paths(eval_dir, dataset):
+        with samples_path.open(encoding="utf-8") as handle:
+            for line in handle:
+                record = json.loads(line)
+                key = record.get("index") or f"problem-{record['problem']}"
+                groups[str(key)].append(float(record["correct"]))
 
     rows = []
     for index, scores in groups.items():
