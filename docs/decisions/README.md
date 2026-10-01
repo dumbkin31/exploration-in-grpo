@@ -19,3 +19,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [012](012-research-qos-one-gpu-lora.md) | `research`/`low` = 1 GPU, 10 CPUs, 32 GB per user: LoRA + FSDP2 offload policy on one card (layout group, `MC_LAYOUT`), W&B online |
 | [013](013-jarvislabs-h100.md) | Both arms on Jarvislabs H100s in parallel: bf16, same LoRA, `hardware` config group, `-h100-` run names; the LoRA lr was silently 1e-6 on Ada |
 | [014](014-kaggle-t4.md) | Kaggle T4 support (fp16 Ada plan, CUDA 12.9 fallback, runs carried between 12-hour sessions on the HF Hub); use it for smoke tests and evaluations |
+| [015](015-length-sorted-microbatches.md) | Padded attention path: micro-batches are length-sorted (patch) instead of workload-balanced, about 4x less padding, same gradient |
