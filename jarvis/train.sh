@@ -35,9 +35,10 @@ finished() {   # the last step's checkpoint exists (verl saves at the final step
 }
 
 gpu_free() {   # wait up to 5 min for this GPU to be released by a previous attempt
+  # An idle H200 reads ~1.6 GB used on some hosts; a live attempt holds tens of GB.
   for _ in $(seq 1 30); do
     used="$(nvidia-smi -i "${GPU}" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1)"
-    [ -n "${used}" ] && [ "${used}" -lt 1000 ] && return 0
+    [ -n "${used}" ] && [ "${used}" -lt "${MC_GPU_FREE_MIB:-4096}" ] && return 0
     sleep 10
   done
   return 1

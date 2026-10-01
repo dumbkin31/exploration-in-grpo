@@ -31,6 +31,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -315,10 +316,9 @@ def check_storage(r: Report) -> None:
             continue
         root = Path(p)
         try:
-            root.mkdir(parents=True, exist_ok=True)
-            probe = root / ".mc_write_probe"
-            probe.write_text("ok")
-            probe.unlink()
+            err = _writable(p)
+            if err is not None:
+                raise OSError(err)
             free_gb = shutil.disk_usage(root).free / 2**30
             r.ok(f"{var}={p} writable, {free_gb:.0f} GiB free")
             r.facts[var] = {"path": p, "writable": True, "free_gib": round(free_gb)}
@@ -615,11 +615,17 @@ def check_config(r: Report, name: str | None) -> None:
 
 
 def _writable(path: str) -> str | None:
+    """None if ``path`` (created if missing) accepts a new file, else the error.
+
+    The probe file has a unique name: the two arms on a 2-GPU instance run their preflights at the same
+    moment against the same shared folders, and with one fixed name one arm deleted the other's probe,
+    whose own delete then failed with ENOENT (2026-10-01, after the instance resumed from a pause).
+    """
     try:
         Path(path).mkdir(parents=True, exist_ok=True)
-        probe = Path(path) / ".mc_write_probe"
-        probe.write_text("ok")
-        probe.unlink()
+        fd, probe = tempfile.mkstemp(prefix=".mc_write_probe.", dir=path)
+        os.close(fd)
+        os.unlink(probe)
         return None
     except OSError as e:
         return str(e)
