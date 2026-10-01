@@ -25,7 +25,12 @@ KEYS = (
 
 
 def _source(tmp_path: Path, **env: str) -> dict[str, str]:
-    script = f'source "{REPO}/configs/ada.env.sh" >/dev/null 2>&1; ' + "; ".join(
+    """Source the env files from a copy of configs/ with no .env or local.env.sh next to it: the
+    machine's own secrets and overrides (e.g. MC_RUN_TAG=h200 on the Jarvislabs instance) must not
+    leak into what is being tested."""
+    repo = tmp_path / "repo"
+    shutil.copytree(REPO / "configs", repo / "configs", ignore=shutil.ignore_patterns("local.env.sh"))
+    script = f'source "{repo}/configs/ada.env.sh" >/dev/null 2>&1; ' + "; ".join(
         f'printf "%s=%s\\n" {k} "${{{k}:-}}"' for k in KEYS
     )
     base = {"HOME": str(tmp_path), "PATH": os.environ["PATH"], "USER": "u"}
