@@ -32,7 +32,8 @@ quarters of the training compute, and of the logits memory, is spent on pad toke
 
 `mixed_cuts.microbatch_patch` wraps `verl.workers.engine.utils.rearrange_micro_batches`: sort by length,
 cut runs that fit the budget once padded (`count * longest <= max_token_len`), longest run first. The
-simulated padding efficiency becomes about 0.97, the micro-batch count stays about the same, and every
+simulated padding efficiency becomes about 0.92 for the update (512 sequences per mini-batch) and 0.95
+for the log-prob passes (2,048 sequences), the micro-batch count grows by about one in eight, and every
 micro-batch's padded size is below what verl gave it, so peak memory falls.
 
 The gradient does not change: `forward_backward_batch` computes `batch_num_tokens` over the whole

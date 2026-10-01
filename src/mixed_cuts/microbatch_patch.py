@@ -11,7 +11,8 @@ real: Mixed-CUTS step 1 on the H200 spent 950 of its 1,066 seconds in the three 
 
 This patch keeps verl's call and replaces only the partition: sequences are sorted by length and cut into
 runs that fit the token budget once padded (``count * longest <= max_token_len``), longest run first so
-the memory peak comes at once. Padding efficiency on the measured lengths goes from ~0.25 to ~0.97, and
+the memory peak comes at once. Padding efficiency on the measured lengths goes from ~0.25 to ~0.92
+(update, 512 sequences per mini-batch) and ~0.95 (log-probs, 2,048 sequences), and
 each micro-batch's padded size, hence its activation and logits memory, stays below what verl gave it.
 
 The gradient does not change: ``FSDPEngine.forward_backward_batch`` counts the loss tokens over the whole

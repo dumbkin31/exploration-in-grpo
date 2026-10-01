@@ -131,7 +131,7 @@ def test_real_verl_partition_restores_order_and_saves_padding():
     """With verl installed: the patched call returns micro-batches verl's restore puts back in order."""
     sb = pytest.importorskip("verl.utils.seqlen_balancing")
     utils = pytest.importorskip("verl.workers.engine.utils")
-    lengths = _lengths_like_step1(n=256, seed=1)
+    lengths = _lengths_like_step1(n=512, seed=1)  # one update mini-batch: 32 prompts x 16
     budget = 32768
     batch = _nested_batch(lengths, use_remove_padding=False)
     orig = utils.rearrange_micro_batches
