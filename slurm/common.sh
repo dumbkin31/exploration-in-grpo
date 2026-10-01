@@ -236,7 +236,11 @@ print(best or "")
 PY
 )"
   fi
-  rss="$(sstat -n -P -j "${SLURM_JOB_ID:-x}.batch" -o MaxRSS 2>/dev/null | head -1)"
+  # SLURM only: elsewhere (Jarvislabs, Kaggle) sstat does not exist, and under `set -euo pipefail` the
+  # failed pipeline aborted the whole EXIT-trap stage-out (first H200 smoke run, 2026-10-01)
+  if command -v sstat >/dev/null 2>&1; then
+    rss="$(sstat -n -P -j "${SLURM_JOB_ID:-x}.batch" -o MaxRSS 2>/dev/null | head -1 || true)"
+  fi
   {
     echo "cgroup_peak_mib=${peak:-unknown} (max of the sampled memory.current of this job)"
     echo "cgroup_now_mib=${now:-unknown}"
