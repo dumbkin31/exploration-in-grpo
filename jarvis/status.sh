@@ -16,6 +16,8 @@ from pathlib import Path
 runs, tag, rate = Path(sys.argv[1]), sys.argv[2], float(sys.argv[3])
 hours_all = 0.0
 for run in sorted(runs.glob(f"*-{tag}-s*")):
+    if not run.is_dir() or run.name.startswith("smoke-"):
+        continue  # training runs only: not the smoke runs or their .out logs
     rows = []
     m = run / "metrics.jsonl"
     if m.exists():
