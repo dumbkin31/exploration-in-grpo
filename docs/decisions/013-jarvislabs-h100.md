@@ -85,6 +85,24 @@ The driver on Jarvislabs' images (>= 580 needed), vLLM `FLASH_ATTN` with the CUT
 0.60 utilisation, the real step time, the spot-preemption disk behaviour, and the GPU tests under bf16.
 `jarvis/smoke.sh` covers the first two before the arms start.
 
+## First run on the instance (2026-10-01, 2 × H200 spot)
+
+The H100 was unavailable; 2 × H200 spot (₹378.76/hour) was taken: the same Hopper chip with more memory,
+so the `h100` profile runs unchanged (`MC_RUN_TAG=h200` names the runs). Three problems showed up and
+were fixed before the arms trained:
+
+* **SSH from the user's home network timed out** on every port of the instance (ping worked). Over a
+  phone hotspot it connected: the home network blocks it, not Jarvislabs.
+* **The stage-out after training called SLURM's `sstat`**, absent here, and `set -euo pipefail` made a
+  successful smoke run look failed (#16).
+* **Two arms on one machine shared verl's weight-transfer socket.** verl names it after the Ray job id,
+  but each run has its own Ray instance whose first job is always `01000000`, so both bound
+  `/tmp/rl-colocate-zmq-01000000-replica-0-rank-0.sock` and the GRPO arm's vLLM waited forever for
+  weights after start-up. `mixed_cuts.zmq_socket_patch` (worker hook, approved by the user) puts the run
+  name into the sender's path and into `VERL_RAY_JOB_ID` before the server spawns its vLLM workers. The
+  hung GRPO run was stopped before the Mixed-CUTS arm's next sync could be intercepted, and restarted
+  from step 0 with the patch; Mixed-CUTS kept running.
+
 ## For the write-up
 
 LoRA instead of full fine-tuning remains the deviation from the paper. The runs are bf16 on H100s;
