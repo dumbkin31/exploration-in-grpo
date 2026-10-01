@@ -16,17 +16,23 @@ import torch
 
 @pytest.fixture
 def trainer_module(monkeypatch):
-    """Import mixed_cuts.trainer with verl/transfer_queue stubbed out (CPU dev env)."""
+    """Import mixed_cuts.trainer with verl/transfer_queue stubbed out (CPU dev env).
+
+    A generator fixture: every path must yield (a bare ``return`` yields nothing and pytest errors
+    with "did not yield a value", which is what happened wherever verl is installed).
+    """
     if "mixed_cuts.trainer" in sys.modules:
-        return sys.modules["mixed_cuts.trainer"]
+        yield sys.modules["mixed_cuts.trainer"]
+        return
     try:
         import verl  # noqa: F401
 
-        import mixed_cuts.trainer as mod
-
-        return mod
+        import mixed_cuts.trainer as real
     except ImportError:
-        pass
+        real = None
+    if real is not None:
+        yield real
+        return
     stubs = {}
     tq = types.ModuleType("transfer_queue")
     stubs["transfer_queue"] = tq
