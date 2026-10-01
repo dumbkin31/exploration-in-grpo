@@ -106,13 +106,14 @@ def test_tag_is_sanitised_and_bounded(monkeypatch):
     assert tag.startswith("a_b_c") and len(tag) == 40
 
 
-def test_worker_hook_installs_all_three(monkeypatch):
+def test_worker_hook_installs_every_patch(monkeypatch):
     called = []
     monkeypatch.setattr("mixed_cuts.sdpa_patch.install", lambda: called.append("sdpa"))
     monkeypatch.setattr("mixed_cuts.lora_sync_patch.install", lambda: called.append("lora"))
     monkeypatch.setattr("mixed_cuts.zmq_socket_patch.install", lambda: called.append("zmq"))
+    monkeypatch.setattr("mixed_cuts.microbatch_patch.install", lambda: called.append("microbatch"))
     worker_hooks.install()
-    assert called == ["sdpa", "lora", "zmq"]
+    assert called == ["sdpa", "lora", "zmq", "microbatch"]
 
 
 def test_verl_still_builds_the_paths_this_patch_expects():
