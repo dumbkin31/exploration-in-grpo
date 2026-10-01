@@ -92,8 +92,9 @@ def test_worker_hook_installs_both_patches(monkeypatch):
     monkeypatch.setattr("mixed_cuts.sdpa_patch.install", lambda: called.append("sdpa"))
     monkeypatch.setattr("mixed_cuts.lora_sync_patch.install", lambda: called.append("lora_sync"))
     monkeypatch.setattr("mixed_cuts.zmq_socket_patch.install", lambda: called.append("zmq"))
+    monkeypatch.setattr("mixed_cuts.microbatch_patch.install", lambda: called.append("microbatch"))
     worker_hooks.install()
-    assert called == ["sdpa", "lora_sync", "zmq"]
+    assert called == ["sdpa", "lora_sync", "zmq", "microbatch"]
 
 
 def test_merge_unmerge_round_trip_drift_is_far_below_fp16():
