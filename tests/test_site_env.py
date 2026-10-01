@@ -83,3 +83,19 @@ def test_preflight_profiles():
 
     assert check_env.PROFILES["h100"]["cc"] == (9, 0) and check_env.PROFILES["h100"]["bf16"] is True
     assert check_env.PROFILES["sm75"]["backend"] == "TRITON_ATTN"
+
+
+def test_write_probes_of_concurrent_preflights_do_not_collide(tmp_path: Path):
+    """Two arms run their preflights at once against the same folders (2026-10-01 resume)."""
+    import concurrent.futures
+
+    sys.path.insert(0, str(REPO / "scripts"))
+    import check_env
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        errors = list(pool.map(lambda _: check_env._writable(str(tmp_path / "shared")), range(400)))
+    assert errors == [None] * 400
+    assert list((tmp_path / "shared").iterdir()) == [], "probes are removed"
+    assert check_env._writable(str(tmp_path / "file")) is None
+    (tmp_path / "blocker").write_text("not a folder")
+    assert check_env._writable(str(tmp_path / "blocker")) is not None
