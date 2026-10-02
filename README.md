@@ -1,5 +1,10 @@
 # Mixed-CUTS on verl + vLLM
 
+## Important links:
+- **Checkpoints & Evaluations:** Private Hugging Face repository at <https://huggingface.co/lokola13/mixed-cuts-h200-runs>
+- **Training Curves:** Weights & Biases project at <https://forge.coreweave.com/wandb/anlp-mixed-cuts/mixed-cuts>
+
+## About the Repo
 Research code for stress-testing **Mixed-CUTS** from *Too Correct to Learn: Reinforcement Learning on
 Saturated Reasoning Data* (Liang et al., ACL 2026, [arXiv 2604.18493](https://arxiv.org/abs/2604.18493)).
 There is no public implementation; this repo implements CUTS (Constrained Uniform Top-K Sampling) as a
