@@ -20,7 +20,11 @@ original 4-GPU full-fine-tune layout stays selectable (`MC_LAYOUT=nlp_4gpu`):
 Both arms spend the same generation budget (asserted at config load), so any difference is the method.
 Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions/README.md).
 
-> **Status (2026-09-30)**: code complete; the two 100-step arms have not been trained yet.
+> **Status (2026-10-02)**: both arms trained on 2x H200 and were stopped after diverging (GRPO at step 72,
+> Mixed-CUTS at step 61); GRPO step 40 is the best model (MATH-500 pass@1 78.1% vs 70.2% for the base model).
+> Results, tables and figures: [`results/h200-2026-10-01/`](results/h200-2026-10-01/README.md) (decision 016).
+>
+> **Earlier status (2026-09-30)**: code complete; the two 100-step arms had not been trained yet.
 > * **Verified on Ada (2080 Ti, fp16)**: environment and data build, rollout benchmark, smoke training
 >   and all 8 engine-level GPU tests, a full-length stress test at 5,000-token responses, a kill-and-resume
 >   test (LoRA-only checkpoints, one W&B run), and one full-scale training step of the GRPO arm. Ada
