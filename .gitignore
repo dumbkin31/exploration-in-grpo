@@ -29,6 +29,8 @@ cuts_stats/
 *.ckpt
 *.jsonl
 !tests/fixtures/*.jsonl
+# curated, published run records (results/<date>/training/)
+!results/**/*.jsonl
 
 # SLURM logs
 slurm-*.out

@@ -1,0 +1,122 @@
+{
+  "benchmark": "amc23",
+  "config": {
+    "benchmarks": [
+      "math500",
+      "aime24",
+      "aime25",
+      "amc23",
+      "gpqa_diamond"
+    ],
+    "bootstrap_seed": 0,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "engine": {
+      "attention_config": {
+        "backend": "FLASH_ATTN"
+      },
+      "dtype": "bfloat16",
+      "enforce_eager": false,
+      "gpu_memory_utilization": 0.85,
+      "max_model_len": 6144,
+      "seed": 0,
+      "tensor_parallel_size": 1
+    },
+    "k_values": [
+      1,
+      4,
+      16
+    ],
+    "n_samples": 16,
+    "reward": {
+      "timeout": 30
+    },
+    "sampling": {
+      "max_tokens": 5000,
+      "seed": 0,
+      "temperature": 1.0,
+      "top_k": 20,
+      "top_p": 0.8
+    },
+    "seed": 0
+  },
+  "digit_rule_ceiling": 1.0,
+  "frac_truncated": 0.2109375,
+  "frac_valid_responses": 0.7921875,
+  "generation_seconds": 104.6005597114563,
+  "mean_response_chars": 5934.4328125,
+  "mean_response_tokens": 2354.59375,
+  "mean_response_tokens_correct": 1361.8466076696166,
+  "mean_response_tokens_incorrect": 3472.671096345515,
+  "metrics": {
+    "frac_no_answer": 0.2078125,
+    "frac_no_answer_ci95": [
+      0.115625,
+      0.3062890625
+    ],
+    "frac_no_answer_std_over_problems": 0.31819421521100916,
+    "maj@1": 0.45,
+    "maj@16": 0.75,
+    "maj@16_agreement": 0.571875,
+    "maj@16_agreement_ci95": [
+      0.4828125,
+      0.6703515624999999
+    ],
+    "maj@16_agreement_std_over_problems": 0.3273204421893017,
+    "maj@16_ci95": [
+      0.625,
+      0.875
+    ],
+    "maj@16_std_over_problems": 0.4330127018922193,
+    "maj@1_agreement": 1.0,
+    "maj@1_agreement_ci95": [
+      1.0,
+      1.0
+    ],
+    "maj@1_agreement_std_over_problems": 0.0,
+    "maj@1_ci95": [
+      0.3,
+      0.625
+    ],
+    "maj@1_std_over_problems": 0.49749371855331004,
+    "maj@4": 0.55,
+    "maj@4_agreement": 0.6375,
+    "maj@4_agreement_ci95": [
+      0.55,
+      0.7375
+    ],
+    "maj@4_agreement_std_over_problems": 0.30078023538789916,
+    "maj@4_ci95": [
+      0.4,
+      0.7
+    ],
+    "maj@4_std_over_problems": 0.49749371855331,
+    "n_problems": 40,
+    "n_samples": 16,
+    "pass@1": 0.5296875,
+    "pass@16": 0.875,
+    "pass@16_ci95": [
+      0.75,
+      0.975
+    ],
+    "pass@16_std_over_problems": 0.33071891388307384,
+    "pass@1_ci95": [
+      0.42808593749999996,
+      0.6390625
+    ],
+    "pass@1_std_over_problems": 0.36523416610956594,
+    "pass@4": 0.7578983516483516,
+    "pass@4_ci95": [
+      0.6508430631868133,
+      0.8564656593406595
+    ],
+    "pass@4_std_over_problems": 0.34922779736795595
+  },
+  "n_problems": 40,
+  "n_samples": 16,
+  "notes": "amc23: 40 problems; one problem = 2.5 pp of pass@1. Read the bootstrap 95% CIs. Small benchmark: compare arms only across multiple seeds.",
+  "parquet": "/home/mixed-cuts-data/data/amc23.parquet",
+  "pp_per_problem": 2.5,
+  "timestamp": 1790886021.7854185
+}

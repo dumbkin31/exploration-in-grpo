@@ -1,0 +1,122 @@
+{
+  "benchmark": "gpqa_diamond",
+  "config": {
+    "benchmarks": [
+      "math500",
+      "aime24",
+      "aime25",
+      "amc23",
+      "gpqa_diamond"
+    ],
+    "bootstrap_seed": 0,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "engine": {
+      "attention_config": {
+        "backend": "FLASH_ATTN"
+      },
+      "dtype": "bfloat16",
+      "enforce_eager": false,
+      "gpu_memory_utilization": 0.85,
+      "max_model_len": 6144,
+      "seed": 0,
+      "tensor_parallel_size": 1
+    },
+    "k_values": [
+      1,
+      4,
+      16
+    ],
+    "n_samples": 16,
+    "reward": {
+      "timeout": 30
+    },
+    "sampling": {
+      "max_tokens": 5000,
+      "seed": 0,
+      "temperature": 1.0,
+      "top_k": 20,
+      "top_p": 0.8
+    },
+    "seed": 0
+  },
+  "digit_rule_ceiling": 1.0,
+  "frac_truncated": 0.016098484848484848,
+  "frac_valid_responses": 0.9996843434343434,
+  "generation_seconds": 180.78300499916077,
+  "mean_response_chars": 3713.27904040404,
+  "mean_response_tokens": 1278.2127525252524,
+  "mean_response_tokens_correct": 1279.4400767018217,
+  "mean_response_tokens_incorrect": 1277.6103529411764,
+  "metrics": {
+    "frac_no_answer": 0.0003156565656565657,
+    "frac_no_answer_ci95": [
+      0.0,
+      0.000946969696969697
+    ],
+    "frac_no_answer_std_over_problems": 0.004430451025132008,
+    "maj@1": 0.31313131313131315,
+    "maj@16": 0.3787878787878788,
+    "maj@16_agreement": 0.6300505050505051,
+    "maj@16_agreement_ci95": [
+      0.6057370580808081,
+      0.6540404040404041
+    ],
+    "maj@16_agreement_std_over_problems": 0.177039158410946,
+    "maj@16_ci95": [
+      0.31313131313131315,
+      0.45454545454545453
+    ],
+    "maj@16_std_over_problems": 0.4850851695024886,
+    "maj@1_agreement": 1.0,
+    "maj@1_agreement_ci95": [
+      1.0,
+      1.0
+    ],
+    "maj@1_agreement_std_over_problems": 0.0,
+    "maj@1_ci95": [
+      0.24242424242424243,
+      0.3787878787878788
+    ],
+    "maj@1_std_over_problems": 0.4637672841716766,
+    "maj@4": 0.35353535353535354,
+    "maj@4_agreement": 0.6893939393939394,
+    "maj@4_agreement_ci95": [
+      0.6628472222222221,
+      0.7159090909090909
+    ],
+    "maj@4_agreement_std_over_problems": 0.18999903339370383,
+    "maj@4_ci95": [
+      0.2878787878787879,
+      0.42424242424242425
+    ],
+    "maj@4_std_over_problems": 0.478067053179767,
+    "n_problems": 198,
+    "n_samples": 16,
+    "pass@1": 0.32922979797979796,
+    "pass@16": 0.8434343434343434,
+    "pass@16_ci95": [
+      0.7929292929292929,
+      0.8939393939393939
+    ],
+    "pass@16_std_over_problems": 0.3633907700393909,
+    "pass@1_ci95": [
+      0.2907039141414141,
+      0.3696338383838384
+    ],
+    "pass@1_std_over_problems": 0.282136409394498,
+    "pass@4": 0.6269896769896771,
+    "pass@4_ci95": [
+      0.5782360694860694,
+      0.6794163475413475
+    ],
+    "pass@4_std_over_problems": 0.36320543396656746
+  },
+  "n_problems": 198,
+  "n_samples": 16,
+  "notes": "gpqa_diamond: 198 problems; one problem = 0.5 pp of pass@1. Read the bootstrap 95% CIs.",
+  "parquet": "/home/mixed-cuts-data/data/gpqa_diamond.parquet",
+  "pp_per_problem": 0.5050505050505051,
+  "timestamp": 1790885802.001799
+}

@@ -20,3 +20,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [013](013-jarvislabs-h100.md) | Both arms on Jarvislabs H100s in parallel: bf16, same LoRA, `hardware` config group, `-h100-` run names; the LoRA lr was silently 1e-6 on Ada |
 | [014](014-kaggle-t4.md) | Kaggle T4 support (fp16 Ada plan, CUDA 12.9 fallback, runs carried between 12-hour sessions on the HF Hub); use it for smoke tests and evaluations |
 | [015](015-length-sorted-microbatches.md) | Padded attention path: micro-batches are length-sorted (patch) instead of workload-balanced, about 4x less padding, same gradient |
+| [016](016-h200-divergence-stop-and-evaluate.md) | Both H200 arms diverged (Mixed-CUTS from ~step 48, GRPO from ~step 64): stopped at 72/61 and evaluated at equal steps; GRPO step 40 is the best model |

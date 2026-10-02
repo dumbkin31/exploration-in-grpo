@@ -1,0 +1,122 @@
+{
+  "benchmark": "math500",
+  "config": {
+    "benchmarks": [
+      "math500",
+      "aime24",
+      "aime25",
+      "amc23",
+      "gpqa_diamond"
+    ],
+    "bootstrap_seed": 0,
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "engine": {
+      "attention_config": {
+        "backend": "FLASH_ATTN"
+      },
+      "dtype": "bfloat16",
+      "enforce_eager": false,
+      "gpu_memory_utilization": 0.85,
+      "max_model_len": 6144,
+      "seed": 0,
+      "tensor_parallel_size": 1
+    },
+    "k_values": [
+      1,
+      4,
+      16
+    ],
+    "n_samples": 16,
+    "reward": {
+      "timeout": 30
+    },
+    "sampling": {
+      "max_tokens": 5000,
+      "seed": 0,
+      "temperature": 1.0,
+      "top_k": 20,
+      "top_p": 0.8
+    },
+    "seed": 0
+  },
+  "digit_rule_ceiling": 0.978,
+  "frac_truncated": 0.079,
+  "frac_valid_responses": 0.898625,
+  "generation_seconds": 484.57248616218567,
+  "mean_response_chars": 2616.002,
+  "mean_response_tokens": 1074.593,
+  "mean_response_tokens_correct": 525.4035999257748,
+  "mean_response_tokens_incorrect": 2208.0980467253926,
+  "metrics": {
+    "frac_no_answer": 0.0765,
+    "frac_no_answer_ci95": [
+      0.062375,
+      0.091375
+    ],
+    "frac_no_answer_std_over_problems": 0.16930261368330968,
+    "maj@1": 0.658,
+    "maj@16": 0.756,
+    "maj@16_agreement": 0.750125,
+    "maj@16_agreement_ci95": [
+      0.722246875,
+      0.777128125
+    ],
+    "maj@16_agreement_std_over_problems": 0.3126374447742944,
+    "maj@16_ci95": [
+      0.72,
+      0.794
+    ],
+    "maj@16_std_over_problems": 0.42949272403615874,
+    "maj@1_agreement": 1.0,
+    "maj@1_agreement_ci95": [
+      1.0,
+      1.0
+    ],
+    "maj@1_agreement_std_over_problems": 0.0,
+    "maj@1_ci95": [
+      0.616,
+      0.7
+    ],
+    "maj@1_std_over_problems": 0.47437959483940706,
+    "maj@4": 0.706,
+    "maj@4_agreement": 0.7795,
+    "maj@4_agreement_ci95": [
+      0.7544875,
+      0.8050125
+    ],
+    "maj@4_agreement_std_over_problems": 0.28983572933646395,
+    "maj@4_ci95": [
+      0.66795,
+      0.748
+    ],
+    "maj@4_std_over_problems": 0.4555919226676434,
+    "n_problems": 500,
+    "n_samples": 16,
+    "pass@1": 0.673625,
+    "pass@16": 0.854,
+    "pass@16_ci95": [
+      0.824,
+      0.886
+    ],
+    "pass@16_std_over_problems": 0.3531062163145815,
+    "pass@1_ci95": [
+      0.6388468749999999,
+      0.7083937499999999
+    ],
+    "pass@1_std_over_problems": 0.3988886710286468,
+    "pass@4": 0.7866736263736264,
+    "pass@4_ci95": [
+      0.7562456043956044,
+      0.8198772802197801
+    ],
+    "pass@4_std_over_problems": 0.36933435126589154
+  },
+  "n_problems": 500,
+  "n_samples": 16,
+  "notes": "math500: 500 problems; one problem = 0.2 pp of pass@1. Read the bootstrap 95% CIs.",
+  "parquet": "/home/mixed-cuts-data/data/math500.parquet",
+  "pp_per_problem": 0.2,
+  "timestamp": 1790887492.39661
+}
