@@ -6,8 +6,8 @@ Date: 2026-10-01. Status: accepted (user decision, 20:00 UTC).
 
 Both arms trained on 2x H200 (decision 013, with the length-sorted micro-batches of decision 015). Validation
 (100 MATH-500 problems, mean@4) peaked at step 30 for Mixed-CUTS (73.5%) and step 40 for GRPO (77.3%). Mixed-CUTS
-then diverged from about step 48 and collapsed by step 56 (entropy 6.8, 94% of responses truncated, validation
-0.3% at step 60, 34 minutes per step). GRPO followed from about step 64 (KL 0.15 to 1.05, truncation 37%,
+then diverged from about step 50 and had collapsed by step 58 (at step 61: entropy 6.8, 94% of responses
+truncated; validation 0.3% at step 60; 34 minutes per step). GRPO followed from about step 64 (KL 0.15 to 1.05, truncation 37%,
 validation 69.5% at step 70, 17 minutes per step). Two to three hours of the INR 5,880 credit were left.
 
 ## Decision

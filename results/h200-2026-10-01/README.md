@@ -34,12 +34,13 @@ Validation during training: 100 MATH-500 problems, 4 samples each (`val-core/mat
 
 ![overview](figures/overview.png)
 
-* **Mixed-CUTS** trails GRPO from the first steps. Its entropy fell to ~0.04 (GRPO ~0.12) while its KL to the
-  reference rose to ~0.17 (GRPO ~0.06) by step 45; from step ~48 entropy, KL and response length exploded and
-  by step 56 the policy produced near-random text (entropy 6.8, 94% of responses truncated, validation 0.3%).
+* **Mixed-CUTS** trails GRPO from the first steps. Its entropy fell to ~0.04 by step 40 (GRPO ~0.10) while its
+  KL to the reference grew about twice as fast (0.13 against 0.06 at step 40); from about step 50 entropy, KL and
+  response length exploded, and by step 58 the policy produced near-random text (entropy above 6, over 90% of
+  responses truncated, validation 0.3% at step 60).
   Standard and CUTS rollouts degraded together, so the policy itself collapsed.
-* **GRPO** followed the same pattern about 15 steps later: KL rose steadily, then from step ~64 response length
-  (1,430 to 2,600 tokens), truncation (12% to 37%) and KL (0.15 to 1.05) blew up and validation fell to 69.5%.
+* **GRPO** followed the same pattern about 15 steps later: KL rose steadily, then between steps 60 and 72 response
+  length (1,430 to 2,600 tokens), truncation (12% to 37%) and KL (0.15 to 1.05) blew up and validation fell to 69.5%.
 * The shared failure mode points at the shared recipe rather than CUTS alone. The cause is not established;
   one candidate is the bf16 rollout/training probability mismatch that truncated importance sampling
   corrects, which the brief turned off (decision 001).
