@@ -1,0 +1,38 @@
+{
+  "nvidia_driver": "595.58.03",
+  "hw_profile": "h100",
+  "gpu_count": 1,
+  "sdpa": {
+    "mem_efficient_repeated_kv": true,
+    "mem_efficient_gqa": false
+  },
+  "attention_backends_supporting_cc": [
+    "FLASH_ATTN",
+    "FLASHINFER",
+    "TRITON_ATTN",
+    "FLEX_ATTENTION"
+  ],
+  "visible_gpus": 1,
+  "MC_STAGE_ROOT": {
+    "path": "/home/mixed-cuts-data",
+    "writable": true,
+    "free_gib": 73
+  },
+  "MC_SCRATCH_ROOT": {
+    "path": "/root/mc-scratch",
+    "writable": true,
+    "free_gib": 670
+  },
+  "MC_CACHE_ROOT": {
+    "path": "/root/mc-scratch/cache",
+    "writable": true,
+    "free_gib": 670
+  },
+  "internet": {
+    "https://huggingface.co": true,
+    "https://api.wandb.ai": true
+  },
+  "slurm_job_num_nodes": null,
+  "vllm_attention_backend_log": "Using AttentionBackendEnum.FLASH_ATTN backend",
+  "vllm_model_runner_v2": false
+}

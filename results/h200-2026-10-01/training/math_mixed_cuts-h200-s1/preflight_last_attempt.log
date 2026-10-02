@@ -1,0 +1,60 @@
+== python ==
+PASS  python 3.12.13 at /home/mixed-cuts/.venv/bin/python
+PASS  virtualenv active: /home/mixed-cuts/.venv
+== pins ==
+PASS  vllm==0.24.0
+PASS  torch==2.11.0+cu130
+PASS  transformers==5.5.3
+PASS  ray==2.56.1
+PASS  tensordict==0.10.0
+PASS  verl==0.9.0
+PASS  math_verify==0.9.0
+PASS  import transfer_queue (0.1.8)
+PASS  import hydra (1.3.7)
+PASS  import omegaconf (2.3.1)
+PASS  import datasets (5.0.1)
+PASS  import wandb (0.30.0)
+PASS  import cuts (<no __version__>)
+PASS  import mixed_cuts (<no __version__>)
+== gpu ==
+PASS  nvidia driver 595.58.03 (>= 580, runs the cu130 wheels)
+PASS  torch CUDA runtime 13.0 (default cu130 wheel)
+PASS  sm_90 kernels present in torch wheel: ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120']
+PASS  gpu0: NVIDIA H200, cc 9.0, 139.8 GiB
+PASS  SDPA memory-efficient kernel available with repeated KV heads (enable_gqa: False); the worker hook keeps transformers on that path
+PASS  bf16 supported -> the h100 profile trains and samples in bf16
+PASS  vllm attention backend on cc>=8.0 -> FLASH_ATTN (the h100 profile pins it)
+PASS  VLLM_USE_V2_MODEL_RUNNER unset (Model Runner V1 will be used for the CUTS logits processor)
+== vllm engine ==
+PASS  vLLM V1 engine (vllm.engine.llm_engine.LLMEngine is the V1 class; no V0 engine exists)
+PASS  CutsLogitsProcessor implements the V1 interface; vLLM falls back to Model Runner V1 for custom processors
+PASS  attention backend for cc 9.0: FLASH_ATTN (first in priority among ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'])
+== single node ==
+WARN  single node: SLURM_JOB_NUM_NODES unset (not inside a SLURM job)
+PASS  visible GPUs: 1 (1) == MC_SLURM_GPUS for layout h100_1gpu
+== storage ==
+PASS  MC_STAGE_ROOT=/home/mixed-cuts-data writable, 73 GiB free
+PASS  MC_SCRATCH_ROOT=/root/mc-scratch writable, 670 GiB free
+PASS  MC_CACHE_ROOT=/root/mc-scratch/cache writable, 670 GiB free
+PASS  run dir (checkpoints, live outputs) writable: /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1
+PASS  durable mirror dir writable: /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1
+== chat template ==
+PASS  enable_thinking=False renders the empty <think></think> block at the end of the prompt
+PASS  enable_thinking=True differs from False (the kwarg is honoured)
+PASS  system prompt rendered verbatim
+PASS  <think>/</think> are single tokens (the response check works on ids)
+== network ==
+PASS  reachable https://huggingface.co
+PASS  reachable https://api.wandb.ai (HTTP 404)
+== slurm ==
+WARN  slurm: not inside an allocation (fine on the login node / laptop)
+facts written to /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1/jobs/h100-20261001-115459-g1/env_facts.json
+== RESULT: OK ==
+== config ==
+PASS  config math_mixed_cuts composes and passes every invariant (h100 profile, D1, D2, D4, 1-GPU layout, seeds, resume)
+== chat template ==
+PASS  enable_thinking=False renders the empty <think></think> block at the end of the prompt
+PASS  enable_thinking=True differs from False (the kwarg is honoured)
+PASS  system prompt rendered verbatim
+PASS  <think>/</think> are single tokens (the response check works on ids)
+== RESULT: OK ==

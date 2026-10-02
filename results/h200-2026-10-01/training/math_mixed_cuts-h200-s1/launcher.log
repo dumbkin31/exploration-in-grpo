@@ -1,0 +1,26 @@
+[2026-10-01 07:08:03] run math_mixed_cuts-h200-s1 on GPU 1: 100 steps, layout h100_1gpu (layout=h100_1gpu memory=plan_b_lora_gpu hardware=h100)
+[2026-10-01 07:08:03] attempt 1/6: h100-20261001-070803-g1 (resuming after checkpoint: none); log /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1/launcher/h100-20261001-070803-g1.out
+[2026-10-01 08:06:12] run math_mixed_cuts-h200-s1 on GPU 1: 100 steps, layout h100_1gpu (layout=h100_1gpu memory=plan_b_lora_gpu hardware=h100)
+[2026-10-01 08:06:12] attempt 1/6: h100-20261001-080612-g1 (resuming after checkpoint: 3); log /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1/launcher/h100-20261001-080612-g1.out
+[2026-10-01 09:27:16] run math_mixed_cuts-h200-s1 on GPU 1: 100 steps, layout h100_1gpu (layout=h100_1gpu memory=plan_b_lora_gpu hardware=h100)
+[2026-10-01 09:27:16] attempt 1/6: h100-20261001-092716-g1 (resuming after checkpoint: 9); log /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1/launcher/h100-20261001-092716-g1.out
+[2026-10-01 09:27:31] attempt 1 ended with rc=1 before step 100; tail of its log:
+PASS  MC_CACHE_ROOT=/root/mc-scratch/cache writable, 646 GiB free
+PASS  run dir (checkpoints, live outputs) writable: /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1
+PASS  durable mirror dir writable: /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1
+== chat template ==
+PASS  enable_thinking=False renders the empty <think></think> block at the end of the prompt
+PASS  enable_thinking=True differs from False (the kwarg is honoured)
+PASS  system prompt rendered verbatim
+PASS  <think>/</think> are single tokens (the response check works on ids)
+== network ==
+PASS  reachable https://huggingface.co
+PASS  reachable https://api.wandb.ai (HTTP 404)
+== slurm ==
+WARN  slurm: not inside an allocation (fine on the login node / laptop)
+facts written to /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1/jobs/h100-20261001-092716-g1/env_facts.json
+== RESULT: FAIL (see above) ==
+[2026-10-01 09:28:20] run math_mixed_cuts-h200-s1 on GPU 1: 100 steps, layout h100_1gpu (layout=h100_1gpu memory=plan_b_lora_gpu hardware=h100)
+[2026-10-01 09:28:20] attempt 1/6: h100-20261001-092820-g1 (resuming after checkpoint: 9); log /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1/launcher/h100-20261001-092820-g1.out
+[2026-10-01 11:54:59] run math_mixed_cuts-h200-s1 on GPU 1: 100 steps, layout h100_1gpu (layout=h100_1gpu memory=plan_b_lora_gpu hardware=h100)
+[2026-10-01 11:54:59] attempt 1/6: h100-20261001-115459-g1 (resuming after checkpoint: 22); log /home/mixed-cuts-data/runs/math_mixed_cuts-h200-s1/launcher/h100-20261001-115459-g1.out
