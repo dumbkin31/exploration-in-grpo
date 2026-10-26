@@ -1,0 +1,30 @@
+# @package _global_
+# Memory plan B, calibrated, for one RTX 2080 Ti (decisions 017, 018): the LoRA and FSDP2 CPU-offload layout
+# of plan_b_lora (r=64, alpha=128, all-linear, fp32 masters, base in pinned host RAM, LoRA-only checkpoints)
+# with the learning-rate schedule of plan_b_lora_calibrated_gpu: lr 2e-6 with a cosine decay instead of the
+# constant 1e-5 both H200 arms diverged with (decision 016). Same memory footprint as plan_b_lora (measured
+# on the research/low cgroup, decision 012): only the optimizer's learning rate differs.
+# The Ada default (MC_MEMORY_PLAN, configs/ada.env.sh); plan_b_lora stays to reproduce the earlier runs.
+actor_rollout_ref:
+  model:
+    lora_rank: 64
+    lora_alpha: 128
+    target_modules: all-linear       # PEFT excludes lm_head: 69.7 M trainable parameters
+    lora:
+      merge: true                    # sync merged full weights so vLLM serves a plain model
+  actor:
+    strategy: fsdp2
+    optim:
+      lr: 2.0e-6
+      lr_scheduler_type: cosine      # verl v0.9.0 key (optim/fsdp.yaml:39). No warmup, half a cosine to 0 over
+                                     # trainer.total_training_steps: set MC_TOTAL_STEPS before the first
+                                     # submission, a different cap on a resume makes the lr jump (017)
+    fsdp_config:
+      strategy: fsdp2
+      model_dtype: fp32              # LoRA masters in fp32  [checked]
+      offload_policy: true           # FSDP2 CPUOffloadPolicy: base + masters in host RAM  [checked on 1 GPU]
+      param_offload: false           # ignored under offload_policy (kept explicit)
+      optimizer_offload: false
+      reshard_after_forward: true    # one all-gathered layer at a time
+    checkpoint:
+      save_lora_only: true           # adapters + optimizer (~0.9 GB); a full PEFT save OOM-kills the 30 GB cgroup (012)

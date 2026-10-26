@@ -79,6 +79,7 @@ COMPOSE = $(PY) scripts/compose_config.py
 COMPOSE_FLAGS = --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),)
 compose-check: ## compose every training config (Hydra) and assert the CUTS/layout/hardware-profile invariants (Ada sm75 + Jarvislabs h100)
 	@for c in base_grpo smoke smoke_maxlen math_grpo math_mixed_cuts; do MC_HW_PROFILE=sm75 $(COMPOSE) $$c $(COMPOSE_FLAGS) || exit 1; done
+	@for c in smoke smoke_maxlen math_grpo math_mixed_cuts; do MC_HW_PROFILE=sm75 MC_SLURM_GPUS=1 $(COMPOSE) $$c $(COMPOSE_FLAGS) memory=plan_b_lora_calibrated || exit 1; done   # the Ada default (MC_MEMORY_PLAN, 018)
 	@MC_HW_PROFILE=sm75 MC_SLURM_GPUS=4 $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) layout=nlp_4gpu memory=plan_a_fullft_offload   # MC_SLURM_GPUS: the guard compares the layout with the sbatch request
 	@for m in plan_a_fullft_gpu plan_b_lora_calibrated_gpu plan_b_lora_gpu; do for c in smoke math_grpo math_mixed_cuts; do MC_HW_PROFILE=h100 MC_SLURM_GPUS=1 $(COMPOSE) $$c $(COMPOSE_FLAGS) layout=h100_1gpu memory=$$m hardware=h100 || exit 1; done; done   # Jarvislabs (013, 017)
 	@for c in smoke math_grpo math_mixed_cuts; do MC_HW_PROFILE=sm75 MC_SLURM_GPUS=1 $(COMPOSE) $$c $(COMPOSE_FLAGS) layout=kaggle_t4 || exit 1; done   # Kaggle T4 (014)

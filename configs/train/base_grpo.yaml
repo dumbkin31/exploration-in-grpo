@@ -3,8 +3,9 @@
 # stay the default; one H100 on Jarvislabs is the other target (decision 013). The GPU count comes from
 # configs/train/layout/ (default research_1gpu: ONE card per job, decision 012; nlp_4gpu: the original
 # 4-card layout of decision 002; h100_1gpu), the memory plan from configs/train/memory/ (default
-# plan_b_lora; plan_a_fullft_offload/plan_a_manual_offload need the 4-card layout; on Jarvislabs
-# MC_MEMORY_PLAN picks plan_a_fullft_gpu, plan_b_lora_calibrated_gpu or plan_b_lora_gpu, decision 017),
+# plan_b_lora; plan_a_fullft_offload/plan_a_manual_offload need the 4-card layout; MC_MEMORY_PLAN picks
+# plan_b_lora_calibrated on Ada (018) and plan_a_fullft_gpu, plan_b_lora_calibrated_gpu or plan_b_lora_gpu on
+# Jarvislabs (017)),
 # and precision + attention from configs/train/hardware/ (default sm75; h100).
 #
 # Layers on verl v0.9.0's `ppo_trainer` tree (through hydra.searchpath, declared by the leaf

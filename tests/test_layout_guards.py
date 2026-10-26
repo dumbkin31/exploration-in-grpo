@@ -153,6 +153,25 @@ def test_calibrated_lora_variant_passes_the_checks(compose, name, monkeypatch):
     assert mod.check(cfg) == []
 
 
+@pytest.mark.parametrize("name", ["smoke", "smoke_maxlen", "math_grpo", "math_mixed_cuts"])
+def test_ada_calibrated_lora_passes_the_checks(compose, name, monkeypatch):
+    """Decision 018: the 017 LoRA schedule (2e-6 cosine) in the 2080 Ti offload layout of plan_b_lora."""
+    monkeypatch.setenv("MC_HW_PROFILE", "sm75")
+    monkeypatch.setenv("MC_SLURM_GPUS", "1")
+    mod, cfg = compose(name, "memory=plan_b_lora_calibrated")
+    a = cfg.actor_rollout_ref
+    assert (a.model.lora_rank, a.model.lora_alpha, a.model.target_modules) == (64, 128, "all-linear")
+    assert abs(a.actor.optim.lr - 2e-6) < 1e-12 and a.actor.optim.lr_scheduler_type == "cosine"
+    assert a.actor.fsdp_config.offload_policy is True and a.actor.checkpoint.save_lora_only is True
+    assert mod.check(cfg) == []
+
+
+def test_gpu_resident_lora_is_refused_on_a_2080ti(compose, monkeypatch):
+    monkeypatch.setenv("MC_SLURM_GPUS", "1")
+    mod, cfg = compose("math_mixed_cuts", "memory=plan_b_lora_calibrated_gpu")
+    assert any("offload_policy" in p for p in mod.check(cfg))
+
+
 def test_full_finetune_on_one_sm75_gpu_is_refused(compose, monkeypatch):
     monkeypatch.setenv("MC_SLURM_GPUS", "1")
     mod, cfg = compose("math_mixed_cuts", "memory=plan_a_fullft_gpu")
