@@ -17,9 +17,9 @@ the eval harness reports the resulting ceiling per benchmark (docs/decisions/008
 Equivalence is by mathematical value, not text: ``1/2``, ``0.5``, ``.5``, ``0.50``, ``\\frac{1}{2}``,
 ``\\dfrac12`` and ``2/4`` all match each other, ``0.25 == 1/4``, ``1,000 == 1000.0`` and
 ``\\sqrt{20} == 2\\sqrt{5}``. math-verify parses decimals to floats, so any comparison with a
-decimal goes through :data:`FLOAT_ROUNDING` (see there). The one custom normalization is a percent
-sign present on BOTH sides (:func:`_strip_shared_percent`); whether ``50\\%`` should match ``50``
-or ``0.5`` is an open policy question and stays a mismatch.
+decimal goes through :data:`FLOAT_ROUNDING` (see there). The one custom normalization drops a
+trailing percent sign on either side (:func:`_strip_percent`): ``10\\%`` matches ``10`` and
+``12.50\\%``, but not ``0.1``.
 
 GPQA (multiple choice) uses the separate letter parser in :mod:`mixed_cuts.gpqa`.
 
@@ -55,7 +55,9 @@ from mixed_cuts.gpqa import extract_choice_letter
 # FLOAT_ROUNDING decimal places and compared exactly (``sympy_numeric_eq``): 1/3 matches 0.333333
 # but not 0.333 or 0.33, and 2\sqrt{5} does not match 4.47. It applies to every decimal, so 1/4
 # also matches 0.2500001, and it is ABSOLUTE, so tiny values get less room (gold .0000672 also
-# matches 0.0000669). Changing it is a policy decision.
+# matches 0.0000669). Kept at the default on 2026-10-26: a looser rule rewards sloppy rounding
+# (a relative 0.1% would accept 37.68 for 12\pi), and on the H200 evals the strict rule only
+# rejected ~10 MATH-500 responses per checkpoint that were correctly rounded.
 FLOAT_ROUNDING = 6
 NUMERIC_PRECISION = 15
 
@@ -92,20 +94,20 @@ def _math_verify_equal(gold: str, pred: str) -> bool:
     )
 
 
-def _strip_shared_percent(gold: str, pred: str) -> tuple[str, str]:
-    """Drop a trailing percent sign when BOTH answers carry one, so ``12.5\\%`` matches ``12.50\\%``.
+def _strip_percent(answer: str) -> str:
+    """Drop a trailing percent sign, so ``10\\%`` is graded as ``10`` (decided 2026-10-26).
 
-    math-verify cannot parse percentages in our environment: verl's hydra/omegaconf pin
-    antlr4-python3-runtime 4.9.3, and latex2sympy2_extended 1.11.0's parser generated for ANTLR
-    4.9.3 lacks the ``FUNC_GAMMA`` token that ``convert_atom`` checks before ``PERCENT_NUMBER``.
-    Every percent atom raises AttributeError, ``parse`` falls back to the raw string, and
-    ``verify`` only matches identical strings. Answers with the same unit on both sides are
-    compared as plain numbers; a percent on one side only is left alone (still a mismatch).
+    The sign is read as a unit label, as in MATH's own grader: "by what percent ..." has gold
+    ``10`` and models answer ``10\\%``. The value is not divided by 100, so ``50\\%`` does not
+    match ``0.5``. This has to happen before math-verify, which cannot parse percentages in our
+    environment: verl's hydra/omegaconf pin antlr4-python3-runtime 4.9.*, and
+    latex2sympy2_extended 1.11.0's parser generated for ANTLR 4.9.3 lacks the ``FUNC_GAMMA``
+    token that ``convert_atom`` checks before ``PERCENT_NUMBER``. Every percent atom raises
+    AttributeError, ``parse`` falls back to the raw string, and ``verify`` then only matches
+    identical strings.
     """
-    g, p = _PERCENT_SUFFIX.sub("", gold), _PERCENT_SUFFIX.sub("", pred)
-    if g != gold and p != pred and "%" not in g and "%" not in p:
-        return g, p
-    return gold, pred
+    stripped = _PERCENT_SUFFIX.sub("", answer)
+    return stripped if stripped and "%" not in stripped else answer
 
 
 def has_digit(text: str | None) -> bool:
@@ -127,7 +129,7 @@ def score_math(solution_str: str, ground_truth: str, *, timeout: float = 30.0) -
     if not valid:
         return result
     gt = str(ground_truth).strip()
-    gt_cmp, pred_cmp = _strip_shared_percent(gt, pred)
+    gt_cmp, pred_cmp = _strip_percent(gt), _strip_percent(pred)
     if pred_cmp == gt_cmp:  # exact match short-circuit (also avoids a subprocess round trip)
         result["score"] = 1.0
         return result

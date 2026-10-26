@@ -92,10 +92,13 @@ EQUAL_VALUE = [
     ("1000", "1,000"),
     ("1000", "1000.0"),
     ("2\\sqrt{5}", "\\sqrt{20}"),
-    ("0.25", "1/4"),  # a terminating decimal equals its fraction exactly
+    ("0.25", "1/4"),
     ("1/4", "0.25"),
     ("\\frac{1}{3}", "0.333333"),  # within reward.FLOAT_ROUNDING = 6 decimal places
-    ("12.5\\%", "12.50\\%"),  # percent on both sides (reward._strip_shared_percent)
+    # a percent sign is a unit label (reward._strip_percent, decided 2026-10-26)
+    ("10", "10\\%"),
+    ("73\\%", "73"),
+    ("12.5\\%", "12.50\\%"),
     ("50\\%", "50.0 \\%"),
 ]
 
@@ -110,16 +113,18 @@ DIFFERENT_VALUE = [
     ("-3/2", "1.5"),
     ("2", "2.5"),
     ("10\\%", "0.1\\%"),
-]
-
-# Policy questions that are not settled: rounded non-terminating decimals and percent vs plain
-# number. Only "binary score, no exception" is asserted here.
-REPORT_ONLY = [
+    ("10", "11\\%"),
+    # rounded non-terminating decimals: kept strict on 2026-10-26 (reward.FLOAT_ROUNDING)
     ("1/3", "0.333"),
     ("1/3", "0.33"),
     ("2\\sqrt{5}", "4.47"),
-    ("50", "50\\%"),
+]
+
+# Not settled: a percent read as a fraction (50% = 0.5). Only "binary score, no exception" is
+# asserted here.
+REPORT_ONLY = [
     ("50", "0.5"),
+    ("10\\%", "0.1"),
 ]
 
 GARBAGE = [
@@ -167,7 +172,7 @@ def test_unparseable_answers_score_0_without_raising(response):
 
 
 def test_math_verify_cannot_parse_percent_under_antlr_4_9():
-    """Why _strip_shared_percent exists. If this starts failing, the environment changed: revisit it."""
+    """Why _strip_percent exists. If this starts failing, the environment changed: revisit it."""
     from importlib.metadata import version
 
     from math_verify.parser import LatexExtractionConfig, parse

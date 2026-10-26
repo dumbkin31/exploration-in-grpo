@@ -20,8 +20,12 @@ lengths, truncation) in [`comparison/eval_all_checkpoints.md`](comparison/eval_a
 | Mixed-CUTS, step 50 | 67.4 | 8.5 | 3.5 | 34.4 | 33.0 |
 
 All 51,072 saved responses were re-graded on 2026-10-26 with the current answer grader
-(`scripts/regrade_eval.py`, no model re-run): no answer changed, so these numbers stand
-([`comparison/regrade.md`](comparison/regrade.md)).
+(`scripts/regrade_eval.py`, no model re-run), which reads a trailing percent sign as a unit (`10\%`
+matches a gold `10`). Only MATH-500 changes: 66 responses to two "what percent" problems become
+correct, +0.2 points of pass@1, maj@16 and pass@16 for every model, so the comparison between models
+is unchanged (re-graded MATH-500 pass@1: base 70.4, GRPO 78.3, Mixed-CUTS 71.7 and 67.6). The table
+above and `comparison/` keep the numbers as originally evaluated; see
+[`comparison/regrade.md`](comparison/regrade.md).
 
 AIME24/25 have 30 problems each (CIs about +-10 points). GRPO's answers are much longer (55% of its AIME24
 samples hit the 5,000-token cap) and still score higher. pass@16 barely moves on MATH-500 (91.2 base, 91.4

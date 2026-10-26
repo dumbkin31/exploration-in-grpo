@@ -156,28 +156,43 @@
       "pass@16": 0.912
     },
     "new": {
-      "pass@1": 0.701875,
-      "maj@16": 0.79,
-      "pass@16": 0.912
+      "pass@1": 0.704125,
+      "maj@16": 0.792,
+      "pass@16": 0.914
     },
     "new_ci95": {
       "pass@1": [
-        0.67011875,
-        0.73250625
+        0.67236875,
+        0.734375
       ],
       "maj@16": [
-        0.754,
-        0.826
+        0.756,
+        0.828
       ],
       "pass@16": [
         0.888,
-        0.936
+        0.938
       ]
     },
-    "wrong_to_right": 0,
+    "wrong_to_right": 18,
     "right_to_wrong": 0,
     "stored_column_matches_results_json": true,
-    "examples": []
+    "examples": [
+      {
+        "flip": "wrong_to_right",
+        "index": "test/prealgebra/1233.json",
+        "ground_truth": "10",
+        "pred": "10\\%",
+        "n_responses": 16
+      },
+      {
+        "flip": "wrong_to_right",
+        "index": "test/algebra/2427.json",
+        "ground_truth": "10",
+        "pred": "10\\%",
+        "n_responses": 2
+      }
+    ]
   },
   {
     "model": "math_grpo-h200-s1",
@@ -336,28 +351,36 @@
       "pass@16": 0.914
     },
     "new": {
-      "pass@1": 0.781125,
-      "maj@16": 0.864,
-      "pass@16": 0.914
+      "pass@1": 0.783125,
+      "maj@16": 0.866,
+      "pass@16": 0.916
     },
     "new_ci95": {
       "pass@1": [
-        0.7521125000000001,
-        0.80926875
+        0.7546125,
+        0.811125
       ],
       "maj@16": [
-        0.836,
-        0.894
+        0.838,
+        0.896
       ],
       "pass@16": [
-        0.89,
-        0.938
+        0.892,
+        0.94
       ]
     },
-    "wrong_to_right": 0,
+    "wrong_to_right": 16,
     "right_to_wrong": 0,
     "stored_column_matches_results_json": true,
-    "examples": []
+    "examples": [
+      {
+        "flip": "wrong_to_right",
+        "index": "test/prealgebra/1233.json",
+        "ground_truth": "10",
+        "pred": "10\\%",
+        "n_responses": 16
+      }
+    ]
   },
   {
     "model": "math_mixed_cuts-h200-s1",
@@ -516,28 +539,36 @@
       "pass@16": 0.89
     },
     "new": {
-      "pass@1": 0.715125,
-      "maj@16": 0.79,
-      "pass@16": 0.89
+      "pass@1": 0.717125,
+      "maj@16": 0.792,
+      "pass@16": 0.892
     },
     "new_ci95": {
       "pass@1": [
-        0.681121875,
-        0.748628125
+        0.68411875,
+        0.750134375
       ],
       "maj@16": [
-        0.754,
-        0.824
+        0.756,
+        0.828
       ],
       "pass@16": [
-        0.86395,
+        0.866,
         0.918
       ]
     },
-    "wrong_to_right": 0,
+    "wrong_to_right": 16,
     "right_to_wrong": 0,
     "stored_column_matches_results_json": true,
-    "examples": []
+    "examples": [
+      {
+        "flip": "wrong_to_right",
+        "index": "test/prealgebra/1233.json",
+        "ground_truth": "10",
+        "pred": "10\\%",
+        "n_responses": 16
+      }
+    ]
   },
   {
     "model": "math_mixed_cuts-h200-s1",
@@ -696,27 +727,35 @@
       "pass@16": 0.854
     },
     "new": {
-      "pass@1": 0.673625,
-      "maj@16": 0.756,
-      "pass@16": 0.854
+      "pass@1": 0.675625,
+      "maj@16": 0.758,
+      "pass@16": 0.856
     },
     "new_ci95": {
       "pass@1": [
-        0.6388468749999999,
-        0.7083937499999999
+        0.642246875,
+        0.71113125
       ],
       "maj@16": [
-        0.72,
-        0.794
+        0.722,
+        0.79405
       ],
       "pass@16": [
-        0.824,
-        0.886
+        0.826,
+        0.88605
       ]
     },
-    "wrong_to_right": 0,
+    "wrong_to_right": 16,
     "right_to_wrong": 0,
     "stored_column_matches_results_json": true,
-    "examples": []
+    "examples": [
+      {
+        "flip": "wrong_to_right",
+        "index": "test/prealgebra/1233.json",
+        "ground_truth": "10",
+        "pred": "10\\%",
+        "n_responses": 16
+      }
+    ]
   }
 ]

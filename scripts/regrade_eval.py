@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -85,17 +86,18 @@ def regrade_file(run: str, ckpt: str, bench: str, path: Path, workers: int) -> d
     new = aggregate([summary for _, summary in graded], seed=int(cfg.get("bootstrap_seed", 0)))
 
     flips = {"wrong_to_right": 0, "right_to_wrong": 0}
-    examples = []
+    flipped: Counter[tuple[str, str, str, str]] = Counter()
     for p, (rewards, _) in zip(problems, graded, strict=True):
         for s, r in zip(p["samples"], rewards, strict=True):
             if float(s["correct"]) == float(r["score"]):
                 continue
             key = "wrong_to_right" if r["score"] == 1.0 else "right_to_wrong"
             flips[key] += 1
-            if len(examples) < MAX_EXAMPLES:
-                examples.append(
-                    {"flip": key, "index": p["index"], "ground_truth": p["gt"], "pred": r["pred"]}
-                )
+            flipped[(key, p["index"], p["gt"], r["pred"])] += 1
+    examples = [
+        {"flip": key, "index": index, "ground_truth": gt, "pred": pred, "n_responses": count}
+        for (key, index, gt, pred), count in flipped.most_common(MAX_EXAMPLES)
+    ]
     # samples.jsonl and results.json must describe the same eval: pass@1 from the stored 0/1 column
     stored_pass1 = sum(sum(float(s["correct"]) for s in p["samples"]) / n for p in problems) / len(problems)
     return {
@@ -149,15 +151,15 @@ def markdown(rows: list[dict[str, Any]], source: str) -> str:
     if examples:
         lines += [
             "",
-            "Examples of flipped responses:",
+            f"Flipped answers (the {MAX_EXAMPLES} most frequent per model, checkpoint and benchmark):",
             "",
-            "| model | checkpoint | benchmark | problem | gold | answer | flip |",
+            "| model | checkpoint | benchmark | problem | gold | answer | flip | responses |",
+            "|---|---|---|---|---|---|---|---|",
         ]
-        lines.append("|---|---|---|---|---|---|---|")
-        for r, e in examples[:40]:
+        for r, e in examples:
             lines.append(
                 f"| {r['model']} | {r['checkpoint']} | {r['benchmark']} | {e['index']} | `{e['ground_truth']}`"
-                f" | `{e['pred']}` | {e['flip']} |"
+                f" | `{e['pred']}` | {e['flip']} | {e['n_responses']} |"
             )
     return "\n".join(lines) + "\n"
 
