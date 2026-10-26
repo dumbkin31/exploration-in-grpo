@@ -23,8 +23,8 @@ These numbers and `comparison/` are re-graded (2026-10-26, `scripts/regrade_eval
 responses, no model re-run): the answer grader now reads a trailing percent sign as a unit (`10\%`
 matches a gold `10`). That turned 66 responses to two "what percent" problems correct and raised
 MATH-500 pass@1, maj@16 and pass@16 by 0.2 points for every model; the other benchmarks did not change.
-As first evaluated, MATH-500 pass@1 was 70.2 / 78.1 / 71.5 / 67.4 (W&B and the Hugging Face card still
-show those); see [`comparison/regrade.md`](comparison/regrade.md).
+As first evaluated, MATH-500 pass@1 was 70.2 / 78.1 / 71.5 / 67.4; W&B and the Hugging Face card show the
+re-graded numbers too. See [`comparison/regrade.md`](comparison/regrade.md).
 
 AIME24/25 have 30 problems each (CIs about +-10 points). GRPO's answers are much longer (55% of its AIME24
 samples hit the 5,000-token cap) and still score higher. pass@16 barely moves on MATH-500 (91.4 base, 91.6
@@ -72,7 +72,7 @@ until length-sorted micro-batches (decision 015) made the training passes ~4x fa
 * This folder: per-step metrics (`training/<run>/metrics.jsonl`), phase timings, launcher logs, the last
   preflight of each run, evaluation metrics as first graded (`eval/<model>/<checkpoint>/<benchmark>/results.json`),
   tables (re-graded, see above), figures, and the two ad hoc scripts used on the instance (`ops/`: checkpoint keeper, evaluation queue).
-* Hugging Face (private): `lokola13/mixed-cuts-h200-runs`: LoRA weights of GRPO steps 10, 40, 50, 60,
+* Hugging Face (public): `lokola13/mixed-cuts-h200-runs`: LoRA weights of GRPO steps 10, 40, 50, 60,
   70, 71, 72 and Mixed-CUTS steps 40, 50, 60, 61 (no optimizer states), every generated evaluation answer
   (`samples.jsonl`), rollout dumps, CUTS statistics, GPU memory traces, full trainer logs, smoke runs.
 * W&B: `anlp-mixed-cuts/mixed-cuts`, runs `math_grpo-h200-s1` and `math_mixed_cuts-h200-s1` (tagged

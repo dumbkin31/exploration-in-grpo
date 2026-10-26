@@ -1,7 +1,7 @@
 # Mixed-CUTS on verl + vLLM
 
 ## Important links:
-- **Checkpoints & Evaluations:** Private Hugging Face repository at <https://huggingface.co/lokola13/mixed-cuts-h200-runs>
+- **Checkpoints & Evaluations:** Public Hugging Face repository at <https://huggingface.co/lokola13/mixed-cuts-h200-runs>
 - **Training Curves:** Weights & Biases project at <https://forge.coreweave.com/wandb/anlp-mixed-cuts/mixed-cuts>
 
 ## About the Repo
