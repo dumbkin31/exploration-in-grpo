@@ -56,10 +56,25 @@ def test_jarvis_selects_the_h100_setup(tmp_path: Path):
         UV_PYTHON_INSTALL_DIR=str(tmp_path / "uvpy"),
     )
     assert v["MC_SITE"] == "jarvis" and v["MC_HW_PROFILE"] == "h100" and v["MC_LAYOUT"] == "h100_1gpu"
-    assert v["MC_TRAIN_OVERRIDES"] == "layout=h100_1gpu memory=plan_b_lora_gpu hardware=h100"
+    assert v["MC_TRAIN_OVERRIDES"] == "layout=h100_1gpu memory=plan_a_fullft_gpu hardware=h100", (
+        "full fine-tuning is the default recipe (decision 017)"
+    )
     assert v["MC_CHECKPOINT_HOME"] == "durable"
     assert v["MC_RUN_TAG"] == "h100", "run names math_grpo-h100-s1 / math_mixed_cuts-h100-s1"
     assert v["WANDB_PROJECT"] == "mixed-cuts"
+
+
+def test_jarvis_memory_plan_is_chosen_by_mc_memory_plan(tmp_path: Path):
+    """The launcher's memory= override follows MC_MEMORY_PLAN, so a YAML default can never undo the choice."""
+    v = _source(
+        tmp_path,
+        MC_SITE="jarvis",
+        MC_MEMORY_PLAN="plan_b_lora_calibrated_gpu",
+        MC_STAGE_ROOT=str(tmp_path / "stage"),
+        MC_SCRATCH_ROOT=str(tmp_path / "scratch"),
+        UV_PYTHON_INSTALL_DIR=str(tmp_path / "uvpy"),
+    )
+    assert v["MC_TRAIN_OVERRIDES"] == "layout=h100_1gpu memory=plan_b_lora_calibrated_gpu hardware=h100"
 
 
 def test_kaggle_selects_the_t4_setup(tmp_path: Path):

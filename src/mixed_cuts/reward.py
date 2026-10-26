@@ -7,12 +7,14 @@ Used by verl through ``reward.custom_reward_function`` (signature fixed by
 
 and by the eval harness, so training reward and evaluation correctness are the same function.
 
-Math benchmarks (MATH, MATH-500, AIME, AMC): a response is VALID only if a ``\\boxed{...}`` is
-present and the content of the FINAL one contains at least one numeric digit; the content is
-compared with the ground truth by math-verify symbolic equivalence. Binary reward. There is no
-``Answer:``-line fallback on this path. Ground truths without any digit (e.g. ``\\pi``) can never
-be rewarded under this rule; ``scripts/prepare_data.py`` filters them out of the training set and
-the eval harness reports the resulting ceiling per benchmark (docs/decisions/008).
+Math benchmarks (MATH, MATH-500, AIME, AMC): a response is VALID if a ``\\boxed{...}`` is present
+and the content of the FINAL one is not empty; the content (any LaTeX: ``\\frac{3}{4}``,
+``2\\sqrt{5}``, ``\\pi``, ``x^2+1``) is compared with the ground truth by math-verify symbolic
+equivalence. Binary reward; an answer math-verify cannot parse, or that times out, scores 0. There
+is no ``Answer:``-line fallback on this path. Until decision 017 the content also had to contain a
+digit (the paper's Appendix B.4 rule, decision 008), so ground truths such as ``\\pi`` could never be
+rewarded; ``scripts/prepare_data.py`` still drops those from the training set (unchanged, for
+comparability with the earlier runs).
 
 GPQA (multiple choice) uses the separate letter parser in :mod:`mixed_cuts.gpqa`.
 
@@ -22,7 +24,7 @@ Returns a dict; verl takes ``"score"`` as the reward and stores the other keys a
     score      1.0 / 0.0
     pred       the extracted answer string ("" if nothing was extracted)
     has_boxed  1.0 if a \\boxed{} was found, else 0.0        (format diagnostic)
-    valid      1.0 if the response passed the validity rule  (boxed + digit, or a letter for GPQA)
+    valid      1.0 if the response passed the validity rule  (non-empty final box, or a letter for GPQA)
 
 math-verify uses ``signal.alarm`` for its internal timeout, which only works in the main thread;
 verl calls the reward from a thread-pool executor, so like verl's own ``math_verify.py`` we run
@@ -71,16 +73,17 @@ def _math_verify_equal(gold: str, pred: str) -> bool:
 
 
 def has_digit(text: str | None) -> bool:
+    """The training-set filter of decision 008 (scripts/prepare_data.py); no longer part of the reward."""
     return bool(text) and any(ch.isdigit() for ch in text)
 
 
 def extract_answer(solution_str: str) -> tuple[str | None, bool, bool]:
-    """Return (final boxed content or None, has_boxed, valid). valid = boxed AND contains a digit."""
+    """Return (final boxed content or None, has_boxed, valid). valid = boxed AND non-empty (decision 017)."""
     boxed = last_boxed_content(solution_str)
     if boxed is None:
         return None, False, False
     pred = boxed.strip()
-    return pred, True, has_digit(pred)
+    return pred, True, len(pred) > 0
 
 
 def score_math(solution_str: str, ground_truth: str, *, timeout: float = 30.0) -> dict[str, Any]:

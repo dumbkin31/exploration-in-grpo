@@ -58,9 +58,10 @@ def _load_local(repo_dir: Path, config: str | None, split: str):
 
 
 def filter_rewardable(records: list[dict]) -> tuple[list[dict], int]:
-    """Drop training prompts whose ground truth has no digit: the reward rule (final \\boxed{} whose
-    content contains a digit, docs/decisions/008) can never score them, so their groups would be
-    permanently collapsed and waste generation budget. Returns (kept, n_dropped)."""
+    """Drop training prompts whose ground truth has no digit (docs/decisions/008): under the old reward
+    rule (final \\boxed{} whose content contains a digit) they could never score. The reward grades them
+    since decision 017; the filter is kept so the training set matches the earlier runs.
+    Returns (kept, n_dropped)."""
     kept = [r for r in records if has_digit(str(r["reward_model"]["ground_truth"]))]
     return kept, len(records) - len(kept)
 

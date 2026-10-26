@@ -1,8 +1,9 @@
 # @package _global_
 # Hardware profile h100: one NVIDIA H100 SXM 80 GB on Jarvislabs (cc 9.0, bf16; decision 013).
-# Use with layout=h100_1gpu memory=plan_b_lora_gpu (configs/jarvis.env.sh passes all three).
+# Also used on the H200 (cc 9.0). Use with layout=h100_1gpu memory=$MC_MEMORY_PLAN (configs/jarvis.env.sh
+# passes all three).
 #
-# Precision: bf16 compute with fp32 LoRA masters (model_dtype fp32 in the memory plan), bf16 rollout.
+# Precision: bf16 compute with fp32 masters (model_dtype fp32 in the memory plan), bf16 rollout.
 # The 2080 Ti could only do fp16; bf16 has fp32's exponent range, so the fp16 stability ladder (006)
 # does not apply here. The attention implementation stays SDPA without remove-padding: the pinned
 # environment has no flash-attn package, and it keeps the training forward identical to the Ada runs.

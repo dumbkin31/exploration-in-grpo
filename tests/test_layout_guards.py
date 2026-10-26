@@ -120,13 +120,81 @@ def test_h100_variants_pass_the_checks(compose, name, monkeypatch):
     assert mod.check(cfg) == []
 
 
-def test_the_arms_differ_only_in_the_group_split_on_the_h100(compose):
-    _mod, grpo = compose("math_grpo", *H100)
-    _mod, mixed = compose("math_mixed_cuts", *H100)
+FULL_FT = ("layout=h100_1gpu", "memory=plan_a_fullft_gpu", "hardware=h100")
+LORA_CALIBRATED = ("layout=h100_1gpu", "memory=plan_b_lora_calibrated_gpu", "hardware=h100")
+
+
+@pytest.mark.parametrize("name", ["smoke", "math_grpo", "math_mixed_cuts"])
+def test_full_finetune_variant_passes_the_checks(compose, name, monkeypatch):
+    """Decision 017 (a): no LoRA, lr 1e-6 constant, nothing offloaded, full checkpoints, a separate reference."""
+    monkeypatch.setenv("MC_HW_PROFILE", "h100")
+    monkeypatch.setenv("MC_SLURM_GPUS", "1")
+    mod, cfg = compose(name, *FULL_FT)
+    a = cfg.actor_rollout_ref
+    assert a.model.lora_rank == 0
+    assert abs(a.actor.optim.lr - 1e-6) < 1e-12 and a.actor.optim.lr_scheduler_type == "constant"
+    for fc in (a.actor.fsdp_config, a.ref.fsdp_config):
+        assert (fc.offload_policy, fc.param_offload) == (False, False)
+    assert a.actor.fsdp_config.optimizer_offload is False
+    assert a.actor.checkpoint.save_lora_only is False
+    assert a.model.enable_gradient_checkpointing is True
+    assert mod.check(cfg) == []
+
+
+@pytest.mark.parametrize("name", ["smoke", "math_grpo", "math_mixed_cuts"])
+def test_calibrated_lora_variant_passes_the_checks(compose, name, monkeypatch):
+    """Decision 017 (b): LoRA r64/alpha128 on all linear layers, lr 2e-6 with a cosine schedule."""
+    monkeypatch.setenv("MC_HW_PROFILE", "h100")
+    monkeypatch.setenv("MC_SLURM_GPUS", "1")
+    mod, cfg = compose(name, *LORA_CALIBRATED)
+    a = cfg.actor_rollout_ref
+    assert (a.model.lora_rank, a.model.lora_alpha, a.model.target_modules) == (64, 128, "all-linear")
+    assert abs(a.actor.optim.lr - 2e-6) < 1e-12 and a.actor.optim.lr_scheduler_type == "cosine"
+    assert mod.check(cfg) == []
+
+
+def test_full_finetune_on_one_sm75_gpu_is_refused(compose, monkeypatch):
+    monkeypatch.setenv("MC_SLURM_GPUS", "1")
+    mod, cfg = compose("math_mixed_cuts", "memory=plan_a_fullft_gpu")
+    assert any("LoRA" in p for p in mod.check(cfg))
+
+
+def test_a_schedule_that_disagrees_with_the_plan_is_refused(compose):
+    mod, cfg = compose(
+        "math_grpo", *LORA_CALIBRATED, "actor_rollout_ref.actor.optim.lr_scheduler_type=constant"
+    )
+    assert any("later config layer" in p for p in mod.check(cfg))
+
+
+@pytest.mark.parametrize("variant", [H100, FULL_FT, LORA_CALIBRATED])
+def test_the_arms_differ_only_in_the_group_split_on_the_h100(compose, variant):
+    _mod, grpo = compose("math_grpo", *variant)
+    _mod, mixed = compose("math_mixed_cuts", *variant)
     assert (grpo.mixed_cuts.n_std, grpo.mixed_cuts.n_cuts) == (16, 0)
     assert (mixed.mixed_cuts.n_std, mixed.mixed_cuts.n_cuts) == (8, 8)
     grpo.mixed_cuts.n_std, grpo.mixed_cuts.n_cuts = 8, 8
     assert grpo == mixed
+
+
+@pytest.mark.parametrize("name", ["math_grpo", "math_mixed_cuts"])
+def test_every_rollout_is_normalised_by_its_own_length(compose, name):
+    """Decision 017: seq-mean-token-mean in both arms; verl's default token-mean is refused."""
+    mod, cfg = compose(name, *H100)
+    assert cfg.actor_rollout_ref.actor.loss_agg_mode == "seq-mean-token-mean"
+    mod, cfg = compose(name, *H100, "actor_rollout_ref.actor.loss_agg_mode=token-mean")
+    assert any("loss_agg_mode" in p for p in mod.check(cfg))
+
+
+@pytest.mark.parametrize("name", ["math_grpo", "math_mixed_cuts"])
+def test_kl_loss_keeps_the_k3_value_with_the_k2_gradient(compose, name):
+    """Decision 017: low_var_kl+ at 1e-3 in both arms; plain k3 (and k1) are refused."""
+    mod, cfg = compose(name, *H100)
+    actor = cfg.actor_rollout_ref.actor
+    assert actor.use_kl_loss is True and actor.kl_loss_coef == 0.001
+    assert actor.kl_loss_type == "low_var_kl+"
+    for other in ("low_var_kl", "kl"):
+        mod, cfg = compose(name, *H100, f"actor_rollout_ref.actor.kl_loss_type={other}")
+        assert any("kl_loss_type" in p for p in mod.check(cfg))
 
 
 def test_learning_rate_follows_the_memory_plan(compose):
@@ -166,6 +234,8 @@ def _leaves(d, prefix=""):
         ),
         (("layout=nlp_4gpu", "memory=plan_a_manual_offload"), {"memory": "plan_a_manual_offload"}),
         (H100, {"layout": "h100_1gpu", "memory": "plan_b_lora_gpu", "hardware": "h100"}),
+        (FULL_FT, {"memory": "plan_a_fullft_gpu"}),
+        (LORA_CALIBRATED, {"memory": "plan_b_lora_calibrated_gpu"}),
         (("layout=kaggle_t4",), {"layout": "kaggle_t4", "memory": "plan_b_lora", "hardware": "sm75"}),
     ],
 )
