@@ -43,8 +43,11 @@ def _source(tmp_path: Path, **env: str) -> dict[str, str]:
 def test_ada_is_the_default_and_unchanged(tmp_path: Path):
     v = _source(tmp_path)
     assert v["MC_SITE"] == "ada" and v["MC_HW_PROFILE"] == "sm75"
-    assert v["MC_LAYOUT"] == "research_1gpu" and v["MC_TRAIN_OVERRIDES"] == ""
-    assert v["MC_RUN_TAG"] == "", "Ada run names stay <config>-s<seed>"
+    assert v["MC_LAYOUT"] == "research_1gpu"
+    assert v["MC_TRAIN_OVERRIDES"] == "memory=plan_b_lora_calibrated", "the 017 LoRA schedule (decision 018)"
+    assert v["MC_RUN_TAG"] == "2080ti", (
+        "<config>-2080ti-s<seed>: not the September attempt's math_grpo-s1 (018)"
+    )
 
 
 def test_jarvis_selects_the_h100_setup(tmp_path: Path):
@@ -75,6 +78,17 @@ def test_jarvis_memory_plan_is_chosen_by_mc_memory_plan(tmp_path: Path):
         UV_PYTHON_INSTALL_DIR=str(tmp_path / "uvpy"),
     )
     assert v["MC_TRAIN_OVERRIDES"] == "layout=h100_1gpu memory=plan_b_lora_calibrated_gpu hardware=h100"
+
+
+@pytest.mark.parametrize("layout", ["research_1gpu", "nlp_1gpu"])
+def test_ada_memory_plan_is_chosen_by_mc_memory_plan(tmp_path: Path, layout: str):
+    v = _source(tmp_path, MC_LAYOUT=layout, MC_MEMORY_PLAN="plan_b_lora")
+    assert v["MC_TRAIN_OVERRIDES"] == "memory=plan_b_lora", "the H200 recipe stays reproducible"
+
+
+def test_ada_full_finetune_layout_ignores_mc_memory_plan(tmp_path: Path):
+    v = _source(tmp_path, MC_LAYOUT="nlp_4gpu", MC_MEMORY_PLAN="plan_b_lora")
+    assert v["MC_TRAIN_OVERRIDES"] == "layout=nlp_4gpu memory=plan_a_fullft_offload"
 
 
 def test_kaggle_selects_the_t4_setup(tmp_path: Path):

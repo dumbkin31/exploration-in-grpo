@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 
 import pytest
 
@@ -63,3 +65,65 @@ def test_disabled_and_config_mapping():
     w = StabilityWatch(StabilityConfig.from_mapping({"enabled": False}))
     assert w.check(_m(grad=float("nan")), 1)["stability/alert_nan"] == 0.0
     assert StabilityConfig.from_mapping(None).enabled
+
+
+# --- policy drift: the onset of the H200 divergence (decisions 016, 018) ---
+
+H200 = Path(__file__).resolve().parent.parent / "results" / "h200-2026-10-01" / "training"
+YAML_DRIFT = StabilityConfig(abort_on_divergence=True)  # the other drift fields are base_grpo.yaml's values
+
+
+def _h200_steps(run: str) -> list[tuple[int, dict]]:
+    rows = {}
+    for line in (H200 / run / "metrics.jsonl").read_text().splitlines():
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(r.get("step"), int):
+            rows[r["step"]] = r
+    return sorted(rows.items())
+
+
+@pytest.mark.parametrize(
+    "run,first_alert,abort_at",
+    [("math_mixed_cuts-h200-s1", 49, 50), ("math_grpo-h200-s1", 66, 67)],
+)
+def test_the_h200_divergences_are_stopped_at_their_onset(run, first_alert, abort_at):
+    w = StabilityWatch(YAML_DRIFT)
+    alerts = []
+    with pytest.raises(StabilityAbort, match="policy drift for 2 consecutive steps") as stop:
+        for step, metrics in _h200_steps(run):
+            out = w.check(metrics, step)
+            if out["stability/alert_policy_drift"]:
+                alerts.append(step)
+    assert alerts == [first_alert], "no drift alert before the divergence began"
+    assert f"(step {abort_at})" in str(stop.value)
+
+
+def test_drift_needs_consecutive_steps():
+    w = StabilityWatch(StabilityConfig(abort_on_divergence=True))
+    for step in range(1, 8):
+        w.check(_m(entropy=0.1, **{"actor/ppo_kl": 0.001}), step)
+    assert w.check(_m(entropy=0.1, **{"actor/ppo_kl": 0.05}), 8)["stability/drift_streak"] == 1
+    assert w.check(_m(entropy=0.1, **{"actor/ppo_kl": 0.001}), 9)["stability/drift_streak"] == 0
+    assert w.check(_m(entropy=0.1, **{"actor/ppo_kl": -0.08}), 10)["stability/alert_policy_drift"] == 1.0
+    with pytest.raises(StabilityAbort):
+        w.check(_m(entropy=0.1, **{"actor/ppo_kl": 0.03}), 11)
+
+
+def test_entropy_rise_counts_after_the_warm_up_and_alerts_without_abort_by_default():
+    w = StabilityWatch(StabilityConfig())
+    assert w.check(_m(entropy=0.1), 1)["stability/alert_policy_drift"] == 0.0
+    assert w.check(_m(entropy=0.3), 2)["stability/alert_policy_drift"] == 0.0  # inside entropy_rise_after
+    for step in range(3, 7):
+        w.check(_m(entropy=0.1), step)
+    for step in (7, 8, 9):  # 2.5 x the minimum: alerts, but the dataclass default does not abort
+        out = w.check(_m(entropy=0.25), step)
+        assert out["stability/alert_policy_drift"] == 1.0 and out["stability/drift_streak"] == step - 6
+
+
+def test_rebuild_restores_the_entropy_minimum():
+    w = StabilityWatch(StabilityConfig())
+    w.rebuild([{"step": s, "actor/entropy": 0.5 - 0.04 * s} for s in range(1, 11)])  # minimum 0.1
+    assert w.check(_m(entropy=0.21), 11)["stability/alert_policy_drift"] == 1.0

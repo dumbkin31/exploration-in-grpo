@@ -3,8 +3,9 @@
 # stay the default; one H100 on Jarvislabs is the other target (decision 013). The GPU count comes from
 # configs/train/layout/ (default research_1gpu: ONE card per job, decision 012; nlp_4gpu: the original
 # 4-card layout of decision 002; h100_1gpu), the memory plan from configs/train/memory/ (default
-# plan_b_lora; plan_a_fullft_offload/plan_a_manual_offload need the 4-card layout; on Jarvislabs
-# MC_MEMORY_PLAN picks plan_a_fullft_gpu, plan_b_lora_calibrated_gpu or plan_b_lora_gpu, decision 017),
+# plan_b_lora; plan_a_fullft_offload/plan_a_manual_offload need the 4-card layout; MC_MEMORY_PLAN picks
+# plan_b_lora_calibrated on Ada (018) and plan_a_fullft_gpu, plan_b_lora_calibrated_gpu or plan_b_lora_gpu on
+# Jarvislabs (017)),
 # and precision + attention from configs/train/hardware/ (default sm75; h100).
 #
 # Layers on verl v0.9.0's `ppo_trainer` tree (through hydra.searchpath, declared by the leaf
@@ -61,6 +62,13 @@ stability:
   entropy_collapse_window: 20
   entropy_collapse_ratio: 0.25       # entropy below 0.25 x step-1 entropy inside the window = alert
   abort_on_nan: false                # warn loudly; flip to true to stop the run on the first NaN
+  # policy drift, the onset of the H200 divergence (018): thresholds from the H200 logs, where healthy steps
+  # stayed below |ppo_kl| 0.0096 and these stop Mixed-CUTS at step 50 and GRPO at step 67
+  ppo_kl_max: 0.02                   # |actor/ppo_kl|: drift from pi_old inside one step
+  entropy_rise_ratio: 2.0            # entropy above 2 x its lowest value so far ...
+  entropy_rise_after: 5              # ... once 5 steps have set that minimum
+  divergence_patience: 2             # consecutive drift steps before the abort
+  abort_on_divergence: true          # stop the run (it resumes on resubmission; every 10th checkpoint is kept)
 
 # ---- data -------------------------------------------------------------------------------------
 data:
@@ -172,7 +180,7 @@ actor_rollout_ref:
 
 reward:
   custom_reward_function:
-    path: pkg://mixed_cuts.reward    # final \boxed{} + digit + math-verify (Appendix B.4)  [checked]
+    path: pkg://mixed_cuts.reward    # non-empty final \boxed{} + math-verify (017; was boxed + digit, B.4)  [checked]
     name: compute_score
 
 trainer:

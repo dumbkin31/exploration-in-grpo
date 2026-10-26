@@ -130,7 +130,8 @@ Model facts: 28 layers, hidden 2048, 16 query / 8 KV heads x 128, vocab 151,936,
 source lines behind every claim: [012](docs/decisions/012-research-qos-one-gpu-lora.md). The 4-GPU full
 fine-tune of [002](docs/decisions/002-four-gpu-memory-layout.md) stays selectable with `MC_LAYOUT=nlp_4gpu`.
 
-**Training (plan B, default, `memory=plan_b_lora`)**: LoRA r=64 / alpha=128 on every linear layer (69.7 M
+**Training (plan B; on Ada `memory=plan_b_lora_calibrated`, lr 2e-6 cosine, decision 018; `plan_b_lora` at
+lr 1e-5 constant reproduces the earlier runs)**: LoRA r=64 / alpha=128 on every linear layer (69.7 M
 trainable parameters) under the FSDP2 `CPUOffloadPolicy`: the fp32 base and the LoRA masters live in pinned
 host RAM (~7.2 GB), one decoder layer is gathered in fp16 at a time, gradients and Adam state exist only for
 the adapter (~0.85 GB). The KL reference is the same model with the adapter disabled (no second copy).
@@ -162,11 +163,14 @@ sets `float16` everywhere with `mixed_precision {param fp16, reduce fp32, buffer
 `ShardedGradScaler` for fp16 params. The watchlist ([006](docs/decisions/006-fp16-stability-ladder.md))
 alerts every step on NaN/inf in actor metrics, gradient-norm spikes and early entropy collapse
 (`stability/alert_*`), and the ladder is: LR -> 5e-7, tighter `grad_clip`, then revisit the KL term.
+Since decision 018 it also stops a run at the onset of a policy divergence like the H200 ones: |`actor/ppo_kl`|
+above 0.02 or entropy above twice its minimum on two consecutive steps (`stability/alert_policy_drift`).
 
 ## 6. Quickstart on Ada
 
 ```bash
-# 0. login node (CentOS 7: downloads and git only). Code lives on /home2.
+# 0. login node (CentOS 7: downloads and git only; ssh <user>@ada-gw1 or ada-gw2 since 2026-10-26, ada.iiit.ac.in
+#    no longer accepts SSH). Code lives on /home2.
 git clone <this repo> ~/mixed-cuts && cd ~/mixed-cuts && cp .env.example .env   # add HF_TOKEN for GPQA
 curl -LsSf https://astral.sh/uv/install.sh | sh                                    # once, if uv is missing
 source configs/ada.env.sh
@@ -190,6 +194,10 @@ make sbatch-resume-test                # ~2 x 25 min: kills itself at step 15, r
 #    days per arm: three submissions under the 4-day MaxWall; resubmit the same command to resume). A same-name
 #    twin under MC_LAYOUT=nlp_1gpu waits behind the running job (singleton) and continues the run when it
 #    ends (012). SEED=1,2,3 later for three seeds.
+#    Since decision 018: run names math_grpo-2080ti-s1 / math_mixed_cuts-2080ti-s1; LoRA at lr 2e-6 cosine
+#    (MC_MEMORY_PLAN=plan_b_lora for the old 1e-5); every 10th checkpoint kept in checkpoints_kept/; a job
+#    refuses to resume a run dir trained under another recipe; a diverging run stops itself. To cap the run,
+#    set MC_TOTAL_STEPS on the FIRST submission and keep it (the cosine schedule ends at that step).
 make sbatch-train CONFIG=math_grpo SEED=1
 MC_LAYOUT=nlp_1gpu make sbatch-train CONFIG=math_grpo SEED=1   # optional: the automatic continuation (60 GB host RAM)
 make sbatch-train CONFIG=math_mixed_cuts SEED=1
@@ -198,8 +206,8 @@ make sbatch-train CONFIG=math_mixed_cuts SEED=1
 #    LoRA runs keep adapter-only checkpoints (~0.9 GB) in the durable run dir on /home2 (012): merge and
 #    evaluate on any good node. (Full-FT runs: checkpoints sit on the node in node.txt; add -w $NODE / NODE=.)
 #    The merge srun counts against the user's 10 CPUs: run it while no training job of yours is running.
-srun -A research --qos=low -p u22 -C 2080ti -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh ~/mixed-cuts-data/runs/math_mixed_cuts-s1/checkpoints
-make sbatch-eval CKPT=~/mixed-cuts-data/runs/math_mixed_cuts-s1/checkpoints/hf/global_step_100 SEED=0
+srun -A research --qos=low -p u22 -C 2080ti -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh ~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints
+make sbatch-eval CKPT=~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints/hf/global_step_100 SEED=0
 ```
 
 `make preflight` prints the full report (pins, GPU, single node, engine version, attention backend, storage,
@@ -315,7 +323,7 @@ Per training step (W&B + `metrics.jsonl`), in addition to verl's own `actor/entr
 | `reward/{mean,var,acc,group_entropy}`, `reward/{std,cuts}/{mean,var,acc,n}`, `response_length/{std,cuts}/{mean,max}` | overall and per sub-group |
 | `cuts/set_size_mean`, `cuts/set_size_hist/k=i`, `cuts/degenerate_to_greedy_rate`, `cuts/frac_steps_fallback` | \|S_t\| after the delta filter (mean, histogram, fraction of steps with \|S_t\| = 1, fraction where the filter emptied the set); summarised one step late (`cuts/stats_step`) |
 | `cuts/frac_old_logprob_uniform_like_k2plus` | D1 guard: fraction of CUTS tokens whose `old_log_probs` equals `-log(j)`; ~0 when the actor recomputes them, ~1 if engine logprobs leaked in (the run stops at step 1 above 0.5) |
-| `stability/alert_{nan,grad_spike,entropy_collapse}` | fp16 watchlist alerts (0/1) |
+| `stability/alert_{nan,grad_spike,entropy_collapse,policy_drift}`, `stability/drift_streak` | fp16 watchlist alerts (0/1); two consecutive policy-drift steps stop the run (018) |
 | `mixed_cuts/frac_responses_with_think_tag` | must be 0 (Qwen3 non-thinking; asserted at step 1) |
 
 A few whole groups (standard and CUTS siblings side by side) are dumped per step as JSONL under

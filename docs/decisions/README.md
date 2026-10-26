@@ -22,3 +22,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [015](015-length-sorted-microbatches.md) | Padded attention path: micro-batches are length-sorted (patch) instead of workload-balanced, about 4x less padding, same gradient |
 | [016](016-h200-divergence-stop-and-evaluate.md) | Both H200 arms diverged (Mixed-CUTS from ~step 48, GRPO from ~step 64): stopped at 72/61 and evaluated at equal steps; GRPO step 40 is the best model |
 | [017](017-recipe-after-h200-divergence.md) | Recipe changes for both arms after the divergence, one section (and one commit) per change, so each can be ablated |
+| [018](018-ada-retrain-readiness.md) | Ada readiness for the 017 retrain: calibrated LoRA in the 2080 Ti offload layout, `-2080ti-` run names + a resume recipe check, 2 reward workers, every 10th checkpoint kept, stop on policy drift |

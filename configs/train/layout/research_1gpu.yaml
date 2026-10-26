@@ -37,3 +37,7 @@ transfer_queue:
   backend:
     SimpleStorage:
       num_data_storage_units: 1      # verl default 8: each unit is an actor of ~1 GB RSS; one node, one replica
+reward:
+  num_workers: 2                     # verl default 8: RewardLoopWorker Ray actors (verl reward_loop.py:323-339, built by
+                                     # trainer_base.py:332), each spawning MC_REWARD_WORKERS math-verify processes;
+                                     # 2 keep the 30 GB cgroup's margin and still grade a batch in seconds (018)

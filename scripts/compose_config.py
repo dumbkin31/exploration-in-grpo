@@ -39,7 +39,7 @@ TRAIN_CONFIG_DIR = REPO / "configs" / "train"
 # (lr, lr_scheduler_type) pairs the memory plans in configs/train/memory/ declare. Any other pair means a
 # later config layer overrode the plan, as base_grpo.yaml once did with the LoRA lr (decision 013).
 PLAN_SCHEDULES = {
-    # plan_b_lora and plan_b_lora_gpu; plan_b_lora_calibrated_gpu (decision 017)
+    # plan_b_lora and plan_b_lora_gpu; plan_b_lora_calibrated(_gpu) (decisions 017, 018)
     "LoRA": ((1e-5, "constant"), (2e-6, "cosine")),
     # plan_a_* (the paper's full-fine-tuning lr)
     "full fine-tune": ((1e-6, "constant"),),
@@ -204,7 +204,7 @@ def check(cfg) -> list[str]:
         # plan_a_fullft_gpu, which needs a 141 GB H200 (017)
         if lora_rank <= 0 and profile == "sm75":
             fail(
-                "the 1-GPU sm75 layouts train LoRA (memory=plan_b_lora): on research/low full FT needs 27.6 GB of "
+                "the 1-GPU sm75 layouts train LoRA (memory=plan_b_lora_calibrated): on research/low full FT needs 27.6 GB of "
                 "host RAM for the optimizer alone"
             )
         if profile == "sm75" and not arr.actor.fsdp_config.get("offload_policy"):
@@ -230,6 +230,11 @@ def check(cfg) -> list[str]:
                 fail("rollout.agent.num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
             if int(cfg.data.get("dataloader_num_workers", 0) or 0) > 2:
                 fail("data.dataloader_num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
+            if int(cfg.reward.get("num_workers") or 8) > 2:
+                fail(
+                    "reward.num_workers must be <= 2 on the 1-GPU layout (30 GB host cgroup): each is a Ray actor "
+                    "with its own math-verify processes (018)"
+                )
     lr = float(arr.actor.optim.lr)
     schedule = str(arr.actor.optim.get("lr_scheduler_type") or "constant")
     kind = "LoRA" if lora_rank > 0 else "full fine-tune"
