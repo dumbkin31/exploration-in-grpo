@@ -25,6 +25,10 @@ actor_rollout_ref:
       update_weights_bucket_megabytes: 512   # verl default 2048: the sync buckets are a transient on top of ~18 GB steady
 data:
   dataloader_num_workers: 0          # in-process parquet loading: no forked workers on the 30 GB budget
+reward:
+  num_workers: 1                     # verl default 8: each RewardLoopWorker is a Ray actor of ~0.55 GB anon RSS
+                                     # plus MC_REWARD_WORKERS math-verify processes (~85 MB each); one keeps
+                                     # up with one card's ~0.6 responses/s (decision 017)
 ray_kwargs:
   ray_init:
     num_cpus: 16                     # LOGICAL cpus for placement, not a cap: Ray itself reserves ~10
