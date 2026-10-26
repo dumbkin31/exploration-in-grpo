@@ -14,26 +14,26 @@ lengths, truncation) in [`comparison/eval_all_checkpoints.md`](comparison/eval_a
 
 | Model | MATH-500 | AIME24 | AIME25 | AMC23 | GPQA-Diamond |
 |---|---|---|---|---|---|
-| Qwen3-1.7B (base) | 70.2 | 13.8 | 10.6 | 42.8 | 32.9 |
-| GRPO, step 40 | **78.1** | **23.5** | **15.8** | **53.0** | **35.4** |
-| Mixed-CUTS, step 40 | 71.5 | 16.0 | 6.7 | 43.1 | 31.5 |
-| Mixed-CUTS, step 50 | 67.4 | 8.5 | 3.5 | 34.4 | 33.0 |
+| Qwen3-1.7B (base) | 70.4 | 13.8 | 10.6 | 42.8 | 32.9 |
+| GRPO, step 40 | **78.3** | **23.5** | **15.8** | **53.0** | **35.4** |
+| Mixed-CUTS, step 40 | 71.7 | 16.0 | 6.7 | 43.1 | 31.5 |
+| Mixed-CUTS, step 50 | 67.6 | 8.5 | 3.5 | 34.4 | 33.0 |
 
-All 51,072 saved responses were re-graded on 2026-10-26 with the current answer grader
-(`scripts/regrade_eval.py`, no model re-run), which reads a trailing percent sign as a unit (`10\%`
-matches a gold `10`). Only MATH-500 changes: 66 responses to two "what percent" problems become
-correct, +0.2 points of pass@1, maj@16 and pass@16 for every model, so the comparison between models
-is unchanged (re-graded MATH-500 pass@1: base 70.4, GRPO 78.3, Mixed-CUTS 71.7 and 67.6). The table
-above and `comparison/` keep the numbers as originally evaluated; see
-[`comparison/regrade.md`](comparison/regrade.md).
+These numbers and `comparison/` are re-graded (2026-10-26, `scripts/regrade_eval.py` on the saved
+responses, no model re-run): the answer grader now reads a trailing percent sign as a unit (`10\%`
+matches a gold `10`). That turned 66 responses to two "what percent" problems correct and raised
+MATH-500 pass@1, maj@16 and pass@16 by 0.2 points for every model; the other benchmarks did not change.
+As first evaluated, MATH-500 pass@1 was 70.2 / 78.1 / 71.5 / 67.4 (W&B and the Hugging Face card still
+show those); see [`comparison/regrade.md`](comparison/regrade.md).
 
 AIME24/25 have 30 problems each (CIs about +-10 points). GRPO's answers are much longer (55% of its AIME24
-samples hit the 5,000-token cap) and still score higher. pass@16 barely moves on MATH-500 (91.2 base, 91.4
+samples hit the 5,000-token cap) and still score higher. pass@16 barely moves on MATH-500 (91.4 base, 91.6
 GRPO): training made the model more reliable rather than solving new problems.
 
 ## Training
 
-Validation during training: 100 MATH-500 problems, 4 samples each (`val-core/math500/reward/mean@4`).
+Validation during training: 100 MATH-500 problems, 4 samples each (`val-core/math500/reward/mean@4`),
+graded by the reward of the time (the generations were not saved, so these are not re-graded).
 
 | Step | 0 | 10 | 20 | 30 | 40 | 50 | 60 | 70 |
 |---|---|---|---|---|---|---|---|---|
@@ -70,8 +70,8 @@ until length-sorted micro-batches (decision 015) made the training passes ~4x fa
 ## What is where
 
 * This folder: per-step metrics (`training/<run>/metrics.jsonl`), phase timings, launcher logs, the last
-  preflight of each run, evaluation metrics (`eval/<model>/<checkpoint>/<benchmark>/results.json`), tables,
-  figures, and the two ad hoc scripts used on the instance (`ops/`: checkpoint keeper, evaluation queue).
+  preflight of each run, evaluation metrics as first graded (`eval/<model>/<checkpoint>/<benchmark>/results.json`),
+  tables (re-graded, see above), figures, and the two ad hoc scripts used on the instance (`ops/`: checkpoint keeper, evaluation queue).
 * Hugging Face (private): `lokola13/mixed-cuts-h200-runs`: LoRA weights of GRPO steps 10, 40, 50, 60,
   70, 71, 72 and Mixed-CUTS steps 40, 50, 60, 61 (no optimizer states), every generated evaluation answer
   (`samples.jsonl`), rollout dumps, CUTS statistics, GPU memory traces, full trainer logs, smoke runs.

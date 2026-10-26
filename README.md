@@ -26,7 +26,7 @@ Both arms spend the same generation budget (asserted at config load), so any dif
 Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions/README.md).
 
 > **Status (2026-10-02)**: both arms trained on 2x H200 and were stopped after diverging (GRPO at step 72,
-> Mixed-CUTS at step 61); GRPO step 40 is the best model (MATH-500 pass@1 78.1% vs 70.2% for the base model).
+> Mixed-CUTS at step 61); GRPO step 40 is the best model (MATH-500 pass@1 78.3% vs 70.4% for the base model).
 > Results, tables and figures: [`results/h200-2026-10-01/`](results/h200-2026-10-01/README.md) (decision 016).
 >
 > **Earlier status (2026-09-30)**: code complete; the two 100-step arms had not been trained yet.
