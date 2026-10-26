@@ -21,3 +21,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [014](014-kaggle-t4.md) | Kaggle T4 support (fp16 Ada plan, CUDA 12.9 fallback, runs carried between 12-hour sessions on the HF Hub); use it for smoke tests and evaluations |
 | [015](015-length-sorted-microbatches.md) | Padded attention path: micro-batches are length-sorted (patch) instead of workload-balanced, about 4x less padding, same gradient |
 | [016](016-h200-divergence-stop-and-evaluate.md) | Both H200 arms diverged (Mixed-CUTS from ~step 48, GRPO from ~step 64): stopped at 72/61 and evaluated at equal steps; GRPO step 40 is the best model |
+| [017](017-one-reward-actor-on-ada.md) | One reward actor (`reward.num_workers: 1`) on the Ada 1-GPU layout instead of verl's 8: ~5 GB of the 30 GB host budget; needs PR #23 |
