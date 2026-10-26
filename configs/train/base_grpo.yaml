@@ -180,7 +180,7 @@ actor_rollout_ref:
 
 reward:
   custom_reward_function:
-    path: pkg://mixed_cuts.reward    # final \boxed{} + digit + math-verify (Appendix B.4)  [checked]
+    path: pkg://mixed_cuts.reward    # non-empty final \boxed{} + math-verify (017; was boxed + digit, B.4)  [checked]
     name: compute_score
 
 trainer:
