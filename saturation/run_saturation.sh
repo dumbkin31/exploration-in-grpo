@@ -24,9 +24,20 @@ EOF
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-CKPT="${1:-}"
+# Auto-source cluster environment if needed
+if [[ -z "${DATA_DIR:-}" && -z "${MC_DATA_DIR:-}" ]]; then
+  if [[ -f "${REPO_ROOT}/configs/${MC_SITE:-ada}.env.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${REPO_ROOT}/configs/${MC_SITE:-ada}.env.sh"
+  fi
+fi
+
+CKPT="${1:-${MC_CKPT:-${MC_MODEL_DIR:-}}}"
 [[ -n "${CKPT}" ]] || usage
-shift
+if [[ "${1:-}" != "" && "${1:-}" != --* ]]; then
+  shift
+fi
+
 if [[ "${1:-}" != "" && "${1:-}" != --* ]]; then
   OUT_DIR="$1"
   shift
@@ -35,10 +46,18 @@ else
 fi
 
 DATA_DIR="${DATA_DIR:-${MC_DATA_DIR:-}}"
-PYTHON="${PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+if [[ -z "${PYTHON:-}" ]]; then
+  if [[ -n "${MC_VENV_DIR:-}" && -x "${MC_VENV_DIR}/bin/python" ]]; then
+    PYTHON="${MC_VENV_DIR}/bin/python"
+  elif [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+    PYTHON="${REPO_ROOT}/.venv/bin/python"
+  else
+    PYTHON="$(command -v python3 || command -v python)"
+  fi
+fi
 EVAL_CONFIG="${EVAL_CONFIG:-configs/eval/default.yaml}"
 DATASETS_CSV="${DATASETS:-math_train,dapo_train}"
-GPUS_CSV="${GPUS:-0}"
+GPUS_CSV="${GPUS:-${CUDA_VISIBLE_DEVICES:-0}}"
 CHUNK_SIZE="${CHUNK_SIZE:-100}"
 START="${START:-0}"
 END="${END:-}"
@@ -191,9 +210,14 @@ if (( ${#GPUS[@]} >= ${#DATASETS[@]} )); then
     run_dataset "${DATASETS[$i]}" "${GPUS[$i]}" &
     PIDS+=("$!")
   done
+  FAIL=0
   for pid in "${PIDS[@]}"; do
-    wait "${pid}"
+    wait "${pid}" || FAIL=1
   done
+  if (( FAIL )); then
+    echo "ERROR: one or more dataset evaluation jobs failed." >&2
+    exit 1
+  fi
 else
   for i in "${!DATASETS[@]}"; do
     run_dataset "${DATASETS[$i]}" "${GPUS[$((i % ${#GPUS[@]}))]}"

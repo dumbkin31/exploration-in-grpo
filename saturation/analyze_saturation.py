@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import argparse
 import json
 from collections import defaultdict
@@ -24,17 +26,36 @@ def _sample_paths(eval_dir: Path, dataset: str) -> list[Path]:
 
 
 def analyze_dataset(eval_dir: Path, dataset: str, output_dir: Path) -> dict:
-    groups = defaultdict(list)
+    groups = defaultdict(dict)
 
     for samples_path in _sample_paths(eval_dir, dataset):
+        chunk_tag = (
+            samples_path.parent.parent.name
+            if samples_path.parent.name == dataset
+            else samples_path.parent.name
+        )
         with samples_path.open(encoding="utf-8") as handle:
             for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
                 record = json.loads(line)
-                key = record.get("index") or f"problem-{record['problem']}"
-                groups[str(key)].append(float(record["correct"]))
+                raw_key = record.get("index")
+                if (
+                    raw_key is not None
+                    and str(raw_key).strip()
+                    and str(raw_key).strip().lower() != "none"
+                ):
+                    key = str(raw_key).strip()
+                else:
+                    key = f"{chunk_tag}-problem-{record.get('problem', 'unknown')}"
+
+                sample_idx = record.get("sample", len(groups[key]))
+                groups[key][sample_idx] = float(record["correct"])
 
     rows = []
-    for index, scores in groups.items():
+    for index, sample_dict in groups.items():
+        scores = list(sample_dict.values())
         num_correct = int(round(sum(scores)))
         total_rollouts = len(scores)
 
@@ -60,13 +81,46 @@ def analyze_dataset(eval_dir: Path, dataset: str, output_dir: Path) -> dict:
     for row in rows:
         histogram[row["num_correct"]] += 1
 
+    total_prompts = len(rows)
+    all_correct_count = 0
+    all_wrong_count = 0
+    at_least_15_count = 0
+    total_rollouts_set = sorted({row["total_rollouts"] for row in rows})
+
+    for row in rows:
+        if row["num_correct"] == row["total_rollouts"] and row["total_rollouts"] > 0:
+            all_correct_count += 1
+        if row["num_correct"] == 0:
+            all_wrong_count += 1
+        if row["num_correct"] >= 15:
+            at_least_15_count += 1
+
+    all_correct_frac = all_correct_count / total_prompts if total_prompts else 0.0
+    all_wrong_frac = all_wrong_count / total_prompts if total_prompts else 0.0
+    collapsed_frac = (
+        (all_correct_count + all_wrong_count) / total_prompts if total_prompts else 0.0
+    )
+    at_least_15_frac = at_least_15_count / total_prompts if total_prompts else 0.0
+    mean_accuracy = (
+        sum(r["correct_fraction"] for r in rows) / total_prompts if total_prompts else 0.0
+    )
+
     return {
         "dataset": dataset,
-        "num_datapoints": len(rows),
-        "total_rollouts_per_datapoint": sorted(
-            {row["total_rollouts"] for row in rows}
-        ),
+        "num_datapoints": total_prompts,
+        "total_rollouts_per_datapoint": total_rollouts_set,
         "histogram": dict(sorted(histogram.items())),
+        "metrics": {
+            "all_correct_count": all_correct_count,
+            "all_correct_frac": round(all_correct_frac, 4),
+            "all_wrong_count": all_wrong_count,
+            "all_wrong_frac": round(all_wrong_frac, 4),
+            "zero_variance_collapsed_count": all_correct_count + all_wrong_count,
+            "zero_variance_collapsed_frac": round(collapsed_frac, 4),
+            "at_least_15_correct_count": at_least_15_count,
+            "at_least_15_correct_frac": round(at_least_15_frac, 4),
+            "mean_accuracy": round(mean_accuracy, 4),
+        },
     }
 
 
@@ -91,14 +145,19 @@ def main() -> None:
     summary_path = output_dir / "summary.json"
     summary_path.write_text(json.dumps(summaries, indent=2), encoding="utf-8")
 
-    plt.figure(figsize=(10, 6))
+    all_rollouts = []
+    for summary in summaries.values():
+        all_rollouts.extend(summary.get("total_rollouts_per_datapoint", []))
+        all_rollouts.extend(map(int, summary["histogram"].keys()))
+    max_rollouts = max(all_rollouts, default=16)
 
+    x_values = list(range(max_rollouts + 1))
+
+    # 1. Raw count plot (matches Figure 2 in mid-term report)
+    plt.figure(figsize=(10, 6))
     for dataset, summary in summaries.items():
-        histogram = {
-            int(key): value for key, value in summary["histogram"].items()
-        }
-        x_values = sorted(histogram)
-        y_values = [histogram[x] for x in x_values]
+        histogram = {int(k): v for k, v in summary["histogram"].items()}
+        y_values = [histogram.get(x, 0) for x in x_values]
 
         plt.plot(
             x_values,
@@ -108,16 +167,7 @@ def main() -> None:
             label=dataset,
         )
 
-    max_rollouts = max(
-        (
-            max(map(int, summary["histogram"].keys()))
-            for summary in summaries.values()
-            if summary["histogram"]
-        ),
-        default=0,
-    )
-
-    plt.xticks(range(max_rollouts + 1))
+    plt.xticks(x_values)
     plt.xlabel("Number of correct rollouts")
     plt.ylabel("Number of data points")
     plt.title("Correct-rollout distribution by dataset")
@@ -127,8 +177,54 @@ def main() -> None:
 
     plot_path = output_dir / "saturation_plot.png"
     plt.savefig(plot_path, dpi=180)
+    plt.close()
+
+    # 2. Normalized percentage plot (addresses sample-size disparity noted in report)
+    plt.figure(figsize=(10, 6))
+    for dataset, summary in summaries.items():
+        histogram = {int(k): v for k, v in summary["histogram"].items()}
+        n_pts = max(1, summary["num_datapoints"])
+        y_pct = [(histogram.get(x, 0) / n_pts) * 100 for x in x_values]
+
+        plt.plot(
+            x_values,
+            y_pct,
+            marker="s",
+            linewidth=2,
+            label=f"{dataset} (N={n_pts})",
+        )
+
+    plt.xticks(x_values)
+    plt.xlabel("Number of correct rollouts")
+    plt.ylabel("Percentage of prompts (%)")
+    plt.title("Normalized Correct-rollout distribution (Percentage of Prompts)")
+    plt.grid(alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+
+    pct_plot_path = output_dir / "saturation_plot_percentage.png"
+    plt.savefig(pct_plot_path, dpi=180)
+    plt.close()
+
     print(f"Wrote {plot_path}")
+    print(f"Wrote {pct_plot_path}")
     print(f"Wrote {summary_path}")
+
+    print("\n=== Saturation Analysis Summary ===")
+    print(
+        f"{'Dataset':<15} | {'Prompts':<8} | {'All-Correct':<18} | {'All-Wrong':<18} | {'Collapsed':<18} | {'Pass@1'}"
+    )
+    print("-" * 90)
+    for dataset, summary in summaries.items():
+        m = summary["metrics"]
+        all_c = f"{m['all_correct_count']} ({m['all_correct_frac']*100:.1f}%)"
+        all_w = f"{m['all_wrong_count']} ({m['all_wrong_frac']*100:.1f}%)"
+        col = f"{m['zero_variance_collapsed_count']} ({m['zero_variance_collapsed_frac']*100:.1f}%)"
+        acc = f"{m['mean_accuracy']*100:.1f}%"
+        print(
+            f"{dataset:<15} | {summary['num_datapoints']:<8} | {all_c:<18} | {all_w:<18} | {col:<18} | {acc}"
+        )
+    print("=" * 90 + "\n")
 
 
 if __name__ == "__main__":

@@ -108,6 +108,9 @@ train: ## train with configs/train/$(CONFIG).yaml (inside an allocation): make t
 eval: ## eval CKPT (HF dir) on BENCH with N_SAMPLES samples per problem
 	@. $(ENV_FILE); $(PY) eval/run_eval.py --ckpt "$(CKPT)" --benchmarks "$(BENCH)" --n-samples $(N_SAMPLES) --seed $(SEED)
 
+saturation: ## check rollout saturation on MATH and DAPO (inside an allocation): make saturation [CKPT=...]
+	@. $(ENV_FILE); bash saturation/run_saturation.sh "$${CKPT:-$$MC_MODEL_DIR}"
+
 # ------------------------------------------------------------------- results
 compare: ## report tables from the runs' evals + training logs: make compare [RUNS_DIR=...] [RATE=112.59] [RUNS="a b"]
 	@. $(ENV_FILE); $(PY) scripts/compare_runs.py $(if $(RUNS_DIR),--runs-dir $(RUNS_DIR),) $(if $(RATE),--rate $(RATE),) $(if $(RUNS),--runs $(RUNS),)
@@ -132,6 +135,8 @@ sbatch-train: ## submit (or resume) a training run: make sbatch-train CONFIG=mat
 	  sbatch $$(mc_sbatch_args) -J $(CONFIG)-s$(SEED) --dependency=singleton $$W --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
 sbatch-eval: ## submit an eval run: make sbatch-eval CKPT=... BENCH=... SEED=0 [NODE=gnodeXX if CKPT is on that node's scratch]
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) $(if $(NODE),-w $(NODE),) --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES),MC_SEED=$(SEED) slurm/eval.sbatch
+sbatch-saturation: ## submit saturation analysis job on Ada: make sbatch-saturation [CKPT=...] [DATASETS=...]
+	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) --export=ALL,MC_CKPT="$${CKPT:-$$MC_MODEL_DIR}",MC_DATASETS="$${DATASETS:-math_train,dapo_train}",MC_N_SAMPLES=$${N_SAMPLES:-16},MC_SEED=$${SEED:-0} slurm/saturation.sbatch
 sbatch-resume-test: ## kill-at-step-15-and-resubmit verification of checkpoint resume
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/test_resume.sbatch
 
