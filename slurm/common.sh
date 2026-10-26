@@ -10,7 +10,7 @@
 #
 # Layout (docs/decisions/005 and 009):
 #   MC_RUN_NAME    = <config>-s<seed>            stable across resubmissions (override: MC_RUN_NAME=...)
-#   MC_RUN_DIR     = live run dir: checkpoints/, metrics.jsonl, cuts_stats/, rollout_dumps/,
+#   MC_RUN_DIR     = live run dir: checkpoints/, recipe.txt, metrics.jsonl, cuts_stats/, rollout_dumps/,
 #                    phases.jsonl, gpu_mem.jsonl, wandb/, jobs/<jobid>/
 #                    MC_CHECKPOINT_HOME=scratch (default): $MC_SCRATCH_RUNS_DIR/<run>, node-local,
 #                    because /home2 (the durable NFS) has a 25 GB quota and one checkpoint is ~21 GB
@@ -21,6 +21,7 @@
 # verl's resume_mode=auto reads $MC_RUN_DIR/checkpoints/latest_checkpointed_iteration.txt, so a
 # resubmitted job ON THE SAME NODE continues from the last periodic checkpoint (verl cannot
 # checkpoint on SIGTERM; the grace period only flushes logs). WANDB_RUN_ID = run name keeps one W&B run.
+# A resume under another training recipe is refused (mc_check_recipe, decision 017).
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -183,10 +184,13 @@ mc_job_init() {
     echo "git=$(git -C "${MC_REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo ?)"; date
   } > "${MC_JOB_DIR}/job_info.txt"
 
-  # Preflight: pins, sm_75, single node, engine version, storage, internet. Aborts on FAIL.
-  python "${MC_REPO_ROOT}/scripts/check_env.py" ${MC_PREFLIGHT_ARGS:---no-staged} --facts-json "${MC_ENV_FACTS_JSON}" \
-    | tee "${MC_JOB_DIR}/preflight.log"
-  test "${PIPESTATUS[0]}" -eq 0 || { mc_log "preflight FAILED; see ${MC_JOB_DIR}/preflight.log"; exit 4; }
+  # Preflight: pins, sm_75, single node, engine version, storage, internet. Aborts on FAIL. The pipeline is
+  # an `if` condition: anywhere else set -e + pipefail would end the job with rc 1 before this message.
+  if ! python "${MC_REPO_ROOT}/scripts/check_env.py" ${MC_PREFLIGHT_ARGS:---no-staged} \
+      --facts-json "${MC_ENV_FACTS_JSON}" | tee "${MC_JOB_DIR}/preflight.log"; then
+    mc_log "preflight FAILED; see ${MC_JOB_DIR}/preflight.log"
+    exit 4
+  fi
   if python - "$MC_ENV_FACTS_JSON" <<'PY'
 import json, sys
 try:
@@ -293,6 +297,9 @@ mc_start_gpu_sampler() {
   python "${MC_REPO_ROOT}/scripts/profile_memory.py" --watch "${MC_RUN_DIR}/gpu_mem.jsonl" --job "${MC_JOB_ID}" \
     > "${MC_JOB_DIR}/gpu_sampler.log" 2>&1 &
   export _MC_SAMPLER_PID=$!
+  # The sampler never exits by itself: stop it on ANY exit, also one before the caller installs its
+  # stage-out trap (mc_run_with_traps, eval/bench sbatch), which replaces this one and stops it too.
+  trap 'mc_stop_gpu_sampler' EXIT
 }
 
 mc_stop_gpu_sampler() {
@@ -432,17 +439,86 @@ mc_run_with_traps() {
   return "${rc}"
 }
 
+# The training recipe of a run (decision 017). resume_mode=auto continues whatever checkpoints the run dir
+# holds, so relaunching a run name under another recipe would silently continue the old weights (or fail to
+# load them: a full fine-tune cannot start from a LoRA-only checkpoint). These are the values the memory
+# plans and decision 017 change, plus the step count a cosine schedule decays over; MC_TRAIN_OVERRIDES
+# names the plan (memory=...).
+_MC_RECIPE_KEYS=(
+  actor_rollout_ref.model.lora_rank
+  actor_rollout_ref.actor.optim.lr
+  actor_rollout_ref.actor.optim.lr_scheduler_type
+  trainer.total_training_steps          # the schedule's horizon (verl trainer_base.py:712-728); MC_TOTAL_STEPS sets it
+  actor_rollout_ref.actor.loss_agg_mode
+  actor_rollout_ref.actor.kl_loss_type
+)
+
+mc_recipe_fingerprint() {
+  # Usage: mc_recipe_fingerprint <config> [hydra overrides...]. Prints the recipe, one key=value per line,
+  # composed (one compose for all keys) from the same config and overrides the trainer gets.
+  local config="$1"; shift
+  local selects=() key
+  for key in "${_MC_RECIPE_KEYS[@]}"; do selects+=(--select "${key}"); done
+  echo "MC_TRAIN_OVERRIDES=${MC_TRAIN_OVERRIDES:-}"
+  python "${MC_REPO_ROOT}/scripts/compose_config.py" "${config}" "$@" "${selects[@]}"
+}
+
+_mc_log_recipe() {   # one indented log line per recipe line
+  local line
+  while IFS= read -r line; do mc_log "         ${line}"; done <<< "$1"
+}
+
+mc_check_recipe() {
+  # Usage: mc_check_recipe <config> [hydra overrides...] (mc_train_main passes the trainer's overrides).
+  #   no checkpoint yet:  this launch defines the run; its recipe is written to $MC_RUN_DIR/recipe.txt
+  #   checkpoints:        the recipe must equal recipe.txt; a run dir with checkpoints but no recipe.txt
+  #                       (started before this guard) is refused too, since its recipe is unknown
+  # A refusal exits 7. MC_ALLOW_RECIPE_CHANGE=1 resumes anyway and records the new recipe.
+  local file="${MC_RUN_DIR}/recipe.txt"
+  local tracker="${MC_RUN_DIR}/checkpoints/latest_checkpointed_iteration.txt"
+  local recipe saved="" step
+  if ! recipe="$(mc_recipe_fingerprint "$@")"; then
+    mc_log "ERROR: cannot compose the training recipe of config $1 (compose_config.py output above)"
+    exit 4
+  fi
+  [ -f "${file}" ] && saved="$(grep -v '^#' "${file}" || true)"
+  if [ "${saved}" = "${recipe}" ]; then
+    mc_log "training recipe unchanged (${file})"
+    return 0
+  fi
+  if [ -f "${tracker}" ]; then
+    step="$(cat "${tracker}")"
+    if [ -z "${saved}" ]; then
+      mc_log "ERROR: run ${MC_RUN_NAME} has checkpoints up to step ${step} but no ${file}: it was started"
+      mc_log "       before the recipe guard (decision 017), so the recipe of those checkpoints is unknown."
+    else
+      mc_log "ERROR: run ${MC_RUN_NAME} has checkpoints up to step ${step} from another training recipe."
+      mc_log "       Recipe of the checkpoints (${file}):"
+      _mc_log_recipe "${saved}"
+    fi
+    mc_log "       Recipe of this launch:"
+    _mc_log_recipe "${recipe}"
+    mc_log "       resume_mode=auto would continue those checkpoints under this launch's recipe. Start it as a"
+    mc_log "       new run instead: set a new MC_RUN_TAG (now '${MC_RUN_TAG:-unset}', e.g. in configs/local.env.sh) or seed."
+    mc_log "       MC_ALLOW_RECIPE_CHANGE=1 resumes anyway (only if continuing these checkpoints is intended)."
+    [ "${MC_ALLOW_RECIPE_CHANGE:-0}" = "1" ] || exit 7
+    mc_log "MC_ALLOW_RECIPE_CHANGE=1: resuming after step ${step} under this launch's recipe"
+    [ -f "${file}" ] && mv -f "${file}" "${MC_RUN_DIR}/recipe.until-step-${step}.txt"
+  fi
+  {
+    echo "# Training recipe of run ${MC_RUN_NAME} (slurm/common.sh::mc_check_recipe, decision 017),"
+    echo "# recorded by job ${MC_JOB_ID:-?} on $(date '+%F %T'). Every resume must match the lines below."
+    echo "${recipe}"
+  } > "${file}"
+  mc_log "training recipe recorded in ${file}"
+}
+
 mc_train_main() {
   # Usage: mc_train_main <config-name> [extra hydra overrides...]; needs MC_SEED (default 42).
   local config="${1:?config name}"; shift || true
   export MC_SEED="${MC_SEED:-42}"
   # MC_RUN_TAG (configs/jarvis.env.sh: h100) keeps runs on other hardware apart: math_grpo-h100-s1
   mc_job_init "${MC_RUN_NAME:-${config}${MC_RUN_TAG:+-${MC_RUN_TAG}}-s${MC_SEED}}"
-  mc_stage_in
-  # Config-specific preflight (compose + invariants + chat template) now that the model is staged.
-  python "${MC_REPO_ROOT}/scripts/check_env.py" --no-pins --no-gpu --no-staged --only-config \
-    --config "${config}" --model-dir "${MC_STAGED_MODEL_DIR}" | tee -a "${MC_JOB_DIR}/preflight.log"
-  test "${PIPESTATUS[0]}" -eq 0 || { mc_log "config preflight FAILED"; exit 4; }
   local extra=()
   [ -n "${MC_SAVE_FREQ:-}" ] && extra+=("save_freq=${MC_SAVE_FREQ}")
   [ -n "${MC_TOTAL_STEPS:-}" ] && extra+=("trainer.total_training_steps=${MC_TOTAL_STEPS}")
@@ -451,6 +527,16 @@ mc_train_main() {
     # shellcheck disable=SC2206
     extra+=(${MC_TRAIN_OVERRIDES})
     mc_log "layout ${MC_LAYOUT:-?}: ${MC_TRAIN_OVERRIDES}"
+  fi
+  # Before staging anything: refuse to resume this run dir's checkpoints under another recipe (017).
+  mc_check_recipe "${config}" "${extra[@]}" "$@"
+  mc_stage_in
+  # Config-specific preflight (compose + invariants + chat template) now that the model is staged
+  # (an `if` condition, as in mc_job_init, so a failure reaches the message and exit 4).
+  if ! python "${MC_REPO_ROOT}/scripts/check_env.py" --no-pins --no-gpu --no-staged --only-config \
+      --config "${config}" --model-dir "${MC_STAGED_MODEL_DIR}" | tee -a "${MC_JOB_DIR}/preflight.log"; then
+    mc_log "config preflight FAILED"
+    exit 4
   fi
   cd "${MC_REPO_ROOT}"
   mc_run_with_traps python -m mixed_cuts.main \

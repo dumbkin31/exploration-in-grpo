@@ -86,6 +86,8 @@ def test_pull_restores_the_newest_checkpoint_into_a_fresh_session(tmp_path: Path
     src = tmp_path / "a" / "runs"
     run = src / "math_mixed_cuts-t4-s1"
     run.mkdir(parents=True)
+    # slurm/common.sh::mc_check_recipe refuses to resume checkpoints without it
+    (run / "recipe.txt").write_text("MC_TRAIN_OVERRIDES=layout=kaggle_t4\n")
     for step in (4, 5):
         _save_step(run, step)
         mod.push(api, "u/r", src, "math_mixed_cuts-t4-s1")
@@ -98,6 +100,7 @@ def test_pull_restores_the_newest_checkpoint_into_a_fresh_session(tmp_path: Path
     assert not (new / "checkpoints/global_step_4").exists()
     assert (new / "checkpoints/latest_checkpointed_iteration.txt").read_text() == "5\n"
     assert (new / "metrics.jsonl").read_text().splitlines() == ['{"step": 4}', '{"step": 5}']
+    assert (new / "recipe.txt").read_text() == "MC_TRAIN_OVERRIDES=layout=kaggle_t4\n"
     older = mod.pull(api, "u/r", tmp_path / "c" / "runs", "math_mixed_cuts-t4-s1", step=4)
     assert (
         older["step"] == 4 and (tmp_path / "c/runs/math_mixed_cuts-t4-s1/checkpoints/global_step_4").is_dir()

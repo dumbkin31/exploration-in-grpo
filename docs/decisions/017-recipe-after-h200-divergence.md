@@ -98,8 +98,19 @@ verl's model merger.
 `configs/local.env.sh` sets `MC_RUN_TAG=h200`: relaunching seed 1 would resume the diverged runs. Start the
 new recipe under a new `MC_RUN_TAG` (or seed).
 
+**Recipe guard.** `slurm/common.sh::mc_check_recipe` enforces this before the trainer starts. A run's first
+start writes `<run dir>/recipe.txt`: `MC_TRAIN_OVERRIDES` and the composed `model.lora_rank`, `actor.optim.lr`,
+`actor.optim.lr_scheduler_type`, `trainer.total_training_steps`, `actor.loss_agg_mode` and `actor.kl_loss_type`
+(one `compose_config.py` call with several `--select`). A resume (a checkpoint exists) under a different recipe exits 7 and prints both; so
+does a run dir with checkpoints but no `recipe.txt`, i.e. every run started before the guard. The H200 runs
+are such dirs, and no launch after this decision reproduces their recipe (`token-mean`, `low_var_kl`).
+`MC_ALLOW_RECIPE_CHANGE=1` resumes anyway and keeps the old file as `recipe.until-step-<N>.txt`. `jarvis/train.sh`
+does not retry a refusal; `scripts/hub_sync.py` carries `recipe.txt` between Kaggle sessions.
+
 The cosine schedule of the LoRA plan decays to 0 at `trainer.total_training_steps`: capping a run with
-`MC_TOTAL_STEPS` shortens it, and changing the cap on a resume makes the learning rate jump.
+`MC_TOTAL_STEPS` shortens it, and changing the cap on a resume makes the learning rate jump, so the guard
+refuses a new cap on a resume. It does so under a constant schedule too, where the cap only moves the last
+step: pass `MC_ALLOW_RECIPE_CHANGE=1` there.
 
 ## 4. Symbolic answer grading: a non-empty final `\boxed{}` is valid; no digit required
 

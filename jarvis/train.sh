@@ -62,6 +62,11 @@ for attempt in $(seq 1 "${max}"); do
     fi
     exit 0
   fi
+  if [ "${rc}" -eq 7 ]; then   # slurm/common.sh::mc_check_recipe refused the resume: a retry cannot help
+    log "refused: ${RUN_DIR} holds checkpoints of another training recipe (decision 017); tail of its log:"
+    tail -n 25 "${MC_JOB_STDOUT}" | tee -a "${LOG_DIR}/launcher.log"
+    exit 7
+  fi
   log "attempt ${attempt} ended with rc=${rc} before step ${total}; tail of its log:"
   tail -n 15 "${MC_JOB_STDOUT}" | tee -a "${LOG_DIR}/launcher.log"
   # leftovers of THIS run's Ray instance only (the other arm has its own RAY_TMPDIR)
