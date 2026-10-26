@@ -18,6 +18,10 @@ actor_rollout_ref:
       num_workers: 1
     checkpoint_engine:
       update_weights_bucket_megabytes: 512   # a host-memory transient; host RAM is the tight budget here
+reward:
+  num_workers: 2                     # verl default 8: RewardLoopWorker Ray actors (verl reward_loop.py:323-339, built by
+                                     # trainer_base.py:332), each spawning MC_REWARD_WORKERS math-verify processes;
+                                     # 2 keep the 30 GB cgroup's margin and still grade a batch in seconds (018)
 data:
   dataloader_num_workers: 0
 ray_kwargs:

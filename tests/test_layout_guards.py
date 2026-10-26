@@ -166,6 +166,16 @@ def test_ada_calibrated_lora_passes_the_checks(compose, name, monkeypatch):
     assert mod.check(cfg) == []
 
 
+@pytest.mark.parametrize("layout", ["research_1gpu", "kaggle_t4"])
+def test_reward_workers_fit_the_host_budget(compose, layout, monkeypatch):
+    """verl starts reward.num_workers RewardLoopWorker actors (default 8), each with its own math-verify pool."""
+    monkeypatch.setenv("MC_SLURM_GPUS", "1")
+    mod, cfg = compose("math_mixed_cuts", f"layout={layout}")
+    assert cfg.reward.num_workers == 2 and mod.check(cfg) == []
+    mod, cfg = compose("math_mixed_cuts", f"layout={layout}", "reward.num_workers=8")
+    assert any("reward.num_workers" in p for p in mod.check(cfg))
+
+
 def test_gpu_resident_lora_is_refused_on_a_2080ti(compose, monkeypatch):
     monkeypatch.setenv("MC_SLURM_GPUS", "1")
     mod, cfg = compose("math_mixed_cuts", "memory=plan_b_lora_calibrated_gpu")

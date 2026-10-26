@@ -230,6 +230,11 @@ def check(cfg) -> list[str]:
                 fail("rollout.agent.num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
             if int(cfg.data.get("dataloader_num_workers", 0) or 0) > 2:
                 fail("data.dataloader_num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
+            if int(cfg.reward.get("num_workers") or 8) > 2:
+                fail(
+                    "reward.num_workers must be <= 2 on the 1-GPU layout (30 GB host cgroup): each is a Ray actor "
+                    "with its own math-verify processes (018)"
+                )
     lr = float(arr.actor.optim.lr)
     schedule = str(arr.actor.optim.get("lr_scheduler_type") or "constant")
     kind = "LoRA" if lora_rank > 0 else "full fine-tune"
