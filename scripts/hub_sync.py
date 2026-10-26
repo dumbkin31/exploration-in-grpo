@@ -13,7 +13,8 @@ Jarvislabs run on Kaggle.
 Repo: MC_HUB_REPO (created private on the first push). Token: HF_TOKEN, with write access to push.
 Layout in the repo mirrors the run dir: <run>/checkpoints/global_step_<N>/..., the tracker
 <run>/checkpoints/latest_checkpointed_iteration.txt, <run>/{metrics.jsonl,phases.jsonl,node.txt,
-memory_profile.md}, <run>/eval/**, <run>/launcher/*.log. Not carried: rollout_dumps/, cuts_stats/ (the
+memory_profile.md,recipe.txt}, <run>/eval/**, <run>/launcher/*.log (recipe.txt: without it a resume is
+refused, slurm/common.sh::mc_check_recipe). Not carried: rollout_dumps/, cuts_stats/ (the
 per-step diagnostics are in metrics.jsonl and W&B), wandb/ (W&B resumes by run id), gpu_mem.jsonl.
 Only the newest MC_HUB_KEEP (default 2) checkpoints stay on the Hub; a checkpoint already there is not
 uploaded again.
@@ -28,7 +29,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SMALL_FILES = ("metrics.jsonl", "phases.jsonl", "node.txt", "memory_profile.md")
+SMALL_FILES = ("metrics.jsonl", "phases.jsonl", "node.txt", "memory_profile.md", "recipe.txt")
 TRACKER = "checkpoints/latest_checkpointed_iteration.txt"
 STEP_RE = re.compile(r"^checkpoints/global_step_(\d+)/")
 
