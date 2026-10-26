@@ -16,6 +16,13 @@ digit (the paper's Appendix B.4 rule, decision 008), so ground truths such as ``
 rewarded; ``scripts/prepare_data.py`` still drops those from the training set (unchanged, for
 comparability with the earlier runs).
 
+Equivalence is by mathematical value, not text: ``1/2``, ``0.5``, ``.5``, ``0.50``, ``\\frac{1}{2}``,
+``\\dfrac12`` and ``2/4`` all match each other, ``0.25 == 1/4``, ``1,000 == 1000.0`` and
+``\\sqrt{20} == 2\\sqrt{5}``. math-verify parses decimals to floats, so any comparison with a
+decimal goes through :data:`FLOAT_ROUNDING` (see there). The one custom normalization drops a
+trailing percent sign on either side (:func:`_strip_percent`): ``10\\%`` matches ``10`` and
+``12.50\\%``, but not ``0.1``.
+
 GPQA (multiple choice) uses the separate letter parser in :mod:`mixed_cuts.gpqa`.
 
 Returns a dict; verl takes ``"score"`` as the reward and stores the other keys as
@@ -57,6 +64,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ProcessPoolExecutor
@@ -69,6 +77,20 @@ from mixed_cuts.boxed import last_boxed_content
 from mixed_cuts.gpqa import extract_choice_letter
 
 logger = logging.getLogger(__name__)
+
+# math-verify's numeric tolerance, passed explicitly (these ARE its defaults, math_verify/grader.py
+# ``verify``). When either side is a decimal (sympy Float), both sides are rounded to
+# FLOAT_ROUNDING decimal places and compared exactly (``sympy_numeric_eq``): 1/3 matches 0.333333
+# but not 0.333 or 0.33, and 2\sqrt{5} does not match 4.47. It applies to every decimal, so 1/4
+# also matches 0.2500001, and it is ABSOLUTE, so tiny values get less room (gold .0000672 also
+# matches 0.0000669). Kept at the default on 2026-10-26: a looser rule rewards sloppy rounding
+# (a relative 0.1% would accept 37.68 for 12\pi), and on the H200 evals the strict rule only
+# rejected ~10 MATH-500 responses per checkpoint that were correctly rounded.
+FLOAT_ROUNDING = 6
+NUMERIC_PRECISION = 15
+
+# A trailing percent sign: "12.5\%", "12.5 %", "12.5\ \%".
+_PERCENT_SUFFIX = re.compile(r"(?:\\[ ,;!]|\s)*\\?%\s*$")
 
 
 class _VerifyPool:
@@ -155,7 +177,25 @@ def _math_verify_equal(gold: str, pred: str) -> bool:
     pred_parsed = parse(f"\\boxed{{{pred}}}", (LatexExtractionConfig(),))
     if not gold_parsed or not pred_parsed:
         return False
-    return bool(verify(gold_parsed, pred_parsed))
+    return bool(
+        verify(gold_parsed, pred_parsed, float_rounding=FLOAT_ROUNDING, numeric_precision=NUMERIC_PRECISION)
+    )
+
+
+def _strip_percent(answer: str) -> str:
+    """Drop a trailing percent sign, so ``10\\%`` is graded as ``10`` (decided 2026-10-26).
+
+    The sign is read as a unit label, as in MATH's own grader: "by what percent ..." has gold
+    ``10`` and models answer ``10\\%``. The value is not divided by 100, so ``50\\%`` does not
+    match ``0.5``. This has to happen before math-verify, which cannot parse percentages in our
+    environment: verl's hydra/omegaconf pin antlr4-python3-runtime 4.9.*, and
+    latex2sympy2_extended 1.11.0's parser generated for ANTLR 4.9.3 lacks the ``FUNC_GAMMA``
+    token that ``convert_atom`` checks before ``PERCENT_NUMBER``. Every percent atom raises
+    AttributeError, ``parse`` falls back to the raw string, and ``verify`` then only matches
+    identical strings.
+    """
+    stripped = _PERCENT_SUFFIX.sub("", answer)
+    return stripped if stripped and "%" not in stripped else answer
 
 
 def _verify_in_pool(gold: str, pred: str, timeout: float) -> bool:
@@ -198,10 +238,11 @@ def score_math(solution_str: str, ground_truth: str, *, timeout: float = 30.0) -
     if not valid:
         return result
     gt = str(ground_truth).strip()
-    if pred == gt:  # exact match short-circuit (also avoids a subprocess round trip)
+    gt_cmp, pred_cmp = _strip_percent(gt), _strip_percent(pred)
+    if pred_cmp == gt_cmp:  # exact match short-circuit (also avoids a subprocess round trip)
         result["score"] = 1.0
         return result
-    result["score"] = 1.0 if _verify_in_pool(gt, pred, timeout) else 0.0
+    result["score"] = 1.0 if _verify_in_pool(gt_cmp, pred_cmp, timeout) else 0.0
     return result
 
 
