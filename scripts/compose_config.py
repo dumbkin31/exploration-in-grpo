@@ -16,6 +16,7 @@ Invariants checked with --check (see the [checked] marks in configs/train/base_g
   * D4: n_std + n_cuts == group_size == rollout.n; CUTS K/delta/T_warm = paper values
   * D1: rollout_correction.rollout_is/rollout_rs null, bypass_mode false, calculate_log_probs false
   * D2: rollout T=1.0/top_p=1.0, validation 1.0/0.8/20, non-thinking, KL low_var_kl 1e-3
+  * loss: seq-mean-token-mean, i.e. every rollout normalised by its own length (paper Eq. 2, decision 017)
   * layout: one node, TP == n_gpus_per_node == MC_SLURM_GPUS (1 GPU: LoRA; on sm75 also the FSDP2 offload
     policy and the research/low host limits; 4 on nlp), sleep mode, gradient checkpointing, dynamic bsz
     with token budgets >= max_prompt_length + max_response_length (or the documented micro-batch-1 fallback)
@@ -158,6 +159,10 @@ def check(cfg) -> list[str]:
         fail("actor.use_kl_loss must be true with kl_loss_coef 1e-3 (paper)")
     if arr.actor.kl_loss_type != "low_var_kl":
         fail(f"actor.kl_loss_type must be low_var_kl: {arr.actor.kl_loss_type}")
+    if arr.actor.loss_agg_mode != "seq-mean-token-mean":
+        fail(
+            f"actor.loss_agg_mode must be seq-mean-token-mean (per-rollout normalisation, decision 017): {arr.actor.loss_agg_mode}"
+        )
 
     # --- layout: one node, one replica (TP == GPUs), matched to the sbatch request (decisions 002/012) ---
     n_gpus = int(cfg.trainer.n_gpus_per_node)

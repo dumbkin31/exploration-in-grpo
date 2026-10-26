@@ -21,3 +21,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [014](014-kaggle-t4.md) | Kaggle T4 support (fp16 Ada plan, CUDA 12.9 fallback, runs carried between 12-hour sessions on the HF Hub); use it for smoke tests and evaluations |
 | [015](015-length-sorted-microbatches.md) | Padded attention path: micro-batches are length-sorted (patch) instead of workload-balanced, about 4x less padding, same gradient |
 | [016](016-h200-divergence-stop-and-evaluate.md) | Both H200 arms diverged (Mixed-CUTS from ~step 48, GRPO from ~step 64): stopped at 72/61 and evaluated at equal steps; GRPO step 40 is the best model |
+| [017](017-recipe-after-h200-divergence.md) | Recipe changes for both arms after the divergence, one section (and one commit) per change, so each can be ablated |

@@ -129,6 +129,15 @@ def test_the_arms_differ_only_in_the_group_split_on_the_h100(compose):
     assert grpo == mixed
 
 
+@pytest.mark.parametrize("name", ["math_grpo", "math_mixed_cuts"])
+def test_every_rollout_is_normalised_by_its_own_length(compose, name):
+    """Decision 017: seq-mean-token-mean in both arms; verl's default token-mean is refused."""
+    mod, cfg = compose(name, *H100)
+    assert cfg.actor_rollout_ref.actor.loss_agg_mode == "seq-mean-token-mean"
+    mod, cfg = compose(name, *H100, "actor_rollout_ref.actor.loss_agg_mode=token-mean")
+    assert any("loss_agg_mode" in p for p in mod.check(cfg))
+
+
 def test_learning_rate_follows_the_memory_plan(compose):
     """Until 2026-09-29 base_grpo.yaml's body overrode plan_b_lora's 1e-5 with 1e-6 (decision 013)."""
     _mod, lora = compose("math_grpo")

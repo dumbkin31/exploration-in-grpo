@@ -107,6 +107,9 @@ actor_rollout_ref:
     ppo_micro_batch_size_per_gpu: null   # dynamic mode uses the token budget (engine_workers.py:626)
     ppo_micro_batch_size: null
     ppo_epochs: 1
+    loss_agg_mode: seq-mean-token-mean   # paper Eq. 2: each rollout averaged over its own length, then over the
+                                         # 512 rollouts of a mini-batch; also aggregates the KL term (verl default
+                                         # token-mean weighs every token equally; decision 017)  [checked]
     clip_ratio: 0.2
     grad_clip: 1.0                   # first rung of the fp16 ladder is tightening this (006)
     entropy_coeff: 0.0
