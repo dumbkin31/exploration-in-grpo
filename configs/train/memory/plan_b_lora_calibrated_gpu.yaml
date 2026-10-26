@@ -1,0 +1,28 @@
+# @package _global_
+# Memory plan B, calibrated (decision 017): the LoRA of plan_b_lora_gpu (r=64, alpha=128, all-linear,
+# merged-weight sync, LoRA-only checkpoints, everything on the GPU) at lr 2e-6 with a cosine decay instead of a
+# constant 1e-5, which both H200 arms diverged with (decision 016). The fallback to plan_a_fullft_gpu: select
+# it with MC_MEMORY_PLAN=plan_b_lora_calibrated_gpu. Fits an 80 GB H100 as well as the H200.
+actor_rollout_ref:
+  model:
+    lora_rank: 64
+    lora_alpha: 128
+    target_modules: all-linear       # PEFT excludes lm_head: 69.7 M trainable parameters
+    lora:
+      merge: true                    # sync merged full weights so vLLM serves a plain model
+  actor:
+    strategy: fsdp2
+    optim:
+      lr: 2.0e-6
+      lr_scheduler_type: cosine      # verl v0.9.0 key (optim/fsdp.yaml:39; `warmup_style` is the deprecated name).
+                                     # verl defaults: no warmup, min_lr_ratio 0, half a cosine over
+                                     # trainer.total_training_steps (100), so an MC_TOTAL_STEPS cap shortens it
+    fsdp_config:
+      strategy: fsdp2
+      model_dtype: fp32              # LoRA masters in fp32  [checked]
+      offload_policy: false          # everything on the GPU
+      param_offload: false
+      optimizer_offload: false
+      reshard_after_forward: true    # a no-op on one GPU (world size 1)
+    checkpoint:
+      save_lora_only: true           # adapters + optimizer (~0.9 GB per checkpoint)

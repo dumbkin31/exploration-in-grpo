@@ -221,6 +221,8 @@ bash jarvis/setup.sh         # driver >= 580 check, exact Ada lock, model + data
 bash jarvis/smoke.sh         # ~15 min: 2 tiny steps on the H100 layout + the GPU tests
 bash jarvis/start.sh         # 2 GPUs: math_grpo on GPU 0, math_mixed_cuts on GPU 1 (background)
                              # two 1-GPU instances: ARMS=math_grpo / ARMS=math_mixed_cuts bash jarvis/start.sh
+                             # recipe (decision 017): full fine-tune by default (H200 only);
+                             # MC_MEMORY_PLAN=plan_b_lora_calibrated_gpu for the LoRA fallback
 bash jarvis/status.sh -w     # step, minutes per step, ETA, checkpoint, launcher alive
 # after training (each eval needs a free GPU; ~20-40 min each):
 bash jarvis/eval.sh base 0                                  # the untrained model, reference row
@@ -231,8 +233,10 @@ bash jarvis/status.sh        # includes GPU-hours and INR spent so far (MC_GPU_R
 
 Run names are `math_grpo-h100-s1` and `math_mixed_cuts-h100-s1`; W&B runs of the same names in
 `anlp-mixed-cuts/mixed-cuts` log live. After a pause or a spot preemption, rerun `bash jarvis/start.sh`:
-each stopped arm resumes from its newest checkpoint (saved every step, 0.9 GB). Check the minutes per
-step after 3 steps against the budget in decision 013.
+each stopped arm resumes from its newest checkpoint (saved every step: 0.9 GB with LoRA, ~21 GB with the
+full fine-tune, two kept per arm). Because a run resumes whatever checkpoints its run dir holds, start a new
+recipe under a new run name (`MC_RUN_TAG`, or another seed). Check the minutes per step after 3 steps
+against the budget in decision 013.
 
 ## 6c. Kaggle (T4 notebooks; decision 014)
 
@@ -289,9 +293,11 @@ maj@16 (Table 6): GRPO 89.3 / 45.7 / 29.7 / 71.0 / 36.5; Mixed-CUTS 90.4 / 49.2 
 Read our numbers with the benchmark sizes in mind: AIME24 and AIME25 have 30 problems (**one problem =
 3.3 pp**), AMC23 has 40 (2.5 pp). The harness reports pass@1 as the mean over 16 samples with bootstrap
 95% CIs over problems, never a single greedy decode, and the eval decoding follows the paper's validation
-settings (T=1.0, top_p 0.8, top_k 20, 5000 tokens). Compare arms only across several seeds. Under the
-boxed-plus-digit validity rule ([008](docs/decisions/008-digit-rule-and-filtered-prompts.md)) each
-benchmark also reports its accuracy ceiling (fraction of ground truths that contain a digit).
+settings (T=1.0, top_p 0.8, top_k 20, 5000 tokens). Compare arms only across several seeds. Since
+[017](docs/decisions/017-recipe-after-h200-divergence.md) any non-empty final `\boxed{}` is graded by
+math-verify, digit or not; the boxed-plus-digit rule of [008](docs/decisions/008-digit-rule-and-filtered-prompts.md)
+is retired, so the reported `digit_rule_ceiling` is only the share of ground truths that contain a digit.
+Re-scored MATH-500 numbers of the H200 runs are in decision 017.
 
 ## 8. What gets logged (diagnostics glossary)
 

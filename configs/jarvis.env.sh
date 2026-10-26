@@ -30,8 +30,9 @@ export MC_MODEL_DIR="${MC_MODEL_DIR:-${MC_MODELS_DIR}/$(basename "${MC_MODEL_NAM
 export MC_DATA_DIR="${MC_DATA_DIR:-${MC_STAGE_ROOT}/data}"
 export MC_RUNS_DIR="${MC_RUNS_DIR:-${MC_STAGE_ROOT}/runs}"
 export MC_SCRATCH_RUNS_DIR="${MC_SCRATCH_RUNS_DIR:-${MC_SCRATCH_ROOT}/runs}"
-export MC_CHECKPOINT_HOME=durable        # 0.9 GB LoRA checkpoints next to the metrics: a resume after a
-                                         # pause or a spot preemption finds them on the persistent disk
+export MC_CHECKPOINT_HOME=durable        # checkpoints next to the metrics: a resume after a pause or a spot
+                                         # preemption finds them on the persistent disk. LoRA 0.9 GB each, full
+                                         # fine-tune ~21 GB each (two kept per arm: ~84 GB for both arms)
 export MC_MIRROR_INTERVAL="${MC_MIRROR_INTERVAL:-600}"
 export MC_BAD_NODES_FILE="${MC_BAD_NODES_FILE:-${MC_STAGE_ROOT}/bad_nodes.txt}"
 export MC_MIN_DRIVER_MAJOR="${MC_MIN_DRIVER_MAJOR:-580}"   # the pinned torch/vLLM wheels are CUDA 13.0 builds
@@ -64,10 +65,15 @@ export WANDB_MODE="${WANDB_MODE:-online}"
 export WANDB_PROJECT="${WANDB_PROJECT:-mixed-cuts}"
 export WANDB_INIT_TIMEOUT="${WANDB_INIT_TIMEOUT:-180}"
 
-# --- layout: one H100 per run (configs/train/{layout,memory,hardware}/) --------------------------
+# --- layout: one GPU per run (configs/train/{layout,memory,hardware}/) ---------------------------
+# MC_MEMORY_PLAN picks the training recipe of BOTH arms (decision 017):
+#   plan_a_fullft_gpu            full fine-tune, lr 1e-6 constant (default; one 141 GB H200 per arm)
+#   plan_b_lora_calibrated_gpu   LoRA r=64/alpha=128, lr 2e-6 cosine (the fallback; fits an 80 GB H100)
+#   plan_b_lora_gpu              LoRA at lr 1e-5 constant: the recipe of the diverged H200 runs (016)
 export MC_LAYOUT=h100_1gpu
 export MC_SLURM_GPUS=1                   # GPUs per run; the config checks compare it with the layout
-export MC_TRAIN_OVERRIDES="layout=h100_1gpu memory=plan_b_lora_gpu hardware=h100"
+export MC_MEMORY_PLAN="${MC_MEMORY_PLAN:-plan_a_fullft_gpu}"
+export MC_TRAIN_OVERRIDES="layout=h100_1gpu memory=${MC_MEMORY_PLAN} hardware=h100"
 export MC_REWARD_WORKERS="${MC_REWARD_WORKERS:-4}"
 mc_sbatch_args() { echo "mc_sbatch_args: no SLURM on Jarvislabs; use jarvis/train.sh" >&2; return 1; }
 mc_sbatch_exclude() { return 0; }

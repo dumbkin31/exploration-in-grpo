@@ -1,12 +1,16 @@
 # @package _global_
-# Layout: ONE NVIDIA H100 SXM 80 GB per run on Jarvislabs (16 vCPU and 200 GB RAM per GPU; decision 013).
-# Pairs with memory=plan_b_lora_gpu and hardware=h100. The two arms run as two independent runs, one per
-# GPU (a 2-GPU instance or two 1-GPU instances), each with its own Ray instance.
+# Layout: ONE NVIDIA H100 SXM 80 GB or H200 141 GB per run on Jarvislabs (16 vCPU and 200 GB RAM per GPU;
+# decisions 013, 017). Pairs with hardware=h100 and a GPU-resident memory plan picked by MC_MEMORY_PLAN
+# (configs/jarvis.env.sh): plan_a_fullft_gpu (H200 only), plan_b_lora_calibrated_gpu or plan_b_lora_gpu. The
+# two arms run as two independent runs, one per GPU (a 2-GPU instance or two 1-GPU instances), each with its
+# own Ray instance.
 #
-# Rollout budget: the actor stays resident on the GPU (fp32 base 6.9 GB + LoRA masters, grads and Adam
-# ~1.1 GB), so vLLM gets 0.60 x 80 GB = 48 GB: 3.4 GB bf16 weights + ~2 GB activations/graphs + ~42 GB KV
-# = ~360k tokens (Qwen3-1.7B: 112 KiB per token), enough for 256 concurrent sequences at typical lengths.
-# vLLM sleeps (level 2) during the update, so the trainer then has the whole card.
+# Rollout budget: the actor stays resident on the GPU (LoRA: fp32 base 6.9 GB + LoRA masters, grads and Adam
+# ~1.1 GB), so on an H100 vLLM gets 0.60 x 80 GB = 48 GB: 3.4 GB bf16 weights + ~2 GB activations/graphs +
+# ~42 GB KV = ~360k tokens (Qwen3-1.7B: 112 KiB per token), enough for 256 concurrent sequences at typical
+# lengths. On an H200 the same 0.60 is 85 GB, which leaves room for a full fine-tune's ~35 GB of actor and
+# reference state (plan_a_fullft_gpu). vLLM sleeps (level 2) during the update, so the trainer then has the
+# whole card.
 trainer:
   n_gpus_per_node: 1
 actor_rollout_ref:
