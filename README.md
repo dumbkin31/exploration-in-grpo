@@ -293,9 +293,11 @@ maj@16 (Table 6): GRPO 89.3 / 45.7 / 29.7 / 71.0 / 36.5; Mixed-CUTS 90.4 / 49.2 
 Read our numbers with the benchmark sizes in mind: AIME24 and AIME25 have 30 problems (**one problem =
 3.3 pp**), AMC23 has 40 (2.5 pp). The harness reports pass@1 as the mean over 16 samples with bootstrap
 95% CIs over problems, never a single greedy decode, and the eval decoding follows the paper's validation
-settings (T=1.0, top_p 0.8, top_k 20, 5000 tokens). Compare arms only across several seeds. Under the
-boxed-plus-digit validity rule ([008](docs/decisions/008-digit-rule-and-filtered-prompts.md)) each
-benchmark also reports its accuracy ceiling (fraction of ground truths that contain a digit).
+settings (T=1.0, top_p 0.8, top_k 20, 5000 tokens). Compare arms only across several seeds. Since
+[017](docs/decisions/017-recipe-after-h200-divergence.md) any non-empty final `\boxed{}` is graded by
+math-verify, digit or not; the boxed-plus-digit rule of [008](docs/decisions/008-digit-rule-and-filtered-prompts.md)
+is retired, so the reported `digit_rule_ceiling` is only the share of ground truths that contain a digit.
+Re-scored MATH-500 numbers of the H200 runs are in decision 017.
 
 ## 8. What gets logged (diagnostics glossary)
 

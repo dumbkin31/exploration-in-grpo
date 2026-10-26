@@ -100,3 +100,31 @@ new recipe under a new `MC_RUN_TAG` (or seed).
 
 The cosine schedule of the LoRA plan decays to 0 at `trainer.total_training_steps`: capping a run with
 `MC_TOTAL_STEPS` shortens it, and changing the cap on a resume makes the learning rate jump.
+
+## 4. Symbolic answer grading: a non-empty final `\boxed{}` is valid; no digit required
+
+`mixed_cuts.reward.extract_answer` returns `valid = len(pred) > 0` instead of "contains a digit". Answers
+such as `\frac{3}{4}` or `2\sqrt{5}` already passed (they contain digits); the change admits digit-less
+answers (`\pi`, `\infty`, `p - q`, `\cot x`, `\text{east}`, `\text{(C)}`), which math-verify now grades. An
+answer it cannot parse, or that times out, still scores 0 (the subprocess call is wrapped, `score_math`).
+This replaces the paper's Appendix B.4 validity rule of decision 008 for training AND evaluation (user
+decision 2026-10-26: the training reward and eval correctness stay one function). Unchanged: the training
+set filter of decision 008 (`scripts/prepare_data.py` still drops the 116 digit-less MATH ground truths:
+7,382 training problems), and GPQA's letter parser.
+
+**Re-scored MATH-500 evaluations of the H200 runs** (pass@1, mean over 16 samples; only the 11 digit-less
+problems changed, no answer to a numeric problem flipped): base 70.19 -> 71.88, GRPO step 40 78.11 -> 80.08,
+Mixed-CUTS step 40 71.51 -> 73.20, Mixed-CUTS step 50 67.36 -> 69.01. Compare new runs with these numbers,
+not with the ones in `results/h200-2026-10-01/`. AIME and AMC ground truths all contain digits. The
+evaluation's `digit_rule_ceiling` field is now only the share of digit-containing ground truths, not a
+ceiling.
+
+**Could the training filter be dropped?** Technically yes: all 11 digit-less MATH-500 ground truths
+(names, directions, letter choices, symbolic expressions; the same kinds as the 116 filtered training
+answers) parse and verify against themselves, and the four models above scored 5-16 of 16 on each under the
+new grader with plausible verdicts (`\cot x` = `\frac{\cos x}{\sin x}`; `-\pi` != `\pi`). Caveats: the 116
+training answers themselves were not checked (the raw dataset is not on this machine; run
+`reward._math_verify_equal(gt, gt)` over them first); letter answers are guessable and free-text verdicts
+are strict (`\text{(E) Hyperbola}` scores 0 against `\text{(E)}`); and dropping the filter changes the data
+(and its seeded order) relative to the H200 runs. It adds 1.5% of the prompts, so keeping the filter for this
+retrain keeps the four changes the only differences.
