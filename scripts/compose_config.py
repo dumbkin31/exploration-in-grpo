@@ -8,6 +8,8 @@ allocation. Works without verl installed by pointing ``--verl-config-dir`` at a 
     python scripts/compose_config.py smoke                      # dump the composed YAML
     python scripts/compose_config.py smoke --check              # assert the invariants below
     python scripts/compose_config.py math_mixed_cuts --verl-config-dir /path/to/verl/trainer/config
+    python scripts/compose_config.py math_grpo --select trainer.total_training_steps   # one value
+    python scripts/compose_config.py math_grpo --select a.b --select c.d               # a.b=... and c.d=... lines
 
 Invariants checked with --check (see the [checked] marks in configs/train/base_grpo.yaml):
   * hardware profile (hw_profile, configs/train/hardware/): sm75 = fp16 only (no 'bfloat16'/'bf16'
@@ -44,6 +46,7 @@ PLAN_SCHEDULES = {
     # plan_a_* (the paper's full-fine-tuning lr)
     "full fine-tune": ((1e-6, "constant"),),
 }
+_ABSENT = object()  # --select of a key the composed config does not have
 
 
 def compose_train_config(name: str, verl_config_dir: str | None, overrides: list[str]):
@@ -335,7 +338,12 @@ def main() -> int:
         "--verl-config-dir", default=None, help="verl/trainer/config of a checkout (default: installed verl)"
     )
     ap.add_argument("--check", action="store_true")
-    ap.add_argument("--select", default=None, help="only print this subtree, e.g. actor_rollout_ref.rollout")
+    ap.add_argument(
+        "--select",
+        action="append",
+        default=[],
+        help="only print this subtree, e.g. actor_rollout_ref.rollout; repeated: one key=value line per leaf",
+    )
     ap.add_argument("overrides", nargs="*", help="extra hydra overrides")
     args = ap.parse_args()
     cfg = compose_train_config(args.config, args.verl_config_dir, args.overrides)
@@ -345,7 +353,15 @@ def main() -> int:
             print("FAIL ", p)
         print(f"== {args.config}: {'OK' if not problems else str(len(problems)) + ' problem(s)'} ==")
         return 1 if problems else 0
-    node = OmegaConf.select(cfg, args.select) if args.select else cfg
+    if len(args.select) > 1:  # several leaves in one compose (slurm/common.sh::mc_recipe_fingerprint)
+        values = [(key, OmegaConf.select(cfg, key, default=_ABSENT)) for key in args.select]
+        bad = [key for key, value in values if value is _ABSENT or OmegaConf.is_config(value)]
+        if bad:
+            ap.error(f"--select {', '.join(bad)}: not a leaf of the composed {args.config} config")
+        for key, value in values:
+            print(f"{key}={value}")
+        return 0
+    node = OmegaConf.select(cfg, args.select[0]) if args.select else cfg
     if OmegaConf.is_config(node):
         print(OmegaConf.to_yaml(node, resolve=False))
     else:  # a leaf value (e.g. --select trainer.total_training_steps, read by jarvis/train.sh)
