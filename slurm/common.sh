@@ -285,7 +285,39 @@ mc_mirror() {
 }
 
 _mc_mirror_loop() {
-  while sleep "${MC_MIRROR_INTERVAL:-600}"; do mc_mirror; done
+  while sleep "${MC_MIRROR_INTERVAL:-600}"; do mc_keep_checkpoints || true; mc_mirror; done
+}
+
+mc_keep_checkpoints() {
+  # verl keeps only the newest trainer.max_actor_ckpt_to_keep checkpoints, so the last good one is gone by the
+  # time a diverged run is stopped (decision 016). Keep every MC_KEEP_EVERY-th completed checkpoint (default 10,
+  # 0 disables) in checkpoints_kept/ as hard links: model weights, configs and dataloader state, not the
+  # optimizer, so for evaluation and scripts/merge_ckpt.sh, not for resuming. Free while verl still holds the
+  # original; ~0.28 GB per LoRA step once verl deletes it (decision 018). Runs from the mirror loop (every
+  # MC_MIRROR_INTERVAL s; verl deletes step N when it saves step N+2) and at stage-out, before the pruning.
+  local every="${MC_KEEP_EVERY:-10}" ckdir="${MC_RUN_DIR}/checkpoints" kept="${MC_RUN_DIR}/checkpoints_kept"
+  case "${every}" in '' | *[!0-9]*) return 0 ;; esac
+  [ "${every}" -gt 0 ] && [ -d "${ckdir}" ] || return 0
+  local latest d step tmp
+  latest="$(cat "${ckdir}/latest_checkpointed_iteration.txt" 2>/dev/null || true)"
+  case "${latest}" in '' | *[!0-9]*) return 0 ;; esac
+  for d in "${ckdir}"/global_step_*; do
+    [ -d "${d}" ] || continue
+    step="${d##*_}"
+    case "${step}" in '' | *[!0-9]*) continue ;; esac
+    # completed (<= the tracker verl writes after a save), a multiple of MC_KEEP_EVERY, not kept yet
+    [ "${step}" -le "${latest}" ] && [ $((step % every)) -eq 0 ] && [ ! -e "${kept}/global_step_${step}" ] || continue
+    ls "${d}"/actor/model_*.pt >/dev/null 2>&1 || continue   # weights already pruned
+    tmp="${kept}/.global_step_${step}.partial"
+    rm -rf "${tmp}" && mkdir -p "${tmp}" || continue
+    if (cd "${d}" && find . -type d -exec mkdir -p "${tmp}/{}" \; \
+      && find . -type f ! -name 'optim_*' -exec ln {} "${tmp}/{}" \;); then
+      mv "${tmp}" "${kept}/global_step_${step}" && mc_log "kept checkpoint global_step_${step} in ${kept}"
+    else
+      rm -rf "${tmp}"
+      mc_log "WARN: keeping checkpoint global_step_${step} failed"
+    fi
+  done
 }
 
 mc_start_gpu_sampler() {
@@ -379,6 +411,7 @@ mc_stage_out() {
   mc_engine_log_facts || true
   mc_record_host_peak
   if [ -f "${MC_JOB_STDOUT}" ]; then cp -f "${MC_JOB_STDOUT}" "${MC_JOB_DIR}/" 2>/dev/null || true; fi
+  mc_keep_checkpoints || true
   mc_prune_checkpoints || true
   if [ -n "${_MC_MIRROR_PID:-}" ] && kill -0 "${_MC_MIRROR_PID}" 2>/dev/null; then kill "${_MC_MIRROR_PID}" 2>/dev/null || true; fi
   _MC_MIRROR_PID=""
