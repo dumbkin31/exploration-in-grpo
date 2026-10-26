@@ -436,11 +436,13 @@ mc_run_with_traps() {
 # The training recipe of a run (decision 017). resume_mode=auto continues whatever checkpoints the run dir
 # holds, so relaunching a run name under another recipe would silently continue the old weights (or fail to
 # load them: a full fine-tune cannot start from a LoRA-only checkpoint). These are the values the memory
-# plans and decision 017 change; MC_TRAIN_OVERRIDES names the plan (memory=...).
+# plans and decision 017 change, plus the step count a cosine schedule decays over; MC_TRAIN_OVERRIDES
+# names the plan (memory=...).
 _MC_RECIPE_KEYS=(
   actor_rollout_ref.model.lora_rank
   actor_rollout_ref.actor.optim.lr
   actor_rollout_ref.actor.optim.lr_scheduler_type
+  trainer.total_training_steps          # the schedule's horizon (verl trainer_base.py:712-728); MC_TOTAL_STEPS sets it
   actor_rollout_ref.actor.loss_agg_mode
   actor_rollout_ref.actor.kl_loss_type
 )

@@ -128,30 +128,47 @@ def test_a_recipe_that_does_not_compose_stops_the_job(tmp_path: Path):
     assert not (run / "recipe.txt").exists()
 
 
-def test_train_main_checks_the_recipe_before_starting_the_trainer(tmp_path: Path):
-    run = tmp_path / "math_grpo-h200-s1"
-    _checkpoint(run, 72)
-    (tmp_path / "job").mkdir()
-    stubs = """
-mc_job_init() { :; }        # the paths come from the environment below
+TRAIN_MAIN = """
+mc_job_init() { :; }        # the paths come from the environment (_train_main_env)
 mc_stage_in() { :; }
 python() { :; }             # the config preflight and the memory report
 mc_run_with_traps() { echo "TRAINER STARTED"; }
 mc_train_main math_grpo extra.key=1"""
-    env = {
+
+
+def _train_main_env(tmp_path: Path, total_steps: str) -> dict[str, str]:
+    (tmp_path / "job").mkdir(exist_ok=True)
+    return {
         "MC_JOB_DIR": str(tmp_path / "job"),
         "MC_STAGED_MODEL_DIR": "model",
         "MC_STAGED_DATA_DIR": "data",
-        "MC_TOTAL_STEPS": "100",
+        "MC_TOTAL_STEPS": total_steps,
     }
-    p = _guard(tmp_path, run, PLAN_A, stubs, **env)
+
+
+def test_train_main_checks_the_recipe_before_starting_the_trainer(tmp_path: Path):
+    run = tmp_path / "math_grpo-h200-s1"
+    _checkpoint(run, 72)
+    env = _train_main_env(tmp_path, "100")
+    p = _guard(tmp_path, run, PLAN_A, TRAIN_MAIN, **env)
     assert p.returncode == 7 and "TRAINER STARTED" not in p.stdout, p.stdout + p.stderr
 
-    p = _guard(tmp_path, run, PLAN_A, stubs, MC_ALLOW_RECIPE_CHANGE="1", **env)
+    p = _guard(tmp_path, run, PLAN_A, TRAIN_MAIN, MC_ALLOW_RECIPE_CHANGE="1", **env)
     assert "TRAINER STARTED" in p.stdout and _passed(p), p.stdout + p.stderr
     # the guard composes with the trainer's overrides: MC_TOTAL_STEPS, MC_TRAIN_OVERRIDES, then the CLI ones
     trainer_overrides = f"trainer.total_training_steps=100 {PLAN_A} extra.key=1"
     assert f"args=math_grpo {trainer_overrides}" in (run / "recipe.txt").read_text()
+
+
+def test_a_new_step_cap_on_a_resume_is_refused(tmp_path: Path):
+    # the cosine schedule decays to 0 at total_training_steps: a new cap mid-run makes the lr jump (017)
+    run = tmp_path / "math_grpo-h200r2-s1"
+    p = _guard(tmp_path, run, PLAN_A, TRAIN_MAIN, **_train_main_env(tmp_path, "100"))
+    assert "TRAINER STARTED" in p.stdout, p.stdout + p.stderr
+    _checkpoint(run, 30)
+    p = _guard(tmp_path, run, PLAN_A, TRAIN_MAIN, **_train_main_env(tmp_path, "60"))
+    assert p.returncode == 7 and "TRAINER STARTED" not in p.stdout, p.stdout + p.stderr
+    assert "trainer.total_training_steps=60" in p.stdout and "trainer.total_training_steps=100" in p.stdout
 
 
 def _verl_config_dir() -> str | None:  # as in tests/test_layout_guards.py
@@ -160,6 +177,28 @@ def _verl_config_dir() -> str | None:  # as in tests/test_layout_guards.py
         if d and Path(d, "ppo_trainer.yaml").exists():
             return d
     return None
+
+
+def _real_fingerprint(tmp_path: Path, plan: str, *extra: str) -> list[str]:
+    """mc_recipe_fingerprint for math_grpo with the Jarvislabs overrides of `plan`, composed for real."""
+    verl_dir = _verl_config_dir()
+    has_verl = verl_dir is not None or importlib.util.find_spec("verl") is not None
+    if importlib.util.find_spec("hydra") is None or not has_verl:
+        pytest.skip("needs hydra and verl's config tree (installed verl, or VERL_CONFIG_DIR=<checkout>/...)")
+    overrides = f"layout=h100_1gpu memory={plan} hardware=h100"
+    # without an installed verl, point compose_config.py at the checkout (the trainer always uses installed verl)
+    shim = f'python() {{ command python "$@" --verl-config-dir "{verl_dir}"; }}' if verl_dir else ""
+    call = f"mc_recipe_fingerprint math_grpo {' '.join(extra)} {overrides}"
+    script = f'set -euo pipefail; source "{REPO}/slurm/common.sh"; {shim}\n{call}'
+    env = {
+        **os.environ,
+        "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}",  # `python` = this interpreter
+        "MC_REPO_ROOT": str(REPO),
+        "MC_TRAIN_OVERRIDES": overrides,
+    }
+    p = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=300)
+    assert p.returncode == 0, p.stdout + p.stderr
+    return p.stdout.splitlines()
 
 
 @pytest.mark.parametrize(
@@ -171,27 +210,18 @@ def _verl_config_dir() -> str | None:  # as in tests/test_layout_guards.py
     ],
 )
 def test_real_fingerprint_of_each_jarvis_plan(tmp_path: Path, plan, lora_rank, lr, schedule):
-    verl_dir = _verl_config_dir()
-    has_verl = verl_dir is not None or importlib.util.find_spec("verl") is not None
-    if importlib.util.find_spec("hydra") is None or not has_verl:
-        pytest.skip("needs hydra and verl's config tree (installed verl, or VERL_CONFIG_DIR=<checkout>/...)")
-    overrides = f"layout=h100_1gpu memory={plan} hardware=h100"
-    # without an installed verl, point compose_config.py at the checkout (the trainer always uses installed verl)
-    shim = f'python() {{ command python "$@" --verl-config-dir "{verl_dir}"; }}' if verl_dir else ""
-    script = f'set -euo pipefail; source "{REPO}/slurm/common.sh"; {shim}\nmc_recipe_fingerprint math_grpo {overrides}'
-    env = {
-        **os.environ,
-        "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}",  # `python` = this interpreter
-        "MC_REPO_ROOT": str(REPO),
-        "MC_TRAIN_OVERRIDES": overrides,
-    }
-    p = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=300)
-    assert p.returncode == 0, p.stdout + p.stderr
-    assert p.stdout.splitlines() == [
-        f"MC_TRAIN_OVERRIDES={overrides}",
+    assert _real_fingerprint(tmp_path, plan) == [
+        f"MC_TRAIN_OVERRIDES=layout=h100_1gpu memory={plan} hardware=h100",
         f"actor_rollout_ref.model.lora_rank={lora_rank}",
         f"actor_rollout_ref.actor.optim.lr={lr}",
         f"actor_rollout_ref.actor.optim.lr_scheduler_type={schedule}",
+        "trainer.total_training_steps=100",
         "actor_rollout_ref.actor.loss_agg_mode=seq-mean-token-mean",
         "actor_rollout_ref.actor.kl_loss_type=low_var_kl+",
     ]
+
+
+def test_real_fingerprint_follows_the_step_cap(tmp_path: Path):
+    # MC_TOTAL_STEPS=60 reaches the trainer as this override; the cosine schedule then decays to 0 at step 60
+    lines = _real_fingerprint(tmp_path, "plan_b_lora_calibrated_gpu", "trainer.total_training_steps=60")
+    assert "trainer.total_training_steps=60" in lines
