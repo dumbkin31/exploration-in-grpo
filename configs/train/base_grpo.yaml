@@ -62,6 +62,13 @@ stability:
   entropy_collapse_window: 20
   entropy_collapse_ratio: 0.25       # entropy below 0.25 x step-1 entropy inside the window = alert
   abort_on_nan: false                # warn loudly; flip to true to stop the run on the first NaN
+  # policy drift, the onset of the H200 divergence (018): thresholds from the H200 logs, where healthy steps
+  # stayed below |ppo_kl| 0.0096 and these stop Mixed-CUTS at step 50 and GRPO at step 67
+  ppo_kl_max: 0.02                   # |actor/ppo_kl|: drift from pi_old inside one step
+  entropy_rise_ratio: 2.0            # entropy above 2 x its lowest value so far ...
+  entropy_rise_after: 5              # ... once 5 steps have set that minimum
+  divergence_patience: 2             # consecutive drift steps before the abort
+  abort_on_divergence: true          # stop the run (it resumes on resubmission; every 10th checkpoint is kept)
 
 # ---- data -------------------------------------------------------------------------------------
 data:

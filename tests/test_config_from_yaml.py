@@ -36,6 +36,8 @@ def test_base_yaml_blocks_build_the_dataclasses():
     assert cfg.cuts.k == 5 and abs(cfg.cuts.delta - 0.03) < 1e-12 and cfg.cuts.t_warm == 5
     st = StabilityConfig.from_mapping(_yaml_block("base_grpo", "stability"))
     assert st.grad_norm_max == 50.0 and st.abort_on_nan is False
+    assert (st.ppo_kl_max, st.entropy_rise_ratio, st.entropy_rise_after) == (0.02, 2.0, 5)
+    assert st.divergence_patience == 2 and st.abort_on_divergence is True
 
 
 def test_unknown_mixed_cuts_key_is_a_clear_error():
