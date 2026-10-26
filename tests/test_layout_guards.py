@@ -138,6 +138,18 @@ def test_every_rollout_is_normalised_by_its_own_length(compose, name):
     assert any("loss_agg_mode" in p for p in mod.check(cfg))
 
 
+@pytest.mark.parametrize("name", ["math_grpo", "math_mixed_cuts"])
+def test_kl_loss_keeps_the_k3_value_with_the_k2_gradient(compose, name):
+    """Decision 017: low_var_kl+ at 1e-3 in both arms; plain k3 (and k1) are refused."""
+    mod, cfg = compose(name, *H100)
+    actor = cfg.actor_rollout_ref.actor
+    assert actor.use_kl_loss is True and actor.kl_loss_coef == 0.001
+    assert actor.kl_loss_type == "low_var_kl+"
+    for other in ("low_var_kl", "kl"):
+        mod, cfg = compose(name, *H100, f"actor_rollout_ref.actor.kl_loss_type={other}")
+        assert any("kl_loss_type" in p for p in mod.check(cfg))
+
+
 def test_learning_rate_follows_the_memory_plan(compose):
     """Until 2026-09-29 base_grpo.yaml's body overrode plan_b_lora's 1e-5 with 1e-6 (decision 013)."""
     _mod, lora = compose("math_grpo")

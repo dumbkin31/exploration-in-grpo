@@ -15,7 +15,7 @@ Invariants checked with --check (see the [checked] marks in configs/train/base_g
   * actor.optim.lr matches the memory plan (LoRA 1e-5, full FT 1e-6): catches a later layer overriding it
   * D4: n_std + n_cuts == group_size == rollout.n; CUTS K/delta/T_warm = paper values
   * D1: rollout_correction.rollout_is/rollout_rs null, bypass_mode false, calculate_log_probs false
-  * D2: rollout T=1.0/top_p=1.0, validation 1.0/0.8/20, non-thinking, KL low_var_kl 1e-3
+  * D2: rollout T=1.0/top_p=1.0, validation 1.0/0.8/20, non-thinking, KL low_var_kl+ (k3 value, k2 gradient) 1e-3
   * loss: seq-mean-token-mean, i.e. every rollout normalised by its own length (paper Eq. 2, decision 017)
   * layout: one node, TP == n_gpus_per_node == MC_SLURM_GPUS (1 GPU: LoRA; on sm75 also the FSDP2 offload
     policy and the research/low host limits; 4 on nlp), sleep mode, gradient checkpointing, dynamic bsz
@@ -157,8 +157,11 @@ def check(cfg) -> list[str]:
         fail("data.apply_chat_template_kwargs.enable_thinking must be false (Qwen3 non-thinking)")
     if cfg.actor_rollout_ref.actor.use_kl_loss is not True or abs(arr.actor.kl_loss_coef - 0.001) > 1e-12:
         fail("actor.use_kl_loss must be true with kl_loss_coef 1e-3 (paper)")
-    if arr.actor.kl_loss_type != "low_var_kl":
-        fail(f"actor.kl_loss_type must be low_var_kl: {arr.actor.kl_loss_type}")
+    # verl does not validate kl_loss_type when the config loads (a misspelling raises at the first update)
+    if arr.actor.kl_loss_type != "low_var_kl+":
+        fail(
+            f"actor.kl_loss_type must be low_var_kl+ (k3 value, k2 gradient; decision 017): {arr.actor.kl_loss_type}"
+        )
     if arr.actor.loss_agg_mode != "seq-mean-token-mean":
         fail(
             f"actor.loss_agg_mode must be seq-mean-token-mean (per-rollout normalisation, decision 017): {arr.actor.loss_agg_mode}"

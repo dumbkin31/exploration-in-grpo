@@ -115,7 +115,10 @@ actor_rollout_ref:
     entropy_coeff: 0.0
     use_kl_loss: true                # paper: KL enabled ...
     kl_loss_coef: 0.001              # paper: ... coefficient 1e-3 ...
-    kl_loss_type: low_var_kl         # paper: ... low-variance estimator
+    kl_loss_type: low_var_kl+        # paper's low-variance (k3) VALUE, logged as before, with the k2 GRADIENT
+                                     # (log pi - log pi_ref) * grad log pi via verl's straight-through '+'
+                                     # (core_algos.py:2187): no pi_ref/pi ratio in the gradient, and no zero
+                                     # gradient where k3 hits its clamp (decision 017)  [checked]
     entropy_from_logits_with_chunking: true   # 152k vocab x 6k tokens in fp32 does not fit otherwise
     entropy_checkpointing: true
     data_loader_seed: ${seed}
