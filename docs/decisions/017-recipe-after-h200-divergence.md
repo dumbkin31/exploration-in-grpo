@@ -55,3 +55,48 @@ pins the exact string.
 
 The H200 logs do not support a k3 blow-up as the trigger: `actor/grad_norm` stayed below 2.7, and the first
 divergence signal was `actor/ppo_kl` (pi_theta vs pi_old inside one step) while `actor/kl_loss` was still ~0.2.
+
+## 3. Full fine-tuning on one H200, with a calibrated LoRA fallback
+
+Two new memory plans; `plan_b_lora_gpu` (LoRA, lr 1e-5 constant) stays to reproduce the H200 runs.
+
+| | `plan_a_fullft_gpu` (default) | `plan_b_lora_calibrated_gpu` |
+|---|---|---|
+| `model.lora_rank` / `lora_alpha` / `target_modules` | 0 (full fine-tune) | 64 / 128 / all-linear |
+| `actor.optim.lr` | 1.0e-6 | 2.0e-6 |
+| `actor.optim.lr_scheduler_type` | constant | cosine (no warmup, to 0 at `total_training_steps`) |
+| offload (actor + reference) | none | none |
+| checkpoint | model + Adam, ~21 GB | adapters + Adam, ~0.9 GB |
+| reference model | separate fp32 copy (6.9 GB) | the actor with the adapter disabled |
+
+verl keys checked in v0.9.0: `model.lora_rank`/`lora_alpha`/`target_modules` (`config/model/hf_model.yaml:42-49`,
+consumed by `workers/engine/fsdp/transformer_impl.py:143,342`; `lora_rank: 0` disables LoRA),
+`actor.optim.lr_scheduler_type` in {constant, cosine} (`config/optim/fsdp.yaml:39`, asserted in
+`workers/config/optimizer.py:123`; `warmup_style` is its deprecated name). The scheduler steps once per
+training step (`workers/engine_workers.py`, `update_lr_scheduler`), over `trainer.total_training_steps`
+(`trainer/ppo/v1/trainer_base.py:712-728`).
+
+**Selection.** The Jarvislabs launcher passes `memory=...` on the command line (`MC_TRAIN_OVERRIDES`), which
+would override any default in the YAML. `configs/jarvis.env.sh` therefore builds that override from
+`MC_MEMORY_PLAN` (default `plan_a_fullft_gpu`, user decision 2026-10-26). Both arms always get the same plan.
+
+**Memory on one H200 (141 GB), full fine-tune.** The LoRA arms peaked at 16.1 GB allocated in the update
+(fp32 base 6.9 GB + adapter state + ~8 GB activations at 32k-token micro-batches with gradient
+checkpointing). Full fine-tuning adds fp32 grads (6.9 GB, update only) and Adam (13.8 GB) and a separate fp32
+reference (6.9 GB): rollout ~121 GB (vLLM 0.60 x 141 = 85 GB beside ~35 GB of actor and reference), update
+~43 GB with vLLM asleep, and verl empties the CUDA cache after each update (`engine_workers.py:761`) before
+vLLM wakes up. No OOM expected; micro-batching, gradient checkpointing and the batch sizes are unchanged. It
+does not fit an 80 GB H100 at this layout's 0.60 (48 + 35 + 2 > 80): use the LoRA plan there.
+
+**Disk, the real risk.** `save_freq: 1` and `max_actor_ckpt_to_keep: 2` with ~21 GB checkpoints in the durable
+run dir: ~42 GB per arm, ~84 GB for both, plus a transient third checkpoint while saving; the instance's
+`/home` had 73 GiB free at the last H200 attempt. Free disk, or lower `max_actor_ckpt_to_keep`/raise
+`save_freq`, before a full-fine-tune run. `scripts/merge_ckpt.sh` already converts full-FT checkpoints with
+verl's model merger.
+
+**Run names.** `resume_mode: auto` resumes whatever checkpoints a run dir holds, and the instance's
+`configs/local.env.sh` sets `MC_RUN_TAG=h200`: relaunching seed 1 would resume the diverged runs. Start the
+new recipe under a new `MC_RUN_TAG` (or seed).
+
+The cosine schedule of the LoRA plan decays to 0 at `trainer.total_training_steps`: capping a run with
+`MC_TOTAL_STEPS` shortens it, and changing the cap on a resume makes the learning rate jump.

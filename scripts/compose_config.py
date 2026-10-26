@@ -12,12 +12,12 @@ allocation. Works without verl installed by pointing ``--verl-config-dir`` at a 
 Invariants checked with --check (see the [checked] marks in configs/train/base_grpo.yaml):
   * hardware profile (hw_profile, configs/train/hardware/): sm75 = fp16 only (no 'bfloat16'/'bf16'
     anywhere) + TRITON_ATTN; h100 = bf16 compute + FLASH_ATTN; both: sdpa, no remove-padding
-  * actor.optim.lr matches the memory plan (LoRA 1e-5, full FT 1e-6): catches a later layer overriding it
+  * actor.optim lr + lr_scheduler_type match a memory plan (PLAN_SCHEDULES): catches a later layer overriding it
   * D4: n_std + n_cuts == group_size == rollout.n; CUTS K/delta/T_warm = paper values
   * D1: rollout_correction.rollout_is/rollout_rs null, bypass_mode false, calculate_log_probs false
   * D2: rollout T=1.0/top_p=1.0, validation 1.0/0.8/20, non-thinking, KL low_var_kl+ (k3 value, k2 gradient) 1e-3
   * loss: seq-mean-token-mean, i.e. every rollout normalised by its own length (paper Eq. 2, decision 017)
-  * layout: one node, TP == n_gpus_per_node == MC_SLURM_GPUS (1 GPU: LoRA; on sm75 also the FSDP2 offload
+  * layout: one node, TP == n_gpus_per_node == MC_SLURM_GPUS (1 GPU: LoRA, or full FT on the h100 profile; on sm75 also the FSDP2 offload
     policy and the research/low host limits; 4 on nlp), sleep mode, gradient checkpointing, dynamic bsz
     with token budgets >= max_prompt_length + max_response_length (or the documented micro-batch-1 fallback)
   * one seed interpolated into data/rollout/actor/ref; resume_mode auto; outputs under paths.run_dir
@@ -35,6 +35,15 @@ from omegaconf import OmegaConf
 
 REPO = Path(__file__).resolve().parent.parent
 TRAIN_CONFIG_DIR = REPO / "configs" / "train"
+
+# (lr, lr_scheduler_type) pairs the memory plans in configs/train/memory/ declare. Any other pair means a
+# later config layer overrode the plan, as base_grpo.yaml once did with the LoRA lr (decision 013).
+PLAN_SCHEDULES = {
+    # plan_b_lora and plan_b_lora_gpu; plan_b_lora_calibrated_gpu (decision 017)
+    "LoRA": ((1e-5, "constant"), (2e-6, "cosine")),
+    # plan_a_* (the paper's full-fine-tuning lr)
+    "full fine-tune": ((1e-6, "constant"),),
+}
 
 
 def compose_train_config(name: str, verl_config_dir: str | None, overrides: list[str]):
@@ -191,23 +200,24 @@ def check(cfg) -> list[str]:
         )
     lora_rank = int(arr.model.get("lora_rank", 0) or 0)
     if n_gpus == 1:
-        # both 1-GPU targets train the same LoRA (decisions 012, 013)
-        if lora_rank <= 0:
+        # sm75 (research/low, Kaggle) trains LoRA (012); the h100 profile also allows the full fine-tune of
+        # plan_a_fullft_gpu, which needs a 141 GB H200 (017)
+        if lora_rank <= 0 and profile == "sm75":
             fail(
-                "the 1-GPU layouts train LoRA (memory=plan_b_lora / plan_b_lora_gpu): on research/low full FT needs "
-                "27.6 GB of host RAM for the optimizer alone, and the H100 runs keep the Ada plan for comparability"
+                "the 1-GPU sm75 layouts train LoRA (memory=plan_b_lora): on research/low full FT needs 27.6 GB of "
+                "host RAM for the optimizer alone"
             )
         if profile == "sm75" and not arr.actor.fsdp_config.get("offload_policy"):
             fail(
                 "the 1-GPU layout needs actor.fsdp_config.offload_policy=true (the fp32 base must live in host RAM)"
             )
-        if not (arr.model.get("lora") or {}).get("merge"):
+        if lora_rank > 0 and not (arr.model.get("lora") or {}).get("merge"):
             fail("the 1-GPU layout needs model.lora.merge=true (merged weights -> vLLM, level-2 sleep)")
         if not arr.model.get("use_fused_kernels"):
             fail(
                 "the 1-GPU layout needs model.use_fused_kernels=true: the padded path materialises 6k x 152k fp32 logits three times (OOM on 11 GiB)"
             )
-        if not (arr.actor.get("checkpoint") or {}).get("save_lora_only"):
+        if lora_rank > 0 and not (arr.actor.get("checkpoint") or {}).get("save_lora_only"):
             fail(
                 "the 1-GPU layout needs actor.checkpoint.save_lora_only=true: a full state-dict save gathers 6.9 GB on the host and OOM-kills the 30 GB cgroup at the weight sync"
             )
@@ -221,10 +231,12 @@ def check(cfg) -> list[str]:
             if int(cfg.data.get("dataloader_num_workers", 0) or 0) > 2:
                 fail("data.dataloader_num_workers must be <= 2 on the 1-GPU layout (10 CPUs)")
     lr = float(arr.actor.optim.lr)
-    want_lr = 1e-5 if lora_rank > 0 else 1e-6
-    if abs(lr - want_lr) > 1e-12:
+    schedule = str(arr.actor.optim.get("lr_scheduler_type") or "constant")
+    kind = "LoRA" if lora_rank > 0 else "full fine-tune"
+    if not any(abs(lr - want) <= 1e-12 and schedule == sched for want, sched in PLAN_SCHEDULES[kind]):
+        wanted = " or ".join(f"{want:g} {sched}" for want, sched in PLAN_SCHEDULES[kind])
         fail(
-            f"actor.optim.lr = {lr:g} but the {'LoRA' if lora_rank > 0 else 'full fine-tune'} plan uses {want_lr:g}: "
+            f"actor.optim lr {lr:g} {schedule} but the {kind} plans use {wanted}: "
             "a later config layer overrides the memory plan (decision 013)"
         )
     if lora_rank > 0:

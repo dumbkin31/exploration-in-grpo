@@ -221,6 +221,8 @@ bash jarvis/setup.sh         # driver >= 580 check, exact Ada lock, model + data
 bash jarvis/smoke.sh         # ~15 min: 2 tiny steps on the H100 layout + the GPU tests
 bash jarvis/start.sh         # 2 GPUs: math_grpo on GPU 0, math_mixed_cuts on GPU 1 (background)
                              # two 1-GPU instances: ARMS=math_grpo / ARMS=math_mixed_cuts bash jarvis/start.sh
+                             # recipe (decision 017): full fine-tune by default (H200 only);
+                             # MC_MEMORY_PLAN=plan_b_lora_calibrated_gpu for the LoRA fallback
 bash jarvis/status.sh -w     # step, minutes per step, ETA, checkpoint, launcher alive
 # after training (each eval needs a free GPU; ~20-40 min each):
 bash jarvis/eval.sh base 0                                  # the untrained model, reference row
@@ -231,8 +233,10 @@ bash jarvis/status.sh        # includes GPU-hours and INR spent so far (MC_GPU_R
 
 Run names are `math_grpo-h100-s1` and `math_mixed_cuts-h100-s1`; W&B runs of the same names in
 `anlp-mixed-cuts/mixed-cuts` log live. After a pause or a spot preemption, rerun `bash jarvis/start.sh`:
-each stopped arm resumes from its newest checkpoint (saved every step, 0.9 GB). Check the minutes per
-step after 3 steps against the budget in decision 013.
+each stopped arm resumes from its newest checkpoint (saved every step: 0.9 GB with LoRA, ~21 GB with the
+full fine-tune, two kept per arm). Because a run resumes whatever checkpoints its run dir holds, start a new
+recipe under a new run name (`MC_RUN_TAG`, or another seed). Check the minutes per step after 3 steps
+against the budget in decision 013.
 
 ## 6c. Kaggle (T4 notebooks; decision 014)
 

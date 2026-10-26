@@ -3,8 +3,9 @@
 # stay the default; one H100 on Jarvislabs is the other target (decision 013). The GPU count comes from
 # configs/train/layout/ (default research_1gpu: ONE card per job, decision 012; nlp_4gpu: the original
 # 4-card layout of decision 002; h100_1gpu), the memory plan from configs/train/memory/ (default
-# plan_b_lora; plan_a_* need the 4-card layout; plan_b_lora_gpu on 80 GB), and precision + attention
-# from configs/train/hardware/ (default sm75; h100).
+# plan_b_lora; plan_a_fullft_offload/plan_a_manual_offload need the 4-card layout; on Jarvislabs
+# MC_MEMORY_PLAN picks plan_a_fullft_gpu, plan_b_lora_calibrated_gpu or plan_b_lora_gpu, decision 017),
+# and precision + attention from configs/train/hardware/ (default sm75; h100).
 #
 # Layers on verl v0.9.0's `ppo_trainer` tree (through hydra.searchpath, declared by the leaf
 # configs and the launcher) and picks a memory plan from configs/train/memory/. The two
@@ -122,7 +123,8 @@ actor_rollout_ref:
     entropy_from_logits_with_chunking: true   # 152k vocab x 6k tokens in fp32 does not fit otherwise
     entropy_checkpointing: true
     data_loader_seed: ${seed}
-    optim:                           # lr: set by the memory plan (full FT 1e-6 as in the paper, LoRA 1e-5; 012/013)
+    optim:                           # lr + lr_scheduler_type: set by the memory plan, never here (013): full FT
+                                     # 1e-6 constant (paper), LoRA 1e-5 constant or 2e-6 cosine (012/013/017)
       weight_decay: 0.01
     fsdp_config:                     # dtype + mixed_precision: set by configs/train/hardware/
       seed: ${seed}
