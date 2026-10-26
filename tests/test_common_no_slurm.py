@@ -52,16 +52,17 @@ def _alive(pid: int) -> bool:
 
 
 # Ways mc_train_main stops between mc_job_init (which starts the sampler) and mc_run_with_traps (stage-out):
-# a bash stub, and the exit code of the config preflight (scripts/check_env.py).
+# a bash stub, the exit code of the config preflight (scripts/check_env.py), the job's exit code and message.
 EARLY_EXITS = {
-    "config preflight fails": ("mc_check_recipe() { :; }", 1),
-    "recipe guard refuses": ('mc_recipe_fingerprint() { echo "recipe"; }', 0),  # checkpoints, no recipe.txt
+    "config preflight fails": ("mc_check_recipe() { :; }", 1, 4, "config preflight FAILED"),
+    # the run dir has checkpoints but no recipe.txt
+    "recipe guard refuses": ("mc_recipe_fingerprint() { echo r; }", 0, 7, "recipe of those checkpoints"),
 }
 
 
 @pytest.mark.parametrize("early_exit", list(EARLY_EXITS))
 def test_an_early_exit_stops_the_gpu_sampler(tmp_path: Path, early_exit: str):
-    stub, preflight_rc = EARLY_EXITS[early_exit]
+    stub, preflight_rc, job_rc, message = EARLY_EXITS[early_exit]
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
     # stand-ins: a sampler that never exits by itself, and the config preflight
@@ -94,5 +95,33 @@ mc_train_main math_grpo"""
     alive = _alive(pid)
     if alive:
         os.kill(pid, 9)
-    assert p.returncode != 0, p.stdout + p.stderr
+    assert p.returncode == job_rc and message in p.stdout, p.stdout + p.stderr
     assert not alive, "the GPU sampler outlived the job"
+
+
+def test_a_failed_job_preflight_exits_4_with_its_message(tmp_path: Path):
+    # mc_job_init's preflight is a `python ... | tee` pipeline: under set -e + pipefail a failure used to end
+    # the job with rc 1 before its `test "${PIPESTATUS[0]}"` check could log and exit 4
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "configs").mkdir()
+    (repo / "scripts" / "check_env.py").write_text("import sys\nsys.exit(1)\n")
+    (repo / "configs" / "ada.env.sh").write_text(  # a stand-in site file: every path under tmp_path
+        f'export MC_STAGE_ROOT="{tmp_path}" MC_RUNS_DIR="{tmp_path}/runs" MC_CHECKPOINT_HOME=durable\n'
+        f'export MC_SCRATCH_ROOT="{tmp_path}/scratch" MC_SCRATCH_RUNS_DIR="{tmp_path}/scratch/runs"\n'
+        f'export MC_MODEL_DIR="{tmp_path}/model" MC_VENV_DIR="{tmp_path}/venv"\n'
+    )
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "python").symlink_to(sys.executable)
+    env = {
+        "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        "HOME": str(tmp_path),
+        "MC_REPO_ROOT": str(repo),
+    }
+    script = f"""set -euo pipefail
+source "{REPO}/slurm/common.sh"
+mc_check_driver() {{ :; }}   # no NVIDIA driver or GPU needed here
+mc_check_cuda() {{ :; }}
+mc_job_init math_grpo-s1"""
+    p = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=60)
+    assert p.returncode == 4 and "preflight FAILED; see" in p.stdout, p.stdout + p.stderr

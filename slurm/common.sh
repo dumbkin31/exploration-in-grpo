@@ -184,10 +184,13 @@ mc_job_init() {
     echo "git=$(git -C "${MC_REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo ?)"; date
   } > "${MC_JOB_DIR}/job_info.txt"
 
-  # Preflight: pins, sm_75, single node, engine version, storage, internet. Aborts on FAIL.
-  python "${MC_REPO_ROOT}/scripts/check_env.py" ${MC_PREFLIGHT_ARGS:---no-staged} --facts-json "${MC_ENV_FACTS_JSON}" \
-    | tee "${MC_JOB_DIR}/preflight.log"
-  test "${PIPESTATUS[0]}" -eq 0 || { mc_log "preflight FAILED; see ${MC_JOB_DIR}/preflight.log"; exit 4; }
+  # Preflight: pins, sm_75, single node, engine version, storage, internet. Aborts on FAIL. The pipeline is
+  # an `if` condition: anywhere else set -e + pipefail would end the job with rc 1 before this message.
+  if ! python "${MC_REPO_ROOT}/scripts/check_env.py" ${MC_PREFLIGHT_ARGS:---no-staged} \
+      --facts-json "${MC_ENV_FACTS_JSON}" | tee "${MC_JOB_DIR}/preflight.log"; then
+    mc_log "preflight FAILED; see ${MC_JOB_DIR}/preflight.log"
+    exit 4
+  fi
   if python - "$MC_ENV_FACTS_JSON" <<'PY'
 import json, sys
 try:
@@ -528,10 +531,13 @@ mc_train_main() {
   # Before staging anything: refuse to resume this run dir's checkpoints under another recipe (017).
   mc_check_recipe "${config}" "${extra[@]}" "$@"
   mc_stage_in
-  # Config-specific preflight (compose + invariants + chat template) now that the model is staged.
-  python "${MC_REPO_ROOT}/scripts/check_env.py" --no-pins --no-gpu --no-staged --only-config \
-    --config "${config}" --model-dir "${MC_STAGED_MODEL_DIR}" | tee -a "${MC_JOB_DIR}/preflight.log"
-  test "${PIPESTATUS[0]}" -eq 0 || { mc_log "config preflight FAILED"; exit 4; }
+  # Config-specific preflight (compose + invariants + chat template) now that the model is staged
+  # (an `if` condition, as in mc_job_init, so a failure reaches the message and exit 4).
+  if ! python "${MC_REPO_ROOT}/scripts/check_env.py" --no-pins --no-gpu --no-staged --only-config \
+      --config "${config}" --model-dir "${MC_STAGED_MODEL_DIR}" | tee -a "${MC_JOB_DIR}/preflight.log"; then
+    mc_log "config preflight FAILED"
+    exit 4
+  fi
   cd "${MC_REPO_ROOT}"
   mc_run_with_traps python -m mixed_cuts.main \
     --config-name "${config}" \
