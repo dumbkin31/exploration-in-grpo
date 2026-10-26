@@ -294,6 +294,9 @@ mc_start_gpu_sampler() {
   python "${MC_REPO_ROOT}/scripts/profile_memory.py" --watch "${MC_RUN_DIR}/gpu_mem.jsonl" --job "${MC_JOB_ID}" \
     > "${MC_JOB_DIR}/gpu_sampler.log" 2>&1 &
   export _MC_SAMPLER_PID=$!
+  # The sampler never exits by itself: stop it on ANY exit, also one before the caller installs its
+  # stage-out trap (mc_run_with_traps, eval/bench sbatch), which replaces this one and stops it too.
+  trap 'mc_stop_gpu_sampler' EXIT
 }
 
 mc_stop_gpu_sampler() {
@@ -473,7 +476,6 @@ mc_check_recipe() {
   local recipe saved="" step
   if ! recipe="$(mc_recipe_fingerprint "$@")"; then
     mc_log "ERROR: cannot compose the training recipe of config $1 (compose_config.py output above)"
-    mc_stop_gpu_sampler
     exit 4
   fi
   [ -f "${file}" ] && saved="$(grep -v '^#' "${file}" || true)"
@@ -496,10 +498,7 @@ mc_check_recipe() {
     mc_log "       resume_mode=auto would continue those checkpoints under this launch's recipe. Start it as a"
     mc_log "       new run instead: set a new MC_RUN_TAG (now '${MC_RUN_TAG:-unset}', e.g. in configs/local.env.sh) or seed."
     mc_log "       MC_ALLOW_RECIPE_CHANGE=1 resumes anyway (only if continuing these checkpoints is intended)."
-    if [ "${MC_ALLOW_RECIPE_CHANGE:-0}" != "1" ]; then
-      mc_stop_gpu_sampler   # started by mc_job_init; nothing else would stop it
-      exit 7
-    fi
+    [ "${MC_ALLOW_RECIPE_CHANGE:-0}" = "1" ] || exit 7
     mc_log "MC_ALLOW_RECIPE_CHANGE=1: resuming after step ${step} under this launch's recipe"
     [ -f "${file}" ] && mv -f "${file}" "${MC_RUN_DIR}/recipe.until-step-${step}.txt"
   fi
