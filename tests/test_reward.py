@@ -2,16 +2,59 @@
 
 from __future__ import annotations
 
+import logging
+import multiprocessing
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
+from pathlib import Path
+
 import pytest
 
 from mc_data.schema import DS_GPQA, DS_MATH500, DS_MATH_TRAIN
 from mixed_cuts import reward
+
+HALF = (DS_MATH500, "so the answer is \\boxed{0.5}", "\\frac{1}{2}")  # equal only under math-verify
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _pool():
     yield
     reward.shutdown_pool()
+
+
+@pytest.fixture
+def fresh_pool(monkeypatch):
+    """A pool built inside the test, so env vars set with the returned monkeypatch reach its workers."""
+    reward.shutdown_pool()
+    yield monkeypatch
+    reward.shutdown_pool()
+
+
+# Stand-ins for reward._math_verify_equal. They run in the spawned workers, which import them from
+# this module by name, so they must live at module level.
+def _exit_on_first_call(gold: str, pred: str) -> bool:
+    marker = Path(os.environ["MC_TEST_MARKER"])
+    if not marker.exists():
+        marker.touch()
+        os._exit(1)  # the worker dies mid-comparison, like an OOM kill or a segfault
+    return reward._math_verify_equal(gold, pred)
+
+
+def _always_exit(gold: str, pred: str) -> bool:
+    os._exit(1)
+
+
+def _slow_equal(gold: str, pred: str) -> bool:
+    time.sleep(1.0)
+    return reward._math_verify_equal(gold, pred)
+
+
+def _hang(gold: str, pred: str) -> bool:
+    Path(os.environ["MC_TEST_MARKER"]).write_text(str(os.getpid()))
+    time.sleep(600)  # stuck where math-verify's alarm cannot reach
+    return True
 
 
 @pytest.mark.parametrize(
@@ -137,3 +180,68 @@ def test_verl_keyword_call_style():
         data_source=DS_MATH500, solution_str="\\boxed{9}", ground_truth="9", extra_info={"x": 1}
     )
     assert out["score"] == 1.0
+
+
+def test_broken_pool_is_replaced(fresh_pool):
+    """A dead worker breaks a ProcessPoolExecutor for good; grading must not fall back to exact match."""
+    with pytest.raises(BrokenProcessPool):
+        reward._get_pool().submit(os._exit, 1).result(timeout=60)
+    before = reward.pool_restarts()
+    for _ in range(2):
+        assert reward.compute_score(*HALF)["score"] == 1.0
+    assert reward.pool_restarts() == before + 1
+
+
+def test_worker_death_mid_comparison_is_retried(fresh_pool, tmp_path):
+    fresh_pool.setenv("MC_TEST_MARKER", str(tmp_path / "died"))
+    fresh_pool.setattr(reward, "_math_verify_equal", _exit_on_first_call)
+    before = reward.pool_restarts()
+    assert reward.compute_score(*HALF)["score"] == 1.0
+    assert reward.pool_restarts() == before + 1
+
+
+def test_answer_that_kills_every_worker_scores_zero_with_a_warning(fresh_pool, caplog):
+    fresh_pool.setattr(reward, "_math_verify_equal", _always_exit)
+    before = reward.pool_restarts()
+    with caplog.at_level(logging.WARNING, logger=reward.__name__):
+        assert reward.compute_score(*HALF)["score"] == 0.0
+    assert reward.pool_restarts() == before + 2  # one retry, then give up
+    assert "died on the retry" in caplog.text
+
+
+def test_queue_wait_does_not_count_against_timeout(fresh_pool):
+    """verl runs up to 32 compute_score calls per process at once (module docstring)."""
+    fresh_pool.setenv("MC_REWARD_WORKERS", "1")
+    fresh_pool.setattr(reward, "_math_verify_equal", _slow_equal)  # 1 s per comparison
+    assert reward.compute_score(*HALF)["score"] == 1.0  # warm-up: spawn + imports
+    with ThreadPoolExecutor(4) as callers:
+        scores = list(callers.map(lambda _: reward.compute_score(*HALF, timeout=2.5)["score"], range(4)))
+    # the 3rd and 4th calls wait 2 s and 3 s for the worker; only their 1 s of running counts
+    assert scores == [1.0] * 4
+
+
+def test_stuck_worker_is_killed_and_replaced(fresh_pool, tmp_path):
+    pid_file = tmp_path / "pid"
+    real_equal = reward._math_verify_equal
+    fresh_pool.setenv("MC_REWARD_WORKERS", "1")
+    fresh_pool.setenv("MC_TEST_MARKER", str(pid_file))
+    fresh_pool.setattr(reward, "_math_verify_equal", _hang)
+    before = reward.pool_restarts()
+    assert reward.compute_score(*HALF, timeout=5)["score"] == 0.0
+    assert reward.pool_restarts() == before + 1
+
+    # the only worker is stuck: grading works again only because the pool was replaced
+    fresh_pool.setattr(reward, "_math_verify_equal", real_equal)
+    assert reward.compute_score(*HALF)["score"] == 1.0
+
+    stuck_pid = int(pid_file.read_text())
+    deadline = time.monotonic() + 30
+    while stuck_pid in {p.pid for p in multiprocessing.active_children()} and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert stuck_pid not in {p.pid for p in multiprocessing.active_children()}
+
+
+def test_zero_workers_fails_loudly(fresh_pool):
+    fresh_pool.setenv("MC_REWARD_WORKERS", "0")
+    with pytest.raises(ValueError, match="MC_REWARD_WORKERS"):
+        reward.compute_score(*HALF)
