@@ -70,3 +70,109 @@ def test_verl_keyword_call_style():
         data_source=DS_MATH500, solution_str="\\boxed{9}", ground_truth="9", extra_info={"x": 1}
     )
     assert out["score"] == 1.0
+
+
+# --- equivalence by value, not text: (gold, model answer); a bare answer is put in \boxed{} ---
+
+ONE_HALF_FORMS = ["1/2", "0.5", "\\frac{1}{2}", "\\dfrac{1}{2}", ".5", "0.50", "\\dfrac12", "2/4"]
+
+EQUAL_VALUE = [
+    ("1/2", "0.5"),
+    ("1/2", "\\frac{1}{2}"),
+    ("1/2", "\\dfrac12"),
+    ("1/2", ".5"),
+    ("1/2", "0.50"),
+    ("1/2", "The answer is \\boxed{0.5}"),
+    ("1/2", "2/4"),
+    ("0.75", "3/4"),
+    ("0.75", "\\frac{3}{4}"),
+    ("-3/2", "-1.5"),
+    ("2", "2.0"),
+    ("2", "4/2"),
+    ("1000", "1,000"),
+    ("1000", "1000.0"),
+    ("2\\sqrt{5}", "\\sqrt{20}"),
+    ("0.25", "1/4"),  # a terminating decimal equals its fraction exactly
+    ("1/4", "0.25"),
+    ("\\frac{1}{3}", "0.333333"),  # within reward.FLOAT_ROUNDING = 6 decimal places
+    ("12.5\\%", "12.50\\%"),  # percent on both sides (reward._strip_shared_percent)
+    ("50\\%", "50.0 \\%"),
+]
+
+DIFFERENT_VALUE = [
+    ("1/2", "0.25"),
+    ("1/2", "1/3"),
+    ("1/2", "2"),
+    ("0.5", "1/3"),
+    ("0.5", "5"),
+    ("5", "0.5"),
+    ("0.75", "0.7"),
+    ("-3/2", "1.5"),
+    ("2", "2.5"),
+    ("10\\%", "0.1\\%"),
+]
+
+# Policy questions that are not settled: rounded non-terminating decimals and percent vs plain
+# number. Only "binary score, no exception" is asserted here.
+REPORT_ONLY = [
+    ("1/3", "0.333"),
+    ("1/3", "0.33"),
+    ("2\\sqrt{5}", "4.47"),
+    ("50", "50\\%"),
+    ("50", "0.5"),
+]
+
+GARBAGE = [
+    "",
+    "no box at all",
+    "\\boxed{}",
+    "\\boxed{asdf}",
+    "\\boxed{\\frac{}{}}",
+    "\\boxed{1/0}",
+    "\\boxed{)(*&^%1}",
+    "\\boxed{\\frac{1}{2",  # unterminated box
+    "\\boxed{1\\%\\%}",
+]
+
+
+def _boxed(answer: str) -> str:
+    return answer if "\\boxed" in answer else f"\\boxed{{{answer}}}"
+
+
+@pytest.mark.parametrize("gold,answer", EQUAL_VALUE)
+def test_equal_values_in_other_formats_score_1(gold, answer):
+    assert reward.compute_score(DS_MATH500, _boxed(answer), gold)["score"] == 1.0
+
+
+@pytest.mark.parametrize("gold,answer", DIFFERENT_VALUE)
+def test_different_values_score_0(gold, answer):
+    assert reward.compute_score(DS_MATH500, _boxed(answer), gold)["score"] == 0.0
+
+
+@pytest.mark.parametrize("gold", ONE_HALF_FORMS)
+def test_every_form_of_one_half_matches_every_other(gold):
+    scores = {a: reward.compute_score(DS_MATH500, _boxed(a), gold)["score"] for a in ONE_HALF_FORMS}
+    assert scores == dict.fromkeys(ONE_HALF_FORMS, 1.0)
+
+
+@pytest.mark.parametrize("gold,answer", REPORT_ONLY)
+def test_unsettled_policy_cases_are_binary(gold, answer):
+    assert reward.compute_score(DS_MATH500, _boxed(answer), gold)["score"] in (0.0, 1.0)
+
+
+@pytest.mark.parametrize("response", [*GARBAGE, None])
+def test_unparseable_answers_score_0_without_raising(response):
+    out = reward.compute_score(DS_MATH500, response, "1/2", timeout=10)
+    assert out["score"] == 0.0 and set(out) == {"score", "pred", "has_boxed", "valid"}
+
+
+def test_math_verify_cannot_parse_percent_under_antlr_4_9():
+    """Why _strip_shared_percent exists. If this starts failing, the environment changed: revisit it."""
+    from importlib.metadata import version
+
+    from math_verify.parser import LatexExtractionConfig, parse
+
+    if not version("antlr4-python3-runtime").startswith("4.9"):
+        pytest.skip("only the ANTLR 4.9.3 parser of latex2sympy2_extended 1.11.0 lacks FUNC_GAMMA")
+    parsed = parse("\\boxed{50\\%}", (LatexExtractionConfig(),))
+    assert parsed and all(isinstance(x, str) for x in parsed)

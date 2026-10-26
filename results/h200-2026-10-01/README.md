@@ -19,6 +19,10 @@ lengths, truncation) in [`comparison/eval_all_checkpoints.md`](comparison/eval_a
 | Mixed-CUTS, step 40 | 71.5 | 16.0 | 6.7 | 43.1 | 31.5 |
 | Mixed-CUTS, step 50 | 67.4 | 8.5 | 3.5 | 34.4 | 33.0 |
 
+All 51,072 saved responses were re-graded on 2026-10-26 with the current answer grader
+(`scripts/regrade_eval.py`, no model re-run): no answer changed, so these numbers stand
+([`comparison/regrade.md`](comparison/regrade.md)).
+
 AIME24/25 have 30 problems each (CIs about +-10 points). GRPO's answers are much longer (55% of its AIME24
 samples hit the 5,000-token cap) and still score higher. pass@16 barely moves on MATH-500 (91.2 base, 91.4
 GRPO): training made the model more reliable rather than solving new problems.

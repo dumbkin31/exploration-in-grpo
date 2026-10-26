@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,36 @@ def _equal_fn(data_source: str, reward_cfg: dict[str, Any]):
         return reward.score_math(f"\\boxed{{{a}}}", b, timeout=reward_cfg.get("timeout", 30))["score"] == 1.0
 
     return equal
+
+
+def grade_problem(
+    data_source: str,
+    ground_truth: str,
+    texts: Sequence[str],
+    k_values: Sequence[int],
+    timeout: float = 30,
+) -> tuple[list[dict[str, Any]], dict[str, float]]:
+    """Grade one problem's sampled responses: per-response reward dicts + pass@k / maj@k summary.
+
+    Every correctness decision goes through :func:`mixed_cuts.reward.compute_score` (the training
+    reward), including the majority answer of maj@k. ``scripts/regrade_eval.py`` calls this on
+    saved ``samples.jsonl`` files, so a re-grade is the eval harness minus generation.
+    """
+    rewards = [reward.compute_score(data_source, text, ground_truth, timeout=timeout) for text in texts]
+    equal = _equal_fn(data_source, {"timeout": timeout})
+
+    def is_correct(a: str) -> bool:
+        return reward.compute_score(data_source, f"\\boxed{{{a}}}", ground_truth)["score"] == 1.0
+
+    summary = summarize_problem(
+        [float(r["score"]) for r in rewards],
+        [r["pred"] or None for r in rewards],
+        ground_truth,
+        k_values=k_values,
+        is_correct_answer=is_correct,
+        equal=equal,
+    )
+    return rewards, summary
 
 
 def run_benchmark(
@@ -79,11 +110,8 @@ def run_benchmark(
         for i, (row, samples) in enumerate(zip(df.itertuples(index=False), texts, strict=True)):
             ds = row.data_source
             gt = str(row.reward_model["ground_truth"])
-            scores, preds = [], []
-            for j, text in enumerate(samples):
-                r = reward.compute_score(ds, text, gt, timeout=reward_cfg.get("timeout", 30))
-                scores.append(float(r["score"]))
-                preds.append(r["pred"] or None)
+            rewards, summary = grade_problem(ds, gt, samples, k_values, timeout=reward_cfg.get("timeout", 30))
+            for j, (text, r) in enumerate(zip(samples, rewards, strict=True)):
                 n_valid += int(r["valid"])
                 n_tokens_proxy += len(text)
                 ntok = num_tokens[i][j] if num_tokens else None
@@ -111,16 +139,7 @@ def run_benchmark(
                     )
                     + "\n"
                 )
-            equal = _equal_fn(ds, reward_cfg)
-
-            def is_correct(a: str, _ds: str = ds, _gt: str = gt) -> bool:
-                return reward.compute_score(_ds, f"\\boxed{{{a}}}", _gt)["score"] == 1.0
-
-            per_problem.append(
-                summarize_problem(
-                    scores, preds, gt, k_values=k_values, is_correct_answer=is_correct, equal=equal
-                )
-            )
+            per_problem.append(summary)
 
     n_problems = len(df)
     result = {
