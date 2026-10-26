@@ -32,6 +32,9 @@ case "${MC_SITE:-ada}" in
     ;;
 esac
 export MC_SITE=ada
+# Run names <config>-2080ti-s<seed> (slurm/common.sh::mc_train_main). Untagged until 2026-10-26: the
+# September attempt's math_grpo-s1 holds a checkpoint of the old recipe (decision 018).
+export MC_RUN_TAG="${MC_RUN_TAG:-2080ti}"
 export MC_HW_PROFILE="${MC_HW_PROFILE:-sm75}"   # configs/train/hardware/sm75.yaml; checked by compose_config + check_env
 
 # --- who / where -------------------------------------------------------------

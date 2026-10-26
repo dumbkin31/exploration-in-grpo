@@ -11,7 +11,7 @@
 # Usage:
 #   scripts/wandb_sync.sh <ssh-target> <ada-user> [run-name ...]
 #   scripts/wandb_sync.sh ada lokola13                       # every run of that user
-#   scripts/wandb_sync.sh ada lokola13 math_mixed_cuts-s1    # one run
+#   scripts/wandb_sync.sh ada lokola13 math_mixed_cuts-2080ti-s1    # one run
 #
 # <ssh-target> is whatever you type after `ssh` (host alias or user@host).
 # Needs locally: rsync, and `wandb` logged in (`pip install wandb && wandb login`). The

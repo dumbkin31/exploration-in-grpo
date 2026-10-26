@@ -198,8 +198,8 @@ make sbatch-train CONFIG=math_mixed_cuts SEED=1
 #    LoRA runs keep adapter-only checkpoints (~0.9 GB) in the durable run dir on /home2 (012): merge and
 #    evaluate on any good node. (Full-FT runs: checkpoints sit on the node in node.txt; add -w $NODE / NODE=.)
 #    The merge srun counts against the user's 10 CPUs: run it while no training job of yours is running.
-srun -A research --qos=low -p u22 -C 2080ti -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh ~/mixed-cuts-data/runs/math_mixed_cuts-s1/checkpoints
-make sbatch-eval CKPT=~/mixed-cuts-data/runs/math_mixed_cuts-s1/checkpoints/hf/global_step_100 SEED=0
+srun -A research --qos=low -p u22 -C 2080ti -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh ~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints
+make sbatch-eval CKPT=~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints/hf/global_step_100 SEED=0
 ```
 
 `make preflight` prints the full report (pins, GPU, single node, engine version, attention backend, storage,

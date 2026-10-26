@@ -45,7 +45,9 @@ def test_ada_is_the_default_and_unchanged(tmp_path: Path):
     assert v["MC_SITE"] == "ada" and v["MC_HW_PROFILE"] == "sm75"
     assert v["MC_LAYOUT"] == "research_1gpu"
     assert v["MC_TRAIN_OVERRIDES"] == "memory=plan_b_lora_calibrated", "the 017 LoRA schedule (decision 018)"
-    assert v["MC_RUN_TAG"] == "", "Ada run names stay <config>-s<seed>"
+    assert v["MC_RUN_TAG"] == "2080ti", (
+        "<config>-2080ti-s<seed>: not the September attempt's math_grpo-s1 (018)"
+    )
 
 
 def test_jarvis_selects_the_h100_setup(tmp_path: Path):

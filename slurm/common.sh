@@ -436,7 +436,7 @@ mc_train_main() {
   # Usage: mc_train_main <config-name> [extra hydra overrides...]; needs MC_SEED (default 42).
   local config="${1:?config name}"; shift || true
   export MC_SEED="${MC_SEED:-42}"
-  # MC_RUN_TAG (configs/jarvis.env.sh: h100) keeps runs on other hardware apart: math_grpo-h100-s1
+  # MC_RUN_TAG keeps runs on other hardware apart: math_grpo-2080ti-s1 (Ada), math_grpo-h100-s1 (Jarvislabs)
   mc_job_init "${MC_RUN_NAME:-${config}${MC_RUN_TAG:+-${MC_RUN_TAG}}-s${MC_SEED}}"
   mc_stage_in
   # Config-specific preflight (compose + invariants + chat template) now that the model is staged.
@@ -452,6 +452,10 @@ mc_train_main() {
     extra+=(${MC_TRAIN_OVERRIDES})
     mc_log "layout ${MC_LAYOUT:-?}: ${MC_TRAIN_OVERRIDES}"
   fi
+  # resume_mode auto continues from any checkpoint in the run dir: refuse one written under another recipe (018)
+  python "${MC_REPO_ROOT}/scripts/check_recipe.py" "${MC_RUN_DIR}" "${config}" "${extra[@]}" "$@" \
+    | tee -a "${MC_JOB_DIR}/preflight.log"
+  test "${PIPESTATUS[0]}" -eq 0 || { mc_log "recipe check FAILED (MC_ALLOW_RECIPE_CHANGE=1 resumes anyway)"; exit 4; }
   cd "${MC_REPO_ROOT}"
   mc_run_with_traps python -m mixed_cuts.main \
     --config-name "${config}" \
