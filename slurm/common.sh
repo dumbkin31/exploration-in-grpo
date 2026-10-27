@@ -51,6 +51,10 @@ mc_check_cuda() {
   # the real torch before anything is written; a failing node is recorded like an old-driver one (011).
   local py="${MC_VENV_DIR:-}/bin/python" out
   [ -x "${py}" ] || { mc_log "cuda probe skipped: ${py} missing"; return 0; }
+  if ! "${py}" -c 'import torch' >/dev/null 2>&1; then
+    mc_log "cuda probe skipped: torch is not installed in ${py} yet"
+    return 0
+  fi
   if out="$(timeout 120 "${py}" -c 'import torch; torch.cuda.init(); n=torch.cuda.device_count(); print(n, torch.cuda.get_device_name(0) if n else "-", [round(x/2**30,1) for x in torch.cuda.mem_get_info(0)] if n else "-")' 2>&1)"; then
     mc_log "cuda probe on $(hostname): ${out##*$'\n'} (count, name, [free GiB, total GiB])"
     return 0

@@ -16,7 +16,7 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source configs/ada.env.sh
-source slurm/common.sh; mc_check_driver; mc_check_cuda   # old drivers (011) and dead GPUs both exit 6 and record the node
+source slurm/common.sh; mc_check_driver   # old drivers (011) exit 6 and record the node
 VERL_TAG="${VERL_TAG:-v0.9.0}"
 PY="${MC_VENV_DIR}/bin/python"
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
@@ -32,6 +32,7 @@ log "package index: ${UV_DEFAULT_INDEX} (strategy ${UV_INDEX_STRATEGY}); mirror 
 log "== 1/6 venv + pinned requirements (requirements/base.txt)"
 uv venv --clear --python "${MC_PYTHON_VERSION}" "${MC_VENV_DIR}"   # --clear: a killed earlier build leaves a half-made venv
 uv pip install --python "${PY}" -r requirements/base.txt
+mc_check_cuda
 log "== 2/6 verl ${VERL_TAG} (no deps) + this package"
 uv pip install --python "${PY}" --no-deps "verl @ git+https://github.com/volcengine/verl.git@${VERL_TAG}"
 uv pip install --python "${PY}" --no-deps -e .

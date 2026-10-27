@@ -110,6 +110,7 @@ mkdir -p "${HF_HOME}" "${TRITON_CACHE_DIR}" "${TORCHINDUCTOR_CACHE_DIR}" "${PIP_
 # identically. Override with UV_DEFAULT_INDEX in configs/local.env.sh if it is ever slow.
 export UV_DEFAULT_INDEX="${UV_DEFAULT_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 export UV_INDEX_STRATEGY="${UV_INDEX_STRATEGY:-unsafe-best-match}"
+export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-300}"
 export PIP_INDEX_URL="${PIP_INDEX_URL:-${UV_DEFAULT_INDEX}}"
 
 # --- logging: local jsonl is primary; W&B streams ONLINE from the compute nodes ------------------
