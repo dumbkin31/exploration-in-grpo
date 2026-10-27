@@ -215,7 +215,7 @@ PY
 }
 
 mc_record_host_peak() {
-  # The research/low cgroup is 30 GB (decision 012) and kernel 5.15's cgroup v2 has no memory.peak, so
+  # The research/medium cgroup is 30 GB (decision 012) and kernel 5.15's cgroup v2 has no memory.peak, so
   # the GPU sampler sidecar (profile_memory.py --watch) also samples the job cgroup's memory.current;
   # the peak is the max over this job's samples. sstat's MaxRSS (largest single process) is kept beside it.
   local out="${MC_JOB_DIR}/host_mem_peak.txt" now="" peak="" rss=""
@@ -479,7 +479,7 @@ mc_train_main() {
   local extra=()
   [ -n "${MC_SAVE_FREQ:-}" ] && extra+=("save_freq=${MC_SAVE_FREQ}")
   [ -n "${MC_TOTAL_STEPS:-}" ] && extra+=("trainer.total_training_steps=${MC_TOTAL_STEPS}")
-  # layout/memory overrides of $MC_LAYOUT (configs/ada.env.sh); empty for the default research_1gpu
+  # layout/memory overrides of $MC_LAYOUT (configs/ada.env.sh); empty for the default nlp_4gpu
   if [ -n "${MC_TRAIN_OVERRIDES:-}" ]; then
     # shellcheck disable=SC2206
     extra+=(${MC_TRAIN_OVERRIDES})

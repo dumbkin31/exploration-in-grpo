@@ -53,11 +53,11 @@ def compose():
 
 
 @pytest.mark.parametrize("name", ["base_grpo", "smoke", "math_grpo", "math_mixed_cuts"])
-def test_defaults_are_the_1gpu_lora_layout(compose, name, monkeypatch):
+def test_defaults_are_the_4gpu_lora_layout(compose, name, monkeypatch):
     monkeypatch.delenv("MC_SLURM_GPUS", raising=False)
     mod, cfg = compose(name)
-    assert cfg.trainer.n_gpus_per_node == 1
-    assert cfg.actor_rollout_ref.rollout.tensor_model_parallel_size == 1
+    assert cfg.trainer.n_gpus_per_node == 4
+    assert cfg.actor_rollout_ref.rollout.tensor_model_parallel_size == 4
     assert cfg.actor_rollout_ref.model.lora_rank == 64
     assert cfg.actor_rollout_ref.actor.fsdp_config.offload_policy is True
     assert cfg.actor_rollout_ref.actor.checkpoint.save_lora_only is True
@@ -71,11 +71,13 @@ def test_1gpu_plus_plan_a_is_refused(compose, monkeypatch):
     assert any("LoRA" in p for p in problems), problems
 
 
-def test_4gpu_layout_with_plan_a_still_composes(compose, monkeypatch):
+def test_4gpu_layout_with_lora_composes(compose, monkeypatch):
     monkeypatch.delenv("MC_SLURM_GPUS", raising=False)
-    mod, cfg = compose("math_mixed_cuts", "layout=nlp_4gpu", "memory=plan_a_fullft_offload")
+    mod, cfg = compose("math_mixed_cuts", "layout=nlp_4gpu", "memory=plan_b_lora_calibrated")
     assert cfg.trainer.n_gpus_per_node == 4
     assert cfg.actor_rollout_ref.rollout.tensor_model_parallel_size == 4
+    assert cfg.actor_rollout_ref.model.lora_rank == 64
+    assert cfg.actor_rollout_ref.actor.fsdp_config.offload_policy is True
     assert mod.check(cfg) == []
 
 
@@ -229,9 +231,9 @@ def test_kl_loss_keeps_the_k3_value_with_the_k2_gradient(compose, name):
 def test_learning_rate_follows_the_memory_plan(compose):
     """Until 2026-09-29 base_grpo.yaml's body overrode plan_b_lora's 1e-5 with 1e-6 (decision 013)."""
     _mod, lora = compose("math_grpo")
-    _mod, full = compose("math_mixed_cuts", "layout=nlp_4gpu", "memory=plan_a_fullft_offload")
+    _mod, four_gpu_lora = compose("math_mixed_cuts", "layout=nlp_4gpu", "memory=plan_b_lora_calibrated")
     assert abs(lora.actor_rollout_ref.actor.optim.lr - 1e-5) < 1e-12
-    assert abs(full.actor_rollout_ref.actor.optim.lr - 1e-6) < 1e-12
+    assert abs(four_gpu_lora.actor_rollout_ref.actor.optim.lr - 2e-6) < 1e-12
 
 
 def test_a_learning_rate_that_disagrees_with_the_plan_is_refused(compose):
@@ -258,10 +260,9 @@ def _leaves(d, prefix=""):
     [
         ((), {"layout": "research_1gpu", "memory": "plan_b_lora", "hardware": "sm75"}),
         (
-            ("layout=nlp_4gpu", "memory=plan_a_fullft_offload"),
-            {"layout": "nlp_4gpu", "memory": "plan_a_fullft_offload"},
+            ("layout=nlp_4gpu", "memory=plan_b_lora_calibrated"),
+            {"layout": "nlp_4gpu", "memory": "plan_b_lora_calibrated"},
         ),
-        (("layout=nlp_4gpu", "memory=plan_a_manual_offload"), {"memory": "plan_a_manual_offload"}),
         (H100, {"layout": "h100_1gpu", "memory": "plan_b_lora_gpu", "hardware": "h100"}),
         (FULL_FT, {"memory": "plan_a_fullft_gpu"}),
         (LORA_CALIBRATED, {"memory": "plan_b_lora_calibrated_gpu"}),

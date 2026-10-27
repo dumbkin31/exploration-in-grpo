@@ -1,9 +1,9 @@
 # ---------------------------------------------------------------------------
 # Base GRPO config for Qwen3-1.7B. Built for Ada's RTX 2080 Ti nodes (sm_75, 11 GiB, fp16 only), which
 # stay the default; one H100 on Jarvislabs is the other target (decision 013). The GPU count comes from
-# configs/train/layout/ (default research_1gpu: ONE card per job, decision 012; nlp_4gpu: the original
-# 4-card layout of decision 002; h100_1gpu), the memory plan from configs/train/memory/ (default
-# plan_b_lora; plan_a_fullft_offload/plan_a_manual_offload need the 4-card layout; MC_MEMORY_PLAN picks
+# configs/train/layout/ (default nlp_4gpu: four-card distributed LoRA; research_1gpu: one-card fallback;
+# h100_1gpu), the memory plan from configs/train/memory/ (default
+# plan_b_lora; plan_a_fullft_offload/plan_a_manual_offload remain available for other layouts; MC_MEMORY_PLAN picks
 # plan_b_lora_calibrated on Ada (018) and plan_a_fullft_gpu, plan_b_lora_calibrated_gpu or plan_b_lora_gpu on
 # Jarvislabs (017)),
 # and precision + attention from configs/train/hardware/ (default sm75; h100).
@@ -20,7 +20,7 @@
 # ---------------------------------------------------------------------------
 defaults:
   - ppo_trainer                      # verl's full default tree (found via hydra.searchpath)
-  - layout: research_1gpu            # configs/train/layout/: GPU count, TP, vLLM budget, Ray cpus (012)
+  - layout: nlp_4gpu                 # configs/train/layout/: GPU count, TP, vLLM budget, Ray cpus
   - memory: plan_b_lora              # configs/train/memory/: B = LoRA + CPUOffloadPolicy (default), A = full FT
   - _self_
   - hardware: sm75                   # configs/train/hardware/: precision + attention; AFTER this body so h100 can replace it (013)

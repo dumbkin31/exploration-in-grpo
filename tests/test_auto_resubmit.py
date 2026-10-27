@@ -20,7 +20,7 @@ FAKES = {
     "sbatch": 'echo "sbatch $*" >> "$FAKE_LOG"; [ -n "${FAKE_SBATCH_FAIL:-}" ] && exit 1; echo "999;ada"\n',
     "scontrol": """echo "scontrol $*" >> "$FAKE_LOG"
 case "$1" in
-  show) echo "JobId=123 JobName=math_grpo-s1 UserId=u(1) Account=research QOS=low TimeLimit=${FAKE_TLIMIT:-4-00:00:00} ReqNodeList=${FAKE_REQ:-(null)} ExcNodeList=gnode043 Command=${FAKE_CMD} WorkDir=/w StdOut=/w/o" ;;
+  show) echo "JobId=123 JobName=math_grpo-s1 UserId=u(1) Account=research QOS=medium TimeLimit=${FAKE_TLIMIT:-4-00:00:00} ReqNodeList=${FAKE_REQ:-(null)} ExcNodeList=gnode043 Command=${FAKE_CMD} WorkDir=/w StdOut=/w/o" ;;
   update) [ -n "${FAKE_UPDATE_FAIL:-}" ] && exit 1 ;;
 esac
 exit 0
@@ -42,7 +42,7 @@ def _run(tmp_path: Path, call: str, **env: str) -> tuple[int, list[str], str]:
     log = tmp_path / "calls.log"
     log.write_text("")
     driver = f"""
-mc_sbatch_args() {{ printf -- '-A research --qos=low -c 10 -x gnode043,gnode047'; }}
+mc_sbatch_args() {{ printf -- '-A research --qos=medium -c 10 -x gnode043,gnode047'; }}
 mc_sbatch_exclude() {{ printf -- '-x gnode043,gnode047'; }}
 source "{REPO}/slurm/common.sh"
 set +e

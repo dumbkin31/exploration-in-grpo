@@ -71,5 +71,5 @@ The generation does not follow any SLURM feature: `phase3` nodes are on both sid
   pinned to one node (009), a pinned node that is busy means waiting. `-w <node>` from `node.txt` still
   wins over the exclude list because a pinned node has run the wheels before.
 * Ask the admins which 2080 Ti nodes are scheduled for the 580 upgrade; the exclude list shrinks as they
-  land. To re-probe: `for n in ...; do srun -A research --qos=low -p u22 -w $n -N1 -n1 -c1 --mem=300M
-  -t 1 cat /proc/driver/nvidia/version; done` (research/low allows one node per job).
+  land. To re-probe: `for n in ...; do srun -A research --qos=medium -p u22 -w $n -N1 -n1 -c1 --mem=300M
+  -t 1 cat /proc/driver/nvidia/version; done` (research/medium allows one node per job).

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-setup
 #SBATCH -A research
-#SBATCH --qos=low
+#SBATCH --qos=medium
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
@@ -43,8 +43,8 @@ log "== 4/6 preflight (no staged-data check yet)"
 log "== 5/6 interface tests that need vLLM/verl + compose-check"
 "${PY}" -m pytest -q tests/test_vllm_logits_processor.py tests/test_agent_loop_verl.py -p no:cacheprovider
 for c in base_grpo smoke smoke_maxlen math_grpo math_mixed_cuts; do "${PY}" scripts/compose_config.py "$c" --check; done
-# the 4-GPU layout composes too (MC_SLURM_GPUS is what the guard compares the config with), and 1 GPU + plan A is refused
-MC_SLURM_GPUS=4 "${PY}" scripts/compose_config.py math_mixed_cuts --check layout=nlp_4gpu memory=plan_a_fullft_offload
+# the 4-GPU LoRA layout composes too (MC_SLURM_GPUS is what the guard compares the config with), and 1 GPU + plan A is refused
+MC_SLURM_GPUS=4 "${PY}" scripts/compose_config.py math_mixed_cuts --check layout=nlp_4gpu memory=plan_b_lora_calibrated
 if MC_SLURM_GPUS=1 "${PY}" scripts/compose_config.py math_mixed_cuts --check memory=plan_a_fullft_offload >/dev/null 2>&1; then
   log "ERROR: compose-check accepted 1 GPU + plan A"; exit 1
 fi

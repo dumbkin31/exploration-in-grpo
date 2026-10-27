@@ -1,4 +1,4 @@
-# End-to-end plumbing test on the real layout (default: research_1gpu + plan B LoRA; whatever layout/memory
+# End-to-end plumbing test on the real layout (default: nlp_4gpu + plan B LoRA; whatever layout/memory
 # you override): 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS), 512-token responses.
 # Two steps are the minimum: the |S_t| statistics of step 1 are summarised at step 2.
 hydra:

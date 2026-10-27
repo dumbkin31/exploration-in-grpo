@@ -38,7 +38,7 @@ SYNTHETIC = [
 
 
 def _nvidia_smi_cmd() -> list[str]:
-    """Only this job's GPUs: research/low jobs share a 4-GPU node with other users (decision 012)."""
+    """Only this job's GPUs: research/medium jobs share a 4-GPU node with other users (decision 012)."""
     cmd = ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"]
     vis = os.environ.get("CUDA_VISIBLE_DEVICES")
     if vis and not vis.startswith("MIG"):

@@ -1,5 +1,5 @@
 # @package _global_
-# Layout: ONE RTX 2080 Ti per job on SLURM account `research` / QoS `low` (per user: 1 GPU, 10 CPUs,
+# Layout: ONE RTX 2080 Ti per job on SLURM account `research` / QoS `medium` (per user: 1 GPU, 10 CPUs,
 # 32 GB host RAM, 1 node per job; docs/decisions/012). This is the DEFAULT layout; it pairs with
 # memory=plan_b_lora (plan A needs 27.6 GB of host RAM for the optimizer alone; compose-check refuses it).
 #

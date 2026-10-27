@@ -12,10 +12,9 @@ vLLM logits processor, schedules mixed standard/CUTS rollout groups inside verl'
 diagnostics that say *why* a run behaves the way it does (advantage collapse, the Eq. 5 variance
 decomposition, candidate-set sizes), not just final accuracy.
 
-Two deliverables, each trained with **LoRA on one GPU**: an **H100 on Jarvislabs** (bf16, the arms in
-parallel; [013](docs/decisions/013-jarvislabs-h100.md), section 6b) or **one RTX 2080 Ti (11 GiB, sm_75, fp16
-only)** under SLURM on Ada (account `research`, [012](docs/decisions/012-research-qos-one-gpu-lora.md)); the
-original 4-GPU full-fine-tune layout stays selectable (`MC_LAYOUT=nlp_4gpu`):
+Two deliverables, trained with **LoRA**: an **H100 on Jarvislabs** (bf16, the arms in parallel;
+[013](docs/decisions/013-jarvislabs-h100.md), section 6b) or RTX 2080 Ti GPUs under SLURM on Ada
+(account `research`, QoS `medium`, `MC_LAYOUT=nlp_4gpu` for one distributed 4-GPU job):
 
 | Arm | Config | Group of 16 |
 |---|---|---|
@@ -54,8 +53,8 @@ Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions
 | Attention (rollout) | vLLM **`TRITON_ATTN`**, set explicitly | `FLASH_ATTN` and `FLASHINFER` require capability 8.0 in vLLM 0.24.0; XFORMERS no longer exists ([004](docs/decisions/004-attention-backend-and-engine-version.md)). |
 | Attention (training) | HF `sdpa`, `use_remove_padding: false` | FlashAttention-2 needs sm_80; `flash-attn` is not installed. |
 | Engine | vLLM V1 engine (V0 is gone); **Model Runner V1** is forced by the custom logits processor | never set `VLLM_USE_V2_MODEL_RUNNER`; the preflight and the job logs check it. |
-| Memory | 11 GiB on the card; **30 GB host RAM and 10 cores per job** (`research`/`low` caps: `-c 10 --mem-per-cpu=3000M`) | section 4: LoRA + the FSDP2 offload policy; full fine-tuning needs the 4-card layout (117 GB). |
-| SLURM | account `research` / QoS `low`: **per user 1 GPU, 10 CPUs, 32 GB, 1 node per job, 5 jobs, 4-day MaxWall**; `-A research --qos=low -p u22 -C 2080ti -N 1 --gres=gpu:1 -c 10 --mem-per-cpu=3000M` (`MaxMemPerCPU=3000`; `3G` is rejected); `nlp`/`normal` = 4 GPUs/job, 12 across the group; interactive `srun` capped at 6 h | all real runs are `make sbatch-*` (adds the layout flags + node exclude list); templates in `slurm/`; `MC_LAYOUT=nlp_1gpu` submits the same 1-GPU job on `nlp` (priority 40, 60 GB) and `MC_LAYOUT=nlp_4gpu` flips everything to the 4-GPU layout ([012](docs/decisions/012-research-qos-one-gpu-lora.md)). |
+| Memory | 11 GiB per card; **40 CPUs and 120 GB host RAM** for the 4-GPU job (`-c 40 --mem-per-cpu=3000M`) | LoRA + the FSDP2 offload policy keeps the base and masters in host RAM. |
+| SLURM | account `research` / QoS `medium`: **4 GPUs, 40 CPUs, 1 node**; `-A research --qos=medium -p u22 -C 2080ti -N 1 --gres=gpu:4 -c 40 --mem-per-cpu=3000M` (`MaxMemPerCPU=3000`; `3G` is rejected) | `make sbatch-train` with `MC_LAYOUT=nlp_4gpu` supplies these flags and the driver exclude list. |
 | NVIDIA driver | **mixed across the 2080 Ti nodes**: 580/595 on 7 of the 25 probed, 570 (CUDA 12.8) on 12, no module on 4 | the cu130 wheels need >= 580 (vLLM 0.24.0 has no cu128 wheel): `make sbatch-*` passes `-x $MC_SLURM_EXCLUDE`, and every job checks `/proc/driver/nvidia/version` before touching the run dir ([011](docs/decisions/011-mixed-driver-generations.md)). |
 | Storage | `/home2/$USER` 25 GB / 300k files NFS, the **only durable file system compute nodes see**; `/share1` is a local disk of the login node (measured: absent on the gnodes); `/scratch` node-local 1.8 TB, purged after ~7 days | section 3: code, venv, staged model/data and each run's small outputs on `/home2`; checkpoints on scratch ([009](docs/decisions/009-scratch-checkpoints-quota.md), [010](docs/decisions/010-share1-is-login-node-local.md)). |
 
@@ -183,7 +182,7 @@ git add requirements/lock.txt && git commit -m "lock cluster env"
 make sbatch-data                       # only if prefetch finished after the setup job ran (it builds the parquet + a full preflight)
 
 # 2. measure before committing compute (each job mirrors to ~/mixed-cuts-data/runs/<run>/). Every
-#    make sbatch-* target adds the layout's flags (-A research --qos=low --gres=gpu:1 -c 10 ...) + the exclude list.
+#    make sbatch-train with MC_LAYOUT=nlp_4gpu adds the layout's flags (-A research --qos=medium --gres=gpu:4 -c 40 ...) + the exclude list.
 #    A job that lands on an old-driver or dead-GPU node records it and resubmits itself elsewhere (up to 5
 #    times; MC_AUTO_RESUBMIT=0 turns this off; decision 011).
 make sbatch-bench                      # ~40 min: tokens/s at concurrency 1-64, KV size at util 0.80/0.85, TRITON_ATTN line
@@ -206,7 +205,7 @@ make sbatch-train CONFIG=math_mixed_cuts SEED=1
 #    LoRA runs keep adapter-only checkpoints (~0.9 GB) in the durable run dir on /home2 (012): merge and
 #    evaluate on any good node. (Full-FT runs: checkpoints sit on the node in node.txt; add -w $NODE / NODE=.)
 #    The merge srun counts against the user's 10 CPUs: run it while no training job of yours is running.
-srun -A research --qos=low -p u22 -C 2080ti -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh ~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints
+srun -A research --qos=medium -p u22 -C 2080ti -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh ~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints
 make sbatch-eval CKPT=~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints/hf/global_step_100 SEED=0
 ```
 
@@ -333,7 +332,7 @@ A few whole groups (standard and CUTS siblings side by side) are dumped per step
 
 ```
 configs/ada.env.sh         all cluster paths / env vars         configs/train/*.yaml   Hydra overrides on verl's ppo_trainer
-configs/train/layout/      research_1gpu (default), nlp_4gpu    configs/eval/*.yaml    eval decoding (paper validation settings)
+configs/train/layout/      research_1gpu (default), nlp_4gpu (4-GPU LoRA)    configs/eval/*.yaml    eval decoding (paper validation settings)
 configs/train/memory/      plan B LoRA (default), A, A'
 src/cuts/                  CUTS operator, state, stats channel, vLLM logits processor (verl-independent, CPU-tested)
 src/mixed_cuts/            verl integration: scheduler, agent loop hook, trainer, diagnostics, reward, GPQA parser,

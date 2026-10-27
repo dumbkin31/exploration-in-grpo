@@ -17,7 +17,7 @@ configuration composed and passed `make compose-check`, but five things would ha
    checkpoint is gone when a divergence is noticed (on the H200s an ad hoc keeper script saved them).
 4. verl starts `reward.num_workers` RewardLoopWorker Ray actors (default 8; `trainer/ppo/v1/trainer_base.py:332`,
    `experimental/reward_loop/reward_loop.py:323-339`), each with `MC_REWARD_WORKERS` math-verify processes,
-   on a 30 GB research/low cgroup that sat at 29.4 GB in September; the layout trims every other Ray actor.
+   on a 30 GB research/medium cgroup that sat at 29.4 GB in September; the layout trims every other Ray actor.
 5. The stability watch (006) missed both H200 divergences: its entropy rule only covers the first 20 steps
    and `actor/grad_norm` stayed below 2.7. At ~2 h per step on a 2080 Ti an unattended divergence costs days.
 

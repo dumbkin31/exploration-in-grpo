@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-train
 #SBATCH -A research
-#SBATCH --qos=low
+#SBATCH --qos=medium
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
@@ -13,7 +13,7 @@
 #SBATCH -o slurm-%x-%j.out
 # Real training run. Submit with:  make sbatch-train CONFIG=math_mixed_cuts SEED=1
 # Resubmitting the same CONFIG+SEED resumes from the newest checkpoint (on the node named in node.txt).
-# --time is the QoS low MaxWall (4 days); a 100-step run at ~1-1.5 h/step needs two submissions (012).
+# --time is the four-day training wall-time budget; a 100-step run at ~1-1.5 h/step needs two submissions (012).
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 CONFIG="${MC_CONFIG:?set MC_CONFIG (e.g. sbatch --export=ALL,MC_CONFIG=math_mixed_cuts,MC_SEED=1 slurm/train.sbatch)}"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-smoke
 #SBATCH -A research
-#SBATCH --qos=low
+#SBATCH --qos=medium
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
@@ -13,7 +13,7 @@
 #SBATCH -o slurm-%x-%j.out
 # End-to-end plumbing test on the real layout: 20 MATH problems, 2 steps, groups of 4 (2 std + 2 CUTS),
 # then the GPU tests (tests/gpu) against that run in the SAME allocation: a second GPU srun would compete
-# with research/low's one-GPU-per-user quota (decision 012).
+# with research/medium's one-GPU-per-user quota (decision 012).
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 CFG="${MC_SMOKE_CONFIG:-smoke}"   # smoke (2 steps + GPU tests) or smoke_maxlen (1 step at the paper's lengths, ignore_eos)

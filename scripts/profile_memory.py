@@ -8,7 +8,7 @@ Two modes:
     the SLURM job cgroup's ``memory.current`` (host RSS of every process in the job) every ``--interval``
     seconds and appends ``{"t": ..., "job": ..., "mem_mib": [g0, g1, ...], "host_mib": h}``.
     It is killed by the job's EXIT trap, so data exists however the job ends. The host sample matters on
-    research/low: the cgroup is 30 GB and kernel 5.15 has no ``memory.peak`` (decision 012).
+    research/medium: the cgroup is 30 GB and kernel 5.15 has no ``memory.peak`` (decision 012).
 
 ``--report RUN_DIR``
     Joins ``RUN_DIR/gpu_mem.jsonl`` with ``RUN_DIR/phases.jsonl`` (written by the trainer:
@@ -37,7 +37,7 @@ PHASES = ("rollout", "old_log_prob", "ref_log_prob", "update_actor")
 
 
 def _nvidia_smi_cmd() -> list[str]:
-    """Only this job's GPUs: research/low jobs share a 4-GPU node with other users (decision 012)."""
+    """Only this job's GPUs: research/medium jobs share a 4-GPU node with other users (decision 012)."""
     cmd = ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"]
     vis = os.environ.get("CUDA_VISIBLE_DEVICES")
     if vis and not vis.startswith("MIG"):
@@ -231,7 +231,7 @@ def report(run_dir: Path) -> str:
     lines.append("| whole job | " + str(len(samples)) + " | " + " | ".join(str(v) for v in overall) + " |")
     lines.append("")
     lines.append("11 GiB cards hold 11264 MiB; leave >= 1 GiB headroom for fragmentation.")
-    # host RSS of the whole job (cgroup memory.current, sampled): the 30 GB research/low cgroup (012)
+    # host RSS of the whole job (cgroup memory.current, sampled): the 30 GB research/medium cgroup (012)
     hosts = [s["host_mib"] for s in samples if s.get("host_mib") is not None]
     if hosts:
         host_peak: dict[str, int] = defaultdict(int)
@@ -270,7 +270,7 @@ def report(run_dir: Path) -> str:
             f"Host RSS of the job cgroup (sampled memory.current): peak {max(hosts)} MiB, "
             f"median {sorted(hosts)[len(hosts) // 2]} MiB"
             + (" | per phase: " + ", ".join(f"{k} {v}" for k, v in host_peak.items()) if host_peak else "")
-            + ". research/low cgroup limit: 30000 MiB."
+            + ". research/medium cgroup limit: 30000 MiB."
         )
     # verl's torch counters
     keys = [

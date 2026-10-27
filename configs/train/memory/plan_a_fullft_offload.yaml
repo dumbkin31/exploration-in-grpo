@@ -1,6 +1,6 @@
 # @package _global_
 # Memory plan A (full fine-tune): needs the 4-card layout (MC_LAYOUT=nlp_4gpu). Its 27.6 GB of
-# optimizer state does not fit the 30 GB host budget of research/low; compose-check refuses 1 GPU + plan A.
+# optimizer state does not fit the 30 GB host budget of research/medium; compose-check refuses 1 GPU + plan A.
 # Memory plan A: full-parameter fine-tune, FSDP2 sharded over the 4 GPUs with CPU
 # offload of parameters, gradients AND optimizer state, fp16 mixed precision.
 #
