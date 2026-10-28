@@ -34,7 +34,7 @@ esac
 export MC_SITE=ada
 # Run names <config>-2080ti-s<seed> (slurm/common.sh::mc_train_main). Untagged until 2026-10-26: the
 # September attempt's math_grpo-s1 holds a checkpoint of the old recipe (decision 018).
-export MC_RUN_TAG="${MC_RUN_TAG:-2080ti}"
+export MC_RUN_TAG="${MC_RUN_TAG:-2080ti-qwen3-0.6b}"
 export MC_HW_PROFILE="${MC_HW_PROFILE:-sm75}"   # configs/train/hardware/sm75.yaml; checked by compose_config + check_env
 
 # --- who / where -------------------------------------------------------------
@@ -49,7 +49,7 @@ export MC_VENV_DIR="${MC_VENV_DIR:-${MC_REPO_ROOT}/.venv}"
 export MC_PYTHON_VERSION="${MC_PYTHON_VERSION:-3.12}"
 
 # --- model + data staging (populated by `make prefetch` on the login node) ----
-export MC_MODEL_NAME="${MC_MODEL_NAME:-Qwen/Qwen3-1.7B}"          # or Qwen/Qwen3-1.7B-Base
+export MC_MODEL_NAME="${MC_MODEL_NAME:-Qwen/Qwen3-0.6B}"          # or Qwen/Qwen3-0.6B-Base
 export MC_MODELS_DIR="${MC_MODELS_DIR:-${MC_STAGE_ROOT}/models}"
 export MC_MODEL_DIR="${MC_MODEL_DIR:-${MC_MODELS_DIR}/$(basename "${MC_MODEL_NAME}")}"
 export MC_DATA_DIR="${MC_DATA_DIR:-${MC_STAGE_ROOT}/data}"        # parquet in verl schema
@@ -167,15 +167,15 @@ export MC_SLURM_CONSTRAINT="${MC_SLURM_CONSTRAINT:-2080ti}"
 export MC_SLURM_MEM_PER_CPU="${MC_SLURM_MEM_PER_CPU:-3000M}"   # u22 MaxMemPerCPU=3000 MB (3G = 3072 is rejected); 10 x 3000M = 30 GB, 40 x 3000M = 117 GB
 export MC_SLURM_SIGNAL_SECS="${MC_SLURM_SIGNAL_SECS:-300}"  # SIGUSR1 this many seconds before kill
 # Node selection: the 2080 Ti nodes run MIXED NVIDIA driver generations (docs/decisions/011). The pinned
-# wheels are CUDA 13.0 builds (vLLM 0.24.0 ships only cu130 and cu129 wheels) and need driver >= 580.
+# wheels are CUDA 12.9 builds and need a CUDA 12.x-compatible driver.
 # Census 2026-09-27 via /proc/driver/nvidia/version (25 of 44 nodes; the rest were busy):
 #   580.178 / 595.91 (OK): gnode065 068 070 078 081 084 087
 #   570.211 (CUDA 12.8):   gnode043 050 054 056 072 073 079 080 082 085 090 091
 #   no driver loaded:      gnode066 076 088 089
 # The driver does not follow any SLURM feature (phase3 has both), so `make sbatch-*` passes -x with this
 # list plus MC_BAD_NODES_FILE, which mc_job_init appends to when a job lands on an unlisted old node.
-export MC_MIN_DRIVER_MAJOR="${MC_MIN_DRIVER_MAJOR:-580}"
-export MC_SLURM_EXCLUDE="${MC_SLURM_EXCLUDE:-gnode043,gnode050,gnode054,gnode056,gnode066,gnode072,gnode073,gnode076,gnode079,gnode080,gnode082,gnode085,gnode088,gnode089,gnode090,gnode091}"
+export MC_MIN_DRIVER_MAJOR="${MC_MIN_DRIVER_MAJOR:-525}"
+export MC_SLURM_EXCLUDE="${MC_SLURM_EXCLUDE:-}"
 export MC_BAD_NODES_FILE="${MC_BAD_NODES_FILE:-${MC_STAGE_ROOT}/bad_nodes.txt}"
 mc_sbatch_args() {  # every sbatch flag that depends on the layout, plus the node exclude list: sbatch $(mc_sbatch_args) job.sbatch
   printf -- '-A %s --qos=%s -p %s -C %s -N 1 --gres=gpu:%s -c %s --mem-per-cpu=%s ' \

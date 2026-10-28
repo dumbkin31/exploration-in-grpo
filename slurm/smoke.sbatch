@@ -15,6 +15,7 @@
 # then the GPU tests (tests/gpu) against that run in the SAME allocation: a second GPU srun would compete
 # with research/medium's one-GPU-per-user quota (decision 012).
 set -euo pipefail
+module load u22/python/3.12.15
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 CFG="${MC_SMOKE_CONFIG:-smoke}"   # smoke (2 steps + GPU tests) or smoke_maxlen (1 step at the paper's lengths, ignore_eos)
 export MC_RUN_NAME="${MC_RUN_NAME:-${CFG}-s${MC_SEED:-42}-${SLURM_JOB_ID}}"   # fresh dir per smoke job

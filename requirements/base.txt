@@ -1,4 +1,4 @@
-# Cluster environment for IIIT-H Ada, 4x RTX 2080 Ti (sm_75), driver 580.178.04 (CUDA 13.0),
+# Cluster environment for IIIT-H Ada, 4x RTX 2080 Ti (sm_75), CUDA 12.9 wheels,
 # Ubuntu 22.04 / glibc 2.35 compute nodes. Install ONLY from inside a SLURM allocation on a
 # 2080 Ti node (see slurm/setup_env.sbatch); never on the CentOS 7 login node.
 #
@@ -11,13 +11,11 @@
 # exact git tag (its PyPI sdist would try to re-resolve vllm). The Makefile does:
 #   uv pip install --no-deps "verl @ git+https://github.com/volcengine/verl.git@v0.9.0"
 
-# --- inference engine (brings torch 2.11.0 cu130, flashinfer 0.6.12, triton) ---
-vllm==0.24.0
+# --- inference engine (the setup script installs the explicit cu129 vLLM wheel) ---
+# vllm is intentionally omitted: setup_env.sbatch selects the cu129 release wheel.
 
-# --- torch stack, pinned to exactly what vllm 0.24.0 requires (requirements/cuda.txt) ---
-torch==2.11.0
-torchvision==0.26.0
-torchaudio==2.11.0
+# --- torch stack (setup_env.sbatch installs the explicit +cu129 wheels) ---
+# torch, torchvision and torchaudio are intentionally omitted from this base list.
 
 # --- HF stack ---
 transformers==5.5.3           # verl: >=5.5.3,!=5.6.0,<5.11 ; vllm: >=5.5.3

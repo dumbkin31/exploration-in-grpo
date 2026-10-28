@@ -19,7 +19,7 @@ shared `nlp` account, and the two arms train with **LoRA on one GPU** instead of
 | preemption | `PreemptType=preempt/qos`, `PreemptMode=GANG,SUSPEND`; no QoS lists `medium` as a target | - |
 
 `u22` has `MaxMemPerCPU=3000`, so the largest research request is `-c 10 --mem-per-cpu=3000M` = 30 GB,
-enforced by the cgroup. Only 7 of the 2080 Ti nodes run a driver the cu130 wheels accept
+enforced by the cgroup. Ada now installs the cu129 wheels, which support the cluster's CUDA 12.x drivers.
 ([011](011-mixed-driver-generations.md)); they are shared with everyone.
 
 ## Why full fine-tuning is out and LoRA is in

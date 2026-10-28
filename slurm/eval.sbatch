@@ -14,6 +14,7 @@
 # Evaluate a HF checkpoint dir on the benchmarks, one vLLM engine per GPU, benchmarks split
 # round-robin across GPUs. Submit with: make sbatch-eval CKPT=... BENCH=math500,aime24 N_SAMPLES=16 SEED=0
 set -euo pipefail
+module load u22/python/3.12.15
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source slurm/common.sh
 export MC_PREFLIGHT_ARGS=--no-staged

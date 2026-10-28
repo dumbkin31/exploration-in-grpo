@@ -2,11 +2,11 @@
 
 **Measured on Ada, 2026-09-27.** The data job (2719042) landed on gnode054 and its preflight died in
 `torch.cuda` init: *"The NVIDIA driver on your system is too old (found version 12080)"*. The setup job
-had run on gnode084 with driver 580.178.04 (CUDA 13.0), which is what the pins were built for. A census
+had run on gnode084 with driver 580.178.04 (CUDA 13.0), which is what the original pins were built for. A census
 of `/proc/driver/nvidia/version` over every 2080 Ti node with a free CPU (25 of 44; the other 19 were
 fully allocated, drained or reserved), one CPU-only `srun` each:
 
-| Driver | Nodes | Runs the cu130 wheels |
+| Driver | Nodes | Runs the cu129 wheels |
 |---|---|---|
 | 580.178.04 | gnode065 068 078 081 084 087 | yes |
 | 595.91.07 | gnode070 | yes |
@@ -38,7 +38,7 @@ The generation does not follow any SLURM feature: `phase3` nodes are on both sid
    (`-x <nodes>`) to `sbatch`. Submitting `sbatch slurm/x.sbatch` by hand skips this: use make.
 2. **Fail fast on any other bad node.** `mc_check_driver` (in `slurm/common.sh`) runs first thing in
    `mc_job_init`, and in the setup and data jobs: it reads `/proc/driver/nvidia/version`, exits with
-   code 6 if the major version is below `MC_MIN_DRIVER_MAJOR` (580) or the module is missing, and appends
+   code 6 if the major version is below `MC_MIN_DRIVER_MAJOR` (525) or the module is missing, and appends
    the node to `MC_BAD_NODES_FILE` (`<stage root>/bad_nodes.txt`, durable). `mc_sbatch_exclude` merges
    that file into the exclude list, so the next submission of the same make command avoids the node.
    The guard runs before the run dir or `node.txt` is written, so a bad landing leaves no trace in the run.

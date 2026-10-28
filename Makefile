@@ -45,10 +45,17 @@ setup-login: ## tiny download-only env for `make prefetch` on the CentOS 7 login
 	@echo "login env ready: .venv-login (used automatically by make prefetch)"
 
 setup: ## FULL cluster env. Run ONLY inside a 2080 Ti allocation (sbatch slurm/setup_env.sbatch)
-	@. $(ENV_FILE); \
+	@module load u22/python/3.12.15; . $(ENV_FILE); \
 	  if [ -z "$$SLURM_JOB_ID" ]; then echo "ERROR: run inside a SLURM allocation on a 2080ti node, never on the login node"; exit 1; fi; \
-	  $(UV) venv --python $(PYTHON_VER) $$MC_VENV_DIR && \
-	  $(UV) pip install --python $$MC_VENV_DIR/bin/python -r requirements/base.txt && \
+	  $(UV) venv --clear --python $(PYTHON_VER) $$MC_VENV_DIR && \
+	  TMP=$$(mktemp -d) && trap 'rm -rf "$$TMP"' EXIT && \
+	  grep -v -E '^(vllm==|torch==|torchvision==|torchaudio==)' requirements/base.txt > "$$TMP/base-no-cuda.txt" && \
+	  $(UV) pip install --python $$MC_VENV_DIR/bin/python \
+	    --extra-index-url https://download.pytorch.org/whl/cu129 \
+	    --index-strategy unsafe-best-match \
+	    "torch==2.11.0+cu129" "torchvision==0.26.0+cu129" "torchaudio==2.11.0+cu129" \
+	    "vllm @ https://github.com/vllm-project/vllm/releases/download/v0.24.0/vllm-0.24.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl" \
+	    -r "$$TMP/base-no-cuda.txt" && \
 	  $(UV) pip install --python $$MC_VENV_DIR/bin/python --no-deps "verl @ $(VERL_URL)" && \
 	  $(UV) pip install --python $$MC_VENV_DIR/bin/python --no-deps -e . && \
 	  $$MC_VENV_DIR/bin/python scripts/check_env.py --no-staged && \
@@ -117,12 +124,14 @@ plots: ## training-curve figures for the report: make plots [RUNS_DIR=...] [RUNS
 	@. $(ENV_FILE); $(PY) scripts/plot_runs.py $(if $(RUNS_DIR),--runs-dir $(RUNS_DIR),) $(if $(RUNS),--runs $(RUNS),)
 
 # ------------------------------------------------------------------ sbatch wrappers
-# mc_sbatch_args (configs/ada.env.sh) = account/QoS/GPUs/CPUs/memory of $MC_LAYOUT + the node exclude list;
+# mc_sbatch_args (configs/ada.env.sh) = account/QoS/GPUs/CPUs/memory of $MC_LAYOUT + the node exclude list.
+# Setup and data explicitly use the one-GPU fallback; training, smoke, evaluation and benchmarks use
+# the default four-GPU nlp_4gpu layout.
 # CLI flags override the #SBATCH headers, which carry the research_1gpu defaults for hand submission.
 sbatch-setup: ## submit the environment build job (venv, lock, tests, compose-check, data)
-	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/setup_env.sbatch
+	@MC_LAYOUT=research_1gpu; . $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/setup_env.sbatch
 sbatch-data: ## build the parquet data on a compute node (if the setup job ran before prefetch finished)
-	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/data.sbatch
+	@MC_LAYOUT=research_1gpu; . $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/data.sbatch
 sbatch-bench: ## submit the rollout benchmark (TP=1 sweep; TP=4 too under MC_LAYOUT=nlp_4gpu)
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/bench_rollout.sbatch
 sbatch-smoke: ## submit the smoke test (2 steps + the GPU tests in the same allocation); SMOKE_CONFIG=smoke_maxlen for the max-length stress test

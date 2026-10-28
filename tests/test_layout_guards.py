@@ -78,6 +78,7 @@ def test_4gpu_layout_with_lora_composes(compose, monkeypatch):
     assert cfg.actor_rollout_ref.rollout.tensor_model_parallel_size == 4
     assert cfg.actor_rollout_ref.model.lora_rank == 64
     assert cfg.actor_rollout_ref.actor.fsdp_config.offload_policy is True
+    assert cfg.ray_kwargs.ray_init.runtime_env.env_vars.NCCL_P2P_DISABLE == "1"
     assert mod.check(cfg) == []
 
 

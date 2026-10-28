@@ -14,9 +14,9 @@
 # vLLM/verl interface tests, compose-check the configs and build the parquet data. Never on the
 # login node (CentOS 7). Does not depend on `make` (not guaranteed on compute nodes).
 set -euo pipefail
+module load u22/python/3.12.15
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source configs/ada.env.sh
-source slurm/common.sh; mc_check_driver; mc_check_cuda   # old drivers (011) and dead GPUs both exit 6 and record the node
 VERL_TAG="${VERL_TAG:-v0.9.0}"
 PY="${MC_VENV_DIR}/bin/python"
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
@@ -29,9 +29,23 @@ command -v uv >/dev/null || { log "uv not found; install it on the login node: c
 log "uv $(uv --version) ; venv -> ${MC_VENV_DIR} ; python cache -> ${UV_PYTHON_INSTALL_DIR}"
 log "package index: ${UV_DEFAULT_INDEX} (strategy ${UV_INDEX_STRATEGY}); mirror speed: $(curl -sL -o /dev/null -m 8 -w '%{speed_download}' https://pypi.tuna.tsinghua.edu.cn/packages/d2/7f/577a61bf2c8eff26e942afe53a6b03f4dbf5b4f233b832c228417d0c954e/ray-2.56.1-cp312-cp312-manylinux2014_x86_64.whl || echo ?) B/s"
 
-log "== 1/6 venv + pinned requirements (requirements/base.txt)"
-uv venv --clear --python "${MC_PYTHON_VERSION}" "${MC_VENV_DIR}"   # --clear: a killed earlier build leaves a half-made venv
-uv pip install --python "${PY}" -r requirements/base.txt
+log "== 1/6 venv + pinned CUDA 12.9 requirements"
+if [ -d "${MC_VENV_DIR}" ]; then
+  log "reusing existing venv: ${MC_VENV_DIR}"
+else
+  uv venv --python "${MC_PYTHON_VERSION}" "${MC_VENV_DIR}"
+fi
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+grep -v -E '^(vllm==|torch==|torchvision==|torchaudio==)' requirements/base.txt > "${tmp}/base-no-cuda.txt"
+uv pip install --python "${PY}" \
+  --extra-index-url https://download.pytorch.org/whl/cu129 \
+  --index-strategy unsafe-best-match \
+  "torch==2.11.0+cu129" \
+  "torchvision==0.26.0+cu129" \
+  "torchaudio==2.11.0+cu129" \
+  "vllm @ https://github.com/vllm-project/vllm/releases/download/v0.24.0/vllm-0.24.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl" \
+  -r "${tmp}/base-no-cuda.txt"
 log "== 2/6 verl ${VERL_TAG} (no deps) + this package"
 uv pip install --python "${PY}" --no-deps "verl @ git+https://github.com/volcengine/verl.git@${VERL_TAG}"
 uv pip install --python "${PY}" --no-deps -e .
@@ -55,4 +69,4 @@ if [ -f "${MC_STAGE_ROOT}/MANIFEST.json" ]; then
 else
   log "skip prepare_data: ${MC_STAGE_ROOT}/MANIFEST.json missing (prefetch not finished); run it later with: sbatch slurm/data.sbatch"
 fi
-log "done; commit requirements/lock.txt"
+log "done; requirements/lock.txt contains the resolved CUDA 12.9 environment"

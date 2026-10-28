@@ -30,19 +30,19 @@ export MC_REPO_ROOT="${MC_REPO_ROOT:-$(cd "${_MC_COMMON_DIR}/.." && pwd)}"
 mc_log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
 
 mc_check_driver() {
-  # The pinned wheels are CUDA 13.0 builds and need an NVIDIA driver >= MC_MIN_DRIVER_MAJOR (580); the
+  # The pinned wheels are CUDA 12.9 builds and need an NVIDIA driver >= MC_MIN_DRIVER_MAJOR (525); the
   # 2080 Ti nodes are mixed (docs/decisions/011). Runs before anything is written, so a bad node leaves no
   # node.txt behind. The node is recorded in MC_BAD_NODES_FILE, which `make sbatch-*` excludes from then on.
-  local drv major min="${MC_MIN_DRIVER_MAJOR:-580}"
+  local drv major min="${MC_MIN_DRIVER_MAJOR:-525}"
   drv="$(sed -n 's/.*Kernel Module *\([0-9.]*\).*/\1/p' /proc/driver/nvidia/version 2>/dev/null || true)"
   # containers (Jarvislabs) may not expose /proc/driver/nvidia: ask nvidia-smi instead
   [ -n "${drv}" ] || drv="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ' || true)"
   major="${drv%%.*}"
   if [ -z "${drv}" ] || ! [ "${major}" -ge "${min}" ] 2>/dev/null; then
-    mc_log "ERROR: $(hostname) has NVIDIA driver '${drv:-none}' (need >= ${min} for the cu130 wheels; decision 011)"
+    mc_log "ERROR: $(hostname) has NVIDIA driver '${drv:-none}' (need >= ${min} for the cu129 wheels)"
     mc_bad_node_exit "driver=${drv:-none}"
   fi
-  mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu130 wheels (>= ${min})"
+  mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu129 wheels (>= ${min})"
 }
 
 mc_check_cuda() {
