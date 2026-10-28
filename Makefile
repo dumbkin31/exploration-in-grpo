@@ -94,11 +94,11 @@ compose-check: ## compose every training config (Hydra) and assert the CUTS/layo
 	  if MC_HW_PROFILE=sm75 MC_SLURM_GPUS=1 $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) layout=research_1gpu memory=plan_a_fullft_offload >/dev/null 2>&1; then echo "FAIL: compose-check accepted 1 GPU + plan A"; exit 1; else echo "== refused: OK =="; fi
 
 # ------------------------------------------------------------------------ data
-prefetch: ## LOGIN NODE (has internet): download Qwen3-1.7B + datasets into $$MC_STAGE_ROOT (idempotent)
+prefetch: ## LOGIN NODE (has internet): download Qwen3-0.6B + datasets into $$MC_STAGE_ROOT (idempotent)
 	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py
 
-prefetch-base: ## also stage Qwen3-1.7B-Base (+3.4 GB of the 25 GB /home2 quota; only if you will train it)
-	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --skip-model --extra-model Qwen/Qwen3-1.7B-Base
+prefetch-base: ## also stage Qwen3-0.6B-Base; only if you will train it
+	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --skip-model --extra-model Qwen/Qwen3-0.6B-Base
 
 data: ## build parquet files in verl schema (MATH, DAPO deduped, eval sets, smoke subsets)
 	@. $(ENV_FILE); $(PY) scripts/prepare_data.py

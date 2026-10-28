@@ -4,7 +4,7 @@ verl v0.9.0 streams merged (base + LoRA) weights to the rollout inside
 ``merged_lora_context(self.module, backup_adapters=True)``
 (verl/workers/engine/fsdp/transformer_impl.py:1048, ``FSDPEngine._merged_lora_per_tensor_param``; the
 only caller of the context in verl). ``backup_adapters=True`` first runs ``backup_base_model_weights``,
-which clones every non-LoRA parameter into a fresh CPU tensor: 1.72 B fp32 parameters, 6.9 GB, allocated
+which clones every non-LoRA parameter into a fresh CPU tensor: 0.6 B fp32 parameters, about 2.4 GB, allocated
 at once right after the checkpoint save. On the research QoS (30 GB host cgroup) the first arm sat at
 ~27.5 GB when the weight sync began and was OOM-killed inside that clone at the end of step 1 (jobs
 2719894, 2719898, 2721833; decision 012). There is no config switch for it.

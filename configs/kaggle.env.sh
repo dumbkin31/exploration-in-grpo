@@ -25,7 +25,7 @@ export MC_VENV_DIR="${MC_VENV_DIR:-${MC_REPO_ROOT}/.venv}"
 export MC_PYTHON_VERSION="${MC_PYTHON_VERSION:-3.12}"
 
 # --- model + data + runs -------------------------------------------------------
-export MC_MODEL_NAME="${MC_MODEL_NAME:-Qwen/Qwen3-1.7B}"
+export MC_MODEL_NAME="${MC_MODEL_NAME:-Qwen/Qwen3-0.6B}"
 export MC_MODELS_DIR="${MC_MODELS_DIR:-${MC_STAGE_ROOT}/models}"
 export MC_MODEL_DIR="${MC_MODEL_DIR:-${MC_MODELS_DIR}/$(basename "${MC_MODEL_NAME}")}"
 export MC_DATA_DIR="${MC_DATA_DIR:-${MC_STAGE_ROOT}/data}"
@@ -50,7 +50,7 @@ export MC_HUB_KEEP="${MC_HUB_KEEP:-2}"                        # checkpoints kept
 # MC_HUB_REPO (e.g. <hf-user>/mixed-cuts-runs) and HF_TOKEN (write) come from .env (kaggle notebook cell)
 
 # --- run naming ---------------------------------------------------------------------------------
-export MC_RUN_TAG="${MC_RUN_TAG:-t4}"    # math_grpo-t4-s1: separate from the Ada and H100 runs
+export MC_RUN_TAG="${MC_RUN_TAG:-t4-qwen3-0.6b}"    # separate from the Ada and H100 runs
 
 # --- caches ---------------------------------------------------------------------------------------
 export MC_CACHE_ROOT="${MC_CACHE_ROOT:-${MC_SCRATCH_ROOT}/cache}"

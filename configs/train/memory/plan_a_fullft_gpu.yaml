@@ -4,12 +4,12 @@
 # with layout=h100_1gpu hardware=h100. Does NOT fit an 80 GB H100 at that layout's vLLM budget (0.60 x 80 = 48
 # GB + the ~35 GB below): use plan_b_lora_calibrated_gpu there.
 #
-# Per-GPU budget (Qwen3-1.7B, 1.72 B parameters; the LoRA arms peaked at 16.1 GB allocated in the update):
-#   actor  fp32 params 6.9 GB + Adam m/v 13.8 GB (+ fp32 grads 6.9 GB during the update)   21-28 GB
-#   reference: a separate fp32 copy (no adapter to switch off; ref model_dtype fp32)          6.9 GB
+# Per-GPU budget (Qwen3-0.6B, ~0.6 B parameters; the LoRA arms peaked at 16.1 GB allocated in the update):
+#   actor  fp32 params ~2.4 GB + Adam m/v ~4.8 GB (+ fp32 grads ~2.4 GB during the update)  ~7-10 GB
+#   reference: a separate fp32 copy (no adapter to switch off; ref model_dtype fp32)          ~2.4 GB
 #   rollout: vLLM 0.60 x 141 GB = 85 GB beside the actor and the reference                 ~121 GB in all
 #   update (vLLM asleep at level 2): 28 + 7 + ~8 GB activations (32k-token micro-batches)    ~43 GB
-# Checkpoints hold the fp32 model and the Adam state: ~21 GB each (LoRA: 0.9 GB).
+# Checkpoints hold the fp32 model and the Adam state: ~7 GB each (LoRA: 0.9 GB).
 actor_rollout_ref:
   model:
     lora_rank: 0                     # full fine-tune: every parameter trains

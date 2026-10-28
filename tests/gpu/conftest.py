@@ -2,7 +2,7 @@
 
     MC_SMOKE_RUN_DIR=/scratch/$USER/mixed-cuts/runs/smoke-s42-<job> make gpu-test
 
-They need vLLM, one GPU and the staged Qwen3-1.7B (``MC_STAGED_MODEL_DIR`` or ``MC_MODEL_DIR``).
+They need vLLM, one GPU and the staged Qwen3-0.6B (``MC_STAGED_MODEL_DIR`` or ``MC_MODEL_DIR``).
 One vLLM engine is shared per test module (module-scoped fixture) to keep start-up cost down.
 """
 

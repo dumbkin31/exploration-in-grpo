@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Base GRPO config for Qwen3-1.7B. Built for Ada's RTX 2080 Ti nodes (sm_75, 11 GiB, fp16 only), which
+# Base GRPO config for Qwen3-0.6B. Built for Ada's RTX 2080 Ti nodes (sm_75, 11 GiB, fp16 only), which
 # stay the default; one H100 on Jarvislabs is the other target (decision 013). The GPU count comes from
 # configs/train/layout/ (default nlp_4gpu: four-card distributed LoRA; research_1gpu: one-card fallback;
 # h100_1gpu), the memory plan from configs/train/memory/ (default
@@ -77,7 +77,7 @@ data:
   val_max_samples: 100               # training-time validation only; full eval = eval/run_eval.py
   train_batch_size: 128              # paper: 128 prompts per step = the effective batch (see 002)
   max_prompt_length: 1024
-  max_response_length: 5000          # paper (Qwen3-1.7B)
+  max_response_length: 5000          # paper-compatible Qwen3 response budget
   filter_overlong_prompts: true
   truncation: error
   seed: ${seed}                      # train sampler + subsampling

@@ -71,12 +71,12 @@ def main() -> int:
     ap.add_argument(
         "--stage-root", default=os.environ.get("MC_STAGE_ROOT"), help="defaults to $MC_STAGE_ROOT"
     )
-    ap.add_argument("--model", default=os.environ.get("MC_MODEL_NAME", "Qwen/Qwen3-1.7B"))
+    ap.add_argument("--model", default=os.environ.get("MC_MODEL_NAME", "Qwen/Qwen3-0.6B"))
     ap.add_argument(
         "--extra-model",
         action="append",
         default=[],
-        help="additional model repo(s), e.g. Qwen/Qwen3-1.7B-Base",
+        help="additional model repo(s), e.g. Qwen/Qwen3-0.6B-Base",
     )
     ap.add_argument("--datasets", nargs="*", default=DATASET_REPOS)
     ap.add_argument(

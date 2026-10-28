@@ -4,7 +4,7 @@
 #
 # Why the offload policy even for LoRA: verl keeps the base in `fsdp_config.model_dtype` (fp32 by
 # default; the LoRA masters follow it, and fp16 masters would lose most 1e-5 updates), and on a 1-GPU
-# world "sharded" means the whole 6.9 GB fp32 base, so verl's manual param_offload would put it on the
+# world "sharded" means the whole ~2.4 GB fp32 base, so verl's manual param_offload would put it on the
 # card for every forward. With offload_policy the base sits in pinned host RAM (~7.2 GB) and one decoder
 # layer is gathered in fp16 at a time; only the 69.7 M LoRA parameters carry grads and Adam state
 # (~0.85 GB). Verified in verl v0.9.0: transformer_impl.py:352-365,439-444.
@@ -35,6 +35,6 @@ actor_rollout_ref:
       reshard_after_forward: true    # one all-gathered layer at a time
     checkpoint:
       save_lora_only: true           # adapters + optimizer only (~0.9 GB). A full PEFT state-dict save gathers a
-                                     # 6.9 GB fp32 copy on the host; stacked on the weight sync it OOM-killed the
+                                     # ~2.4 GB fp32 copy on the host; stacked on the weight sync it OOM-killed the
                                      # 30 GB research cgroup at the end of every step (arm jobs 2719894/2719898).
                                      # Small checkpoints also live on /home2: no node pinning (012).  [checked on 1 GPU]

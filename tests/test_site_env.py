@@ -19,6 +19,7 @@ KEYS = (
     "MC_LAYOUT",
     "MC_TRAIN_OVERRIDES",
     "MC_CHECKPOINT_HOME",
+    "MC_MODEL_NAME",
     "MC_RUN_TAG",
     "WANDB_PROJECT",
 )
@@ -45,8 +46,9 @@ def test_ada_uses_the_four_gpu_layout_by_default(tmp_path: Path):
     assert v["MC_SITE"] == "ada" and v["MC_HW_PROFILE"] == "sm75"
     assert v["MC_LAYOUT"] == "nlp_4gpu"
     assert v["MC_TRAIN_OVERRIDES"] == "layout=nlp_4gpu memory=plan_b_lora_calibrated"
-    assert v["MC_RUN_TAG"] == "2080ti", (
-        "<config>-2080ti-s<seed>: not the September attempt's math_grpo-s1 (018)"
+    assert v["MC_MODEL_NAME"] == "Qwen/Qwen3-0.6B"
+    assert v["MC_RUN_TAG"] == "2080ti-qwen3-0.6b", (
+        "<config>-2080ti-qwen3-0.6b-s<seed>: separate from the 1.7B runs"
     )
 
 
@@ -59,11 +61,12 @@ def test_jarvis_selects_the_h100_setup(tmp_path: Path):
         UV_PYTHON_INSTALL_DIR=str(tmp_path / "uvpy"),
     )
     assert v["MC_SITE"] == "jarvis" and v["MC_HW_PROFILE"] == "h100" and v["MC_LAYOUT"] == "h100_1gpu"
+    assert v["MC_MODEL_NAME"] == "Qwen/Qwen3-0.6B"
     assert v["MC_TRAIN_OVERRIDES"] == "layout=h100_1gpu memory=plan_a_fullft_gpu hardware=h100", (
         "full fine-tuning is the default recipe (decision 017)"
     )
     assert v["MC_CHECKPOINT_HOME"] == "durable"
-    assert v["MC_RUN_TAG"] == "h100", "run names math_grpo-h100-s1 / math_mixed_cuts-h100-s1"
+    assert v["MC_RUN_TAG"] == "h100-qwen3-0.6b"
     assert v["WANDB_PROJECT"] == "mixed-cuts"
 
 
@@ -100,10 +103,11 @@ def test_kaggle_selects_the_t4_setup(tmp_path: Path):
         UV_PYTHON_INSTALL_DIR=str(tmp_path / "uvpy"),
     )
     assert v["MC_SITE"] == "kaggle" and v["MC_HW_PROFILE"] == "sm75" and v["MC_LAYOUT"] == "kaggle_t4"
+    assert v["MC_MODEL_NAME"] == "Qwen/Qwen3-0.6B"
     assert v["MC_TRAIN_OVERRIDES"] == "layout=kaggle_t4", (
         "the Ada LoRA plan and fp16 profile are the defaults"
     )
-    assert v["MC_CHECKPOINT_HOME"] == "durable" and v["MC_RUN_TAG"] == "t4"
+    assert v["MC_CHECKPOINT_HOME"] == "durable" and v["MC_RUN_TAG"] == "t4-qwen3-0.6b"
 
 
 def test_preflight_profiles():

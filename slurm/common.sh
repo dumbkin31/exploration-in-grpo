@@ -13,7 +13,7 @@
 #   MC_RUN_DIR     = live run dir: checkpoints/, metrics.jsonl, cuts_stats/, rollout_dumps/,
 #                    phases.jsonl, gpu_mem.jsonl, wandb/, jobs/<jobid>/
 #                    MC_CHECKPOINT_HOME=scratch (default): $MC_SCRATCH_RUNS_DIR/<run>, node-local,
-#                    because /home2 (the durable NFS) has a 25 GB quota and one checkpoint is ~21 GB
+#                    because /home2 (the durable NFS) has a 25 GB quota and full-fine-tune checkpoints are several GB
 #   MC_DURABLE_DIR = $MC_RUNS_DIR/<run> on /home2 (NFS, every node): everything except checkpoints, mirrored every
 #                    MC_MIRROR_INTERVAL seconds and at exit, plus node.txt (which node holds the
 #                    checkpoints; `make sbatch-train` pins resubmissions to it with -w)
@@ -469,7 +469,7 @@ mc_train_main() {
   # Usage: mc_train_main <config-name> [extra hydra overrides...]; needs MC_SEED (default 42).
   local config="${1:?config name}"; shift || true
   export MC_SEED="${MC_SEED:-42}"
-  # MC_RUN_TAG keeps runs on other hardware apart: math_grpo-2080ti-s1 (Ada), math_grpo-h100-s1 (Jarvislabs)
+  # MC_RUN_TAG keeps runs on other hardware and model versions apart.
   mc_job_init "${MC_RUN_NAME:-${config}${MC_RUN_TAG:+-${MC_RUN_TAG}}-s${MC_SEED}}"
   mc_stage_in
   # Config-specific preflight (compose + invariants + chat template) now that the model is staged.

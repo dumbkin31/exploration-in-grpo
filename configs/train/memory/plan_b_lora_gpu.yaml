@@ -1,7 +1,7 @@
 # @package _global_
 # Memory plan B on an 80 GB GPU (decision 013): the SAME LoRA as plan_b_lora (r=64, alpha=128,
 # all-linear, lr 1e-5, merged-weight sync, LoRA-only checkpoints), so the H100 arms train the same
-# model the Ada plan did. Only the placement differs: the fp32 base (6.9 GB) and the LoRA state stay
+# model the Ada plan did. Only the placement differs: the fp32 base (~2.4 GB) and the LoRA state stay
 # on the GPU, because host offload would copy the base over PCIe for every micro-batch.
 actor_rollout_ref:
   model:

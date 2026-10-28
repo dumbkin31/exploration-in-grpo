@@ -2,7 +2,7 @@
 # Evaluate on Kaggle (decision 014): MATH-500, AIME24, AIME25, AMC23, GPQA-diamond, 16 samples per problem,
 # fp16 on a T4 (configs/eval/default.yaml, the settings validated for sm_75). ~3 h per model on one T4.
 #
-#   bash kaggle/eval.sh base [gpu]                        # the untrained Qwen3-1.7B
+#   bash kaggle/eval.sh base [gpu]                        # the untrained Qwen3-0.6B
 #   bash kaggle/eval.sh <run name> [gpu] [step]           # e.g. math_grpo-t4-s1, or math_grpo-h100-s1
 #
 # A run's checkpoint is pulled from the Hub (MC_HUB_REPO) when it is not on disk, merged in fp16, and the
@@ -19,7 +19,7 @@ source configs/ada.env.sh
 export CUDA_VISIBLE_DEVICES="${GPU}" PATH="${MC_VENV_DIR}/bin:${PATH}"
 hub() { if [ -n "${MC_HUB_REPO:-}" ]; then python scripts/hub_sync.py "$@"; else return 0; fi; }
 if [ "${TARGET}" = "base" ]; then
-  RUN="base-qwen3-1.7b-${MC_RUN_TAG}"
+  RUN="base-qwen3-0.6b-${MC_RUN_TAG}"
   CKPT="${MC_MODEL_DIR}"
   OUT="${MC_RUNS_DIR}/${RUN}/eval/base"
 else
