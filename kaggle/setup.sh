@@ -77,7 +77,7 @@ say "parquet data -> ${MC_DATA_DIR}"
 say "unit tests + config checks"
 "${MC_VENV_DIR}/bin/python" -m pytest -q --ignore=tests/gpu --ignore=tests/test_trainer_helpers.py -p no:cacheprovider
 for c in smoke math_grpo math_mixed_cuts; do
-  "${MC_VENV_DIR}/bin/python" scripts/compose_config.py "${c}" --check ${MC_TRAIN_OVERRIDES}
+  "${MC_VENV_DIR}/bin/python" scripts/compose_config.py "${c}" ${MC_TRAIN_OVERRIDES} --check
 done
 
 say "GPU preflight (GPU 0)"
