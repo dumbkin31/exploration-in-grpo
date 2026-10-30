@@ -131,7 +131,7 @@ def main() -> None:
     parser.add_argument(
         "--datasets",
         nargs="+",
-        default=["math_train", "dapo_train"],
+        default=["math_train"],
     )
     args = parser.parse_args()
 

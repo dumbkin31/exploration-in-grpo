@@ -8,7 +8,7 @@ Usage: run_saturation.sh <hf-checkpoint> [output-dir] [options]
 Options:
   --start N          first dataset row, inclusive (default: 0)
   --end N            last dataset row, exclusive (default: dataset length)
-  --datasets CSV     datasets to run (default: math_train,dapo_train)
+  --datasets CSV     datasets to run (default: math_train)
   --gpus CSV         visible GPU ids, assigned round-robin (default: 0)
   --chunk-size N     rows per resumable evaluation chunk (default: 100)
   --limit N           number of rows from --start (compatibility shortcut)
@@ -24,6 +24,8 @@ EOF
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
+export MC_MODEL_NAME="${MC_MODEL_NAME:-Qwen/Qwen3-0.6B}"
+
 # Auto-source cluster environment if needed
 if [[ -z "${DATA_DIR:-}" && -z "${MC_DATA_DIR:-}" ]]; then
   if [[ -f "${REPO_ROOT}/configs/${MC_SITE:-ada}.env.sh" ]]; then
@@ -32,10 +34,18 @@ if [[ -z "${DATA_DIR:-}" && -z "${MC_DATA_DIR:-}" ]]; then
   fi
 fi
 
-CKPT="${1:-${MC_CKPT:-${MC_MODEL_DIR:-}}}"
-[[ -n "${CKPT}" ]] || usage
+DEFAULT_MODEL_DIR="${MC_STAGED_MODEL_DIR:-${MC_MODELS_DIR:-${MC_STAGE_ROOT:-${HOME}/mixed-cuts-data}/models}/$(basename "${MC_MODEL_NAME}")}"
+if [[ -d "${DEFAULT_MODEL_DIR}" ]]; then
+  DEFAULT_CKPT="${DEFAULT_MODEL_DIR}"
+else
+  DEFAULT_CKPT="${MC_MODEL_NAME}"
+fi
+
 if [[ "${1:-}" != "" && "${1:-}" != --* ]]; then
+  CKPT="$1"
   shift
+else
+  CKPT="${MC_CKPT:-${DEFAULT_CKPT}}"
 fi
 
 if [[ "${1:-}" != "" && "${1:-}" != --* ]]; then
@@ -45,7 +55,7 @@ else
   OUT_DIR="${REPO_ROOT}/runs/saturation/$(basename "${CKPT}")"
 fi
 
-DATA_DIR="${DATA_DIR:-${MC_DATA_DIR:-}}"
+DATA_DIR="${DATA_DIR:-${MC_STAGED_DATA_DIR:-${MC_DATA_DIR:-}}}"
 if [[ -z "${PYTHON:-}" ]]; then
   if [[ -n "${MC_VENV_DIR:-}" && -x "${MC_VENV_DIR}/bin/python" ]]; then
     PYTHON="${MC_VENV_DIR}/bin/python"
@@ -56,7 +66,7 @@ if [[ -z "${PYTHON:-}" ]]; then
   fi
 fi
 EVAL_CONFIG="${EVAL_CONFIG:-configs/eval/default.yaml}"
-DATASETS_CSV="${DATASETS:-math_train,dapo_train}"
+DATASETS_CSV="${DATASETS:-math_train}"
 GPUS_CSV="${GPUS:-${CUDA_VISIBLE_DEVICES:-0}}"
 CHUNK_SIZE="${CHUNK_SIZE:-100}"
 START="${START:-0}"
@@ -140,7 +150,8 @@ done
 run_dataset() {
   local dataset="$1"
   local gpu="$2"
-  local dataset_end="${END}"
+  local range_start="${3:-${START}}"
+  local range_end="${4:-${END}}"
   local total_rows
   total_rows=$("${PYTHON}" - "${DATA_DIR}/${dataset}.parquet" <<'PY'
 import sys
@@ -150,18 +161,18 @@ import pyarrow.parquet as parquet
 print(parquet.ParquetFile(sys.argv[1]).metadata.num_rows)
 PY
   )
-  if [[ -z "${dataset_end}" || "${dataset_end}" -gt "${total_rows}" ]]; then
-    dataset_end="${total_rows}"
+  if [[ -z "${range_end}" || "${range_end}" -gt "${total_rows}" ]]; then
+    range_end="${total_rows}"
   fi
-  if (( START > total_rows )); then
-    echo "ERROR: --start=${START} exceeds ${total_rows} rows in ${dataset}" >&2
+  if (( range_start > total_rows )); then
+    echo "ERROR: range start=${range_start} exceeds ${total_rows} rows in ${dataset}" >&2
     return 1
   fi
 
-  local chunk_start="${START}"
-  while (( chunk_start < dataset_end )); do
+  local chunk_start="${range_start}"
+  while (( chunk_start < range_end )); do
     local chunk_end=$((chunk_start + CHUNK_SIZE))
-    (( chunk_end > dataset_end )) && chunk_end="${dataset_end}"
+    (( chunk_end > range_end )) && chunk_end="${range_end}"
     local range="${chunk_start}-${chunk_end}"
     local dataset_chunk_dir="${OUT_DIR}/chunks/${dataset}-${range}"
     local eval_root="${OUT_DIR}/eval/${dataset}/${range}"
@@ -204,7 +215,41 @@ PY
   done
 }
 
-if (( ${#GPUS[@]} >= ${#DATASETS[@]} )); then
+if (( ${#DATASETS[@]} == 1 && ${#GPUS[@]} > 1 )); then
+  # Single dataset parallelized across multiple GPUs
+  dataset="${DATASETS[0]}"
+  total_rows=$("${PYTHON}" - "${DATA_DIR}/${dataset}.parquet" <<'PY'
+import sys
+
+import pyarrow.parquet as parquet
+
+print(parquet.ParquetFile(sys.argv[1]).metadata.num_rows)
+PY
+  )
+  dataset_end="${END:-${total_rows}}"
+  (( dataset_end > total_rows )) && dataset_end="${total_rows}"
+  total_span=$((dataset_end - START))
+  num_gpus="${#GPUS[@]}"
+  rows_per_gpu=$(( (total_span + num_gpus - 1) / num_gpus ))
+
+  declare -a PIDS=()
+  for i in "${!GPUS[@]}"; do
+    w_start=$((START + i * rows_per_gpu))
+    (( w_start >= dataset_end )) && continue
+    w_end=$((w_start + rows_per_gpu))
+    (( w_end > dataset_end )) && w_end="${dataset_end}"
+    run_dataset "${dataset}" "${GPUS[$i]}" "${w_start}" "${w_end}" &
+    PIDS+=("$!")
+  done
+  FAIL=0
+  for pid in "${PIDS[@]}"; do
+    wait "${pid}" || FAIL=1
+  done
+  if (( FAIL )); then
+    echo "ERROR: one or more chunk evaluation workers failed." >&2
+    exit 1
+  fi
+elif (( ${#GPUS[@]} >= ${#DATASETS[@]} )); then
   declare -a PIDS=()
   for i in "${!DATASETS[@]}"; do
     run_dataset "${DATASETS[$i]}" "${GPUS[$i]}" &

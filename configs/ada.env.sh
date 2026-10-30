@@ -134,7 +134,7 @@ export WANDB_INIT_TIMEOUT="${WANDB_INIT_TIMEOUT:-180}"
 export MC_LAYOUT="${MC_LAYOUT:-research_1gpu}"
 case "${MC_LAYOUT}" in
   research_1gpu)   # assigned unconditionally: a shell that sourced this file before keeps the old exports.
-    export MC_SLURM_ACCOUNT=research MC_SLURM_QOS=low MC_SLURM_GPUS=1 MC_SLURM_CPUS=10
+    export MC_SLURM_ACCOUNT=research MC_SLURM_QOS=low MC_SLURM_GPUS=1 MC_SLURM_CPUS="${MC_SLURM_CPUS:-10}"
     export MC_TRAIN_OVERRIDES=""                       # the config defaults already select this layout
     export MC_REWARD_WORKERS=2
     export MC_CHECKPOINT_HOME=durable                  # LoRA-only checkpoints (~0.9 GB) on /home2: resumes on any node

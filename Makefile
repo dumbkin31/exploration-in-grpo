@@ -89,6 +89,9 @@ compose-check: ## compose every training config (Hydra) and assert the CUTS/layo
 prefetch: ## LOGIN NODE (has internet): download Qwen3-1.7B + datasets into $$MC_STAGE_ROOT (idempotent)
 	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py
 
+prefetch-0.6b: ## stage Qwen3-0.6B into $$MC_STAGE_ROOT (login node)
+	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --skip-model --extra-model Qwen/Qwen3-0.6B
+
 prefetch-base: ## also stage Qwen3-1.7B-Base (+3.4 GB of the 25 GB /home2 quota; only if you will train it)
 	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --skip-model --extra-model Qwen/Qwen3-1.7B-Base
 
@@ -108,8 +111,8 @@ train: ## train with configs/train/$(CONFIG).yaml (inside an allocation): make t
 eval: ## eval CKPT (HF dir) on BENCH with N_SAMPLES samples per problem
 	@. $(ENV_FILE); $(PY) eval/run_eval.py --ckpt "$(CKPT)" --benchmarks "$(BENCH)" --n-samples $(N_SAMPLES) --seed $(SEED)
 
-saturation: ## check rollout saturation on MATH and DAPO (inside an allocation): make saturation [CKPT=...]
-	@. $(ENV_FILE); bash saturation/run_saturation.sh "$${CKPT:-$$MC_MODEL_DIR}"
+saturation: ## check rollout saturation on MATH with Qwen3-0.6B (inside an allocation): make saturation [CKPT=...] [LIMIT=1600]
+	@. $(ENV_FILE); MC_MODEL_NAME="$${MODEL:-Qwen/Qwen3-0.6B}"; DATASETS="$${DATASETS:-math_train}"; bash saturation/run_saturation.sh "$${CKPT:-$${MC_MODELS_DIR:-$$MC_STAGE_ROOT/models}/$$(basename "$${MC_MODEL_NAME}")}" --limit "$${LIMIT:-1600}"
 
 # ------------------------------------------------------------------- results
 compare: ## report tables from the runs' evals + training logs: make compare [RUNS_DIR=...] [RATE=112.59] [RUNS="a b"]
@@ -135,8 +138,8 @@ sbatch-train: ## submit (or resume) a training run: make sbatch-train CONFIG=mat
 	  sbatch $$(mc_sbatch_args) -J $(CONFIG)-s$(SEED) --dependency=singleton $$W --export=ALL,MC_CONFIG=$(CONFIG),MC_SEED=$(SEED) slurm/train.sbatch
 sbatch-eval: ## submit an eval run: make sbatch-eval CKPT=... BENCH=... SEED=0 [NODE=gnodeXX if CKPT is on that node's scratch]
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) $(if $(NODE),-w $(NODE),) --export=ALL,MC_CKPT="$(CKPT)",MC_BENCH="$(BENCH)",MC_N_SAMPLES=$(N_SAMPLES),MC_SEED=$(SEED) slurm/eval.sbatch
-sbatch-saturation: ## submit saturation analysis job on Ada: make sbatch-saturation [CKPT=...] [DATASETS=...]
-	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) --export=ALL,MC_CKPT="$${CKPT:-$$MC_MODEL_DIR}",MC_DATASETS="$${DATASETS:-math_train,dapo_train}",MC_N_SAMPLES=$${N_SAMPLES:-16},MC_SEED=$${SEED:-0} slurm/saturation.sbatch
+sbatch-saturation: ## submit saturation analysis job on Ada: make sbatch-saturation [CKPT=...] [DATASETS=...] [LIMIT=1600] [CPUS=4]
+	@. $(ENV_FILE); export MC_MODEL_NAME="$${MODEL:-Qwen/Qwen3-0.6B}"; export MC_SLURM_CPUS="$${CPUS:-4}"; sbatch $$(mc_sbatch_args) --export=ALL,MC_MODEL_NAME="$${MC_MODEL_NAME}",MC_CKPT="$${CKPT:-$${MC_MODELS_DIR:-$$MC_STAGE_ROOT/models}/$$(basename "$${MC_MODEL_NAME}")}",MC_DATASETS="$${DATASETS:-math_train}",MC_N_SAMPLES=$${N_SAMPLES:-16},MC_SEED=$${SEED:-0},LIMIT=$${LIMIT:-1600} slurm/saturation.sbatch
 sbatch-resume-test: ## kill-at-step-15-and-resubmit verification of checkpoint resume
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/test_resume.sbatch
 
