@@ -44,3 +44,4 @@ logs/
 
 # uv creates these when run inside the repo; pins live in requirements/
 uv.lock
+analysis/math_*

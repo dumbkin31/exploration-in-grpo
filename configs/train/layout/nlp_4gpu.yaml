@@ -21,8 +21,10 @@ ray_kwargs:
     runtime_env:
       env_vars:
         # The 2080 Ti node topology exposes no CUDA peer-access pairs; prevent NCCL from
-        # selecting a CUDA P2P path during FSDP2 state-dict broadcast.
+        # selecting CUDA P2P or shared-memory IPC paths during FSDP2 state-dict broadcast.
         NCCL_P2P_DISABLE: "1"
+        NCCL_SHM_DISABLE: "1"
+        NCCL_IB_DISABLE: "1"
         NCCL_DEBUG: "WARN"
       worker_process_setup_hook: mixed_cuts.worker_hooks.install
 transfer_queue:

@@ -199,11 +199,13 @@ def check(cfg) -> list[str]:
             f"ray_kwargs.ray_init.runtime_env.worker_process_setup_hook must be mixed_cuts.worker_hooks.install (sm_75 SDPA + LoRA sync without the CPU backup, decision 012): {hook}"
         )
     env_vars = (ray_init.get("runtime_env") or {}).get("env_vars") or {}
-    if n_gpus > 1 and env_vars.get("NCCL_P2P_DISABLE") != "1":
-        fail(
-            "4-GPU layouts must set ray_kwargs.ray_init.runtime_env.env_vars.NCCL_P2P_DISABLE=1 "
-            "(the 2080 Ti nodes report no CUDA peer-access pairs, decision 019)"
-        )
+    if n_gpus > 1:
+        for variable in ("NCCL_P2P_DISABLE", "NCCL_SHM_DISABLE", "NCCL_IB_DISABLE"):
+            if env_vars.get(variable) != "1":
+                fail(
+                    f"4-GPU layouts must set ray_kwargs.ray_init.runtime_env.env_vars.{variable}=1 "
+                    "(the 2080 Ti nodes report no usable CUDA peer-access or shared-memory IPC paths, decision 019)"
+                )
     lora_rank = int(arr.model.get("lora_rank", 0) or 0)
     if n_gpus == 1:
         # sm75 (research/medium, Kaggle) trains LoRA (012); the h100 profile also allows the full fine-tune of

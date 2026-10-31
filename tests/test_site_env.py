@@ -21,6 +21,8 @@ KEYS = (
     "MC_CHECKPOINT_HOME",
     "MC_MODEL_NAME",
     "MC_RUN_TAG",
+    "MC_SLURM_CONSTRAINT",
+    "CUDA_DEVICE_ORDER",
     "WANDB_PROJECT",
 )
 
@@ -50,6 +52,8 @@ def test_ada_uses_the_four_gpu_layout_by_default(tmp_path: Path):
     assert v["MC_RUN_TAG"] == "2080ti-qwen3-0.6b", (
         "<config>-2080ti-qwen3-0.6b-s<seed>: separate from the 1.7B runs"
     )
+    assert v["MC_SLURM_CONSTRAINT"] == "2080ti"
+    assert v["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"
 
 
 def test_jarvis_selects_the_h100_setup(tmp_path: Path):

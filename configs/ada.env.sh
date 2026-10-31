@@ -36,6 +36,9 @@ export MC_SITE=ada
 # September attempt's math_grpo-s1 holds a checkpoint of the old recipe (decision 018).
 export MC_RUN_TAG="${MC_RUN_TAG:-2080ti-qwen3-0.6b}"
 export MC_HW_PROFILE="${MC_HW_PROFILE:-sm75}"   # configs/train/hardware/sm75.yaml; checked by compose_config + check_env
+# Keep CUDA's logical device order stable across mixed PCIe layouts. This must be set before
+# torch initializes, which happens during the shared Slurm preflight.
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # --- who / where -------------------------------------------------------------
 export MC_USER="${MC_USER:-${USER:-$(id -un)}}"
@@ -163,7 +166,9 @@ case "${MC_LAYOUT}" in
     ;;
 esac
 export MC_SLURM_PARTITION="${MC_SLURM_PARTITION:-u22}"
-export MC_SLURM_CONSTRAINT="${MC_SLURM_CONSTRAINT:-2080ti}"
+# The Ada sm75 recipes are only valid on the 2080 Ti feature class. Do not allow an inherited
+# environment/local override to silently submit them to another class.
+export MC_SLURM_CONSTRAINT=2080ti
 export MC_SLURM_MEM_PER_CPU="${MC_SLURM_MEM_PER_CPU:-3000M}"   # u22 MaxMemPerCPU=3000 MB (3G = 3072 is rejected); 10 x 3000M = 30 GB, 40 x 3000M = 117 GB
 export MC_SLURM_SIGNAL_SECS="${MC_SLURM_SIGNAL_SECS:-300}"  # SIGUSR1 this many seconds before kill
 # Node selection: the 2080 Ti nodes run MIXED NVIDIA driver generations (docs/decisions/011). The pinned

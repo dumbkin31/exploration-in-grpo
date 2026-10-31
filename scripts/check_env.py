@@ -256,6 +256,12 @@ def check_gpu(r: Report) -> None:
             )
         elif prof["bf16"] and cc < (8, 0):
             r.fail(f"gpu{i}", f"{name} cc {cc} has no bf16: the {prof_name} profile needs cc >= 8.0")
+        elif not prof["bf16"]:
+            r.fail(
+                f"gpu{i}",
+                f"{name} cc {cc} does not match the {prof_name} profile ({prof['gpu']}); "
+                "the Slurm -C 2080ti constraint was not sufficient",
+            )
         else:
             r.warn(f"gpu{i}", f"{name} cc {cc}; profile {prof_name} is tuned for the {prof['gpu']}")
     if n:

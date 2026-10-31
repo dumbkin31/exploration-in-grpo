@@ -70,6 +70,15 @@ mc_bad_node_exit() {
   exit 6
 }
 
+mc_init_run_dirs() {
+  mkdir -p "${MC_DURABLE_DIR}" \
+    || { mc_log "ERROR: cannot create ${MC_DURABLE_DIR} (is ${MC_STAGE_ROOT} mounted and writable here?)"; exit 3; }
+  if ! mkdir -p "${MC_RUN_DIR}" "${MC_JOB_DIR}" "${WANDB_DIR}" "${MC_SCRATCH_ROOT}/stage"; then
+    mc_log "ERROR: cannot initialize node-local scratch at ${MC_SCRATCH_ROOT} on $(hostname)"
+    mc_bad_node_exit "scratch_init_failed root=${MC_SCRATCH_ROOT}"
+  fi
+}
+
 mc_resubmit_elsewhere() {
   # Resubmit THIS job with the same script, name, time limit and environment and the updated exclude
   # list, so a job that lands on an old-driver or dead-GPU node does not sit dead until someone notices
@@ -167,10 +176,7 @@ mc_job_init() {
   export WANDB_RUN_ID="${MC_RUN_NAME}"
   export WANDB_RESUME="allow"
   export WANDB_NAME="${MC_RUN_NAME}"
-  mkdir -p "${MC_DURABLE_DIR}" \
-    || { mc_log "ERROR: cannot create ${MC_DURABLE_DIR} (is ${MC_STAGE_ROOT} mounted and writable here?)"; exit 3; }
-  mkdir -p "${MC_RUN_DIR}" "${MC_JOB_DIR}" "${WANDB_DIR}" "${MC_SCRATCH_ROOT}/stage" \
-    || { mc_log "ERROR: cannot create ${MC_RUN_DIR} (no writable node-local scratch on $(hostname)?)"; exit 3; }
+  mc_init_run_dirs
   mc_check_node_pin
   export PATH="${MC_VENV_DIR}/bin:${PATH}"
   export PYTHONUNBUFFERED=1

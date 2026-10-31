@@ -120,6 +120,9 @@ early) -> stage-in (model + parquet into `/scratch`) -> run, mirroring to `/home
 or on SLURM's `SIGUSR1` (sent 300 s before a kill): stop the GPU sampler, record the engine facts, copy this
 job's log next to the run, prune checkpoints, final mirror. Resubmitting the same `CONFIG` + `SEED` on the
 same node **resumes** from the newest checkpoint ([005](docs/decisions/005-run-naming-resume-and-checkpoints.md)).
+If node-local scratch initialization fails (for example, `ENOSPC` while creating `/scratch/$USER`), the job
+records the node in `bad_nodes.txt`, automatically resubmits using the existing bounded retry policy
+(`MC_AUTO_RESUBMIT=1`, up to `MC_RESUBMIT_MAX=5`), and excludes that node from the replacement job.
 All paths live in `configs/ada.env.sh`; nothing in `src/` hardcodes `/scratch` or `/home2`.
 
 ## 4. Memory plan: one 2080 Ti, LoRA, 30 GB of host RAM
