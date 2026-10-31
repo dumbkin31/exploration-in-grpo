@@ -1,10 +1,10 @@
 # @package _global_
-# Layout: ONE RTX 2080 Ti per job on SLURM account `research` / QoS `low` (per user: 1 GPU, 10 CPUs,
+# Layout: ONE RTX 2080 Ti per job on SLURM account `research` / QoS `medium` (per user: 1 GPU, 10 CPUs,
 # 32 GB host RAM, 1 node per job; docs/decisions/012). This is the DEFAULT layout; it pairs with
 # memory=plan_b_lora (plan A needs 27.6 GB of host RAM for the optimizer alone; compose-check refuses it).
 #
 # Rollout budget: the actor lives in pinned host RAM (FSDP2 CPUOffloadPolicy), so vLLM can take most of
-# the card: 0.80 x 11 GiB = 8.8 GiB = 3.44 GB weights + ~1 GB activations/cudagraphs + ~4.3 GB KV
+# the card: 0.80 x 11 GiB = 8.8 GiB = ~1.2 GB weights + ~1 GB activations/cudagraphs + ~4.3 GB KV
 # Measured by `make sbatch-bench` on gnode084 (2026-09-27, job 2719260, V1 runner + CUTS processor):
 # util 0.80 -> 4.74 GiB KV = 44,416 tokens (7.2 max-length sequences), rollout peak 8.9 GiB; util 0.85
 # starts too (49,360 tokens) but leaves 1.9 GiB beside vLLM, too thin next to the FSDP worker's context.

@@ -4,22 +4,22 @@
 
 # 012: The `research` account gives one GPU per user, so the arms train with LoRA on one 2080 Ti
 
-**Decided 2026-09-27 with the user**: every job runs on SLURM account `research` (QoS `low`) instead of the
+**Decided 2026-09-27 with the user**: every job runs on SLURM account `research` (QoS `medium`) instead of the
 shared `nlp` account, and the two arms train with **LoRA on one GPU** instead of the 4-GPU full fine-tune of
 [002](002-four-gpu-memory-layout.md). W&B logs **online** from the compute nodes.
 
 ## Measured limits (`sacctmgr`, 2026-09-27)
 
-| | `research` / QoS `low` (our account now) | `nlp` / QoS `normal` (shared) |
+| | `research` / QoS `medium` (our account now) | `nlp` / QoS `normal` (shared) |
 |---|---|---|
 | per user, at any time | cpu=10, gres/gpu=1, mem=32000M | account-wide cpu=120, gpu=12 (everyone in the group) |
 | per job | gpu=1, node=1 (`QOSMaxNodePerJobLimit`) | 4 GPUs/node |
 | jobs | 5 running / 5 submitted | - |
 | MaxWall | 4-00:00:00 (`DenyOnLimit`: longer requests are rejected) | - |
-| preemption | `PreemptType=preempt/qos`, `PreemptMode=GANG,SUSPEND`; no QoS lists `low` as a target | - |
+| preemption | `PreemptType=preempt/qos`, `PreemptMode=GANG,SUSPEND`; no QoS lists `medium` as a target | - |
 
 `u22` has `MaxMemPerCPU=3000`, so the largest research request is `-c 10 --mem-per-cpu=3000M` = 30 GB,
-enforced by the cgroup. Only 7 of the 2080 Ti nodes run a driver the cu130 wheels accept
+enforced by the cgroup. Ada now installs the cu129 wheels, which support the cluster's CUDA 12.x drivers.
 ([011](011-mixed-driver-generations.md)); they are shared with everyone.
 
 ## Why full fine-tuning is out and LoRA is in
@@ -97,7 +97,7 @@ times per sequence (smoke_maxlen job 2719395).
 
 ## Mechanics
 
-* `MC_LAYOUT` in `configs/ada.env.sh` (default `research_1gpu`; `nlp_4gpu` restores 002) sets the sbatch
+* `MC_LAYOUT` in `configs/ada.env.sh` (default `nlp_4gpu`; `research_1gpu` remains available as a one-GPU fallback) sets the sbatch
   flags (`mc_sbatch_args`: account, QoS, GPUs, CPUs, memory + the driver exclude list) and the Hydra overrides
   (`MC_TRAIN_OVERRIDES`). `make sbatch-*` passes both; the `#SBATCH` headers carry the research defaults.
   `nlp_1gpu` submits the same 1-GPU LoRA job on the shared `nlp` account: priority 40 instead of 10 and no

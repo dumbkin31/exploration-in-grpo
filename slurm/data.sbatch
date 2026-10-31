@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-data
 #SBATCH -A research
-#SBATCH --qos=low
+#SBATCH --qos=medium
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
@@ -13,6 +13,7 @@
 # Build the parquet files (verl schema, DAPO deduplicated, digit filter, eval sets) from the
 # prefetched Hub snapshots. Needs the full venv (pandas/pyarrow), so it runs on a compute node.
 set -euo pipefail
+module load u22/python/3.12.15
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source configs/ada.env.sh
 source slurm/common.sh; mc_check_driver; mc_check_cuda   # old drivers (011) and dead GPUs both exit 6 and record the node

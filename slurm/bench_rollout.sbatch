@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-bench
 #SBATCH -A research
-#SBATCH --qos=low
+#SBATCH --qos=medium
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
@@ -16,6 +16,7 @@
 # sweep at 1024 tokens, a long-response probe at 4096 tokens (preemption behaviour), and a start-up
 # probe at util 0.85. Under MC_LAYOUT=nlp_4gpu the TP=4 sweep of decision 002 runs first.
 set -euo pipefail
+module load u22/python/3.12.15
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 source slurm/common.sh
 export MC_PREFLIGHT_ARGS=--no-staged

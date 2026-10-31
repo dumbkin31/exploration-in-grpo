@@ -20,7 +20,7 @@ FAKES = {
     "sbatch": 'echo "sbatch $*" >> "$FAKE_LOG"; [ -n "${FAKE_SBATCH_FAIL:-}" ] && exit 1; echo "999;ada"\n',
     "scontrol": """echo "scontrol $*" >> "$FAKE_LOG"
 case "$1" in
-  show) echo "JobId=123 JobName=math_grpo-s1 UserId=u(1) Account=research QOS=low TimeLimit=${FAKE_TLIMIT:-4-00:00:00} ReqNodeList=${FAKE_REQ:-(null)} ExcNodeList=gnode043 Command=${FAKE_CMD} WorkDir=/w StdOut=/w/o" ;;
+  show) echo "JobId=123 JobName=math_grpo-s1 UserId=u(1) Account=research QOS=medium TimeLimit=${FAKE_TLIMIT:-4-00:00:00} ReqNodeList=${FAKE_REQ:-(null)} ExcNodeList=gnode043 Command=${FAKE_CMD} WorkDir=/w StdOut=/w/o" ;;
   update) [ -n "${FAKE_UPDATE_FAIL:-}" ] && exit 1 ;;
 esac
 exit 0
@@ -42,7 +42,7 @@ def _run(tmp_path: Path, call: str, **env: str) -> tuple[int, list[str], str]:
     log = tmp_path / "calls.log"
     log.write_text("")
     driver = f"""
-mc_sbatch_args() {{ printf -- '-A research --qos=low -c 10 -x gnode043,gnode047'; }}
+mc_sbatch_args() {{ printf -- '-A research --qos=medium -c 10 -x gnode043,gnode047'; }}
 mc_sbatch_exclude() {{ printf -- '-x gnode043,gnode047'; }}
 source "{REPO}/slurm/common.sh"
 set +e
@@ -149,6 +149,51 @@ def test_bad_node_exit_still_exits_6_when_sbatch_fails(tmp_path: Path):
         tmp_path, '( mc_bad_node_exit "cuda_init_failed gpu=0" ); echo "SUB=$?"', FAKE_SBATCH_FAIL="1"
     )
     assert "SUB=6" in out and "auto-resubmit failed" in out
+
+
+def test_scratch_initialization_failure_records_node_and_resubmits(tmp_path: Path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in FAKES.items():
+        f = bin_dir / name
+        f.write_text("#!/usr/bin/env bash\n" + body)
+        f.chmod(0o755)
+    (tmp_path / "train.sbatch").write_text("#!/bin/bash\n")
+    log = tmp_path / "calls.log"
+    log.write_text("")
+    scratch = tmp_path / "scratch"
+    script = f"""
+set +e
+source "{REPO}/slurm/common.sh"
+mkdir() {{
+  case " $* " in
+    *" {scratch}/stage "*) return 1 ;;
+    *) command mkdir "$@" ;;
+  esac
+}}
+export MC_DURABLE_DIR="{tmp_path}/durable"
+export MC_RUN_DIR="{scratch}/run"
+export MC_JOB_DIR="{scratch}/job"
+export WANDB_DIR="{scratch}/wandb"
+export MC_SCRATCH_ROOT="{scratch}"
+mc_init_run_dirs
+echo "SUB=$?"
+"""
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(tmp_path),
+        "USER": "u",
+        "SLURM_JOB_ID": "123",
+        "SLURM_JOB_NAME": "math_grpo-s1",
+        "SLURM_SUBMIT_DIR": str(tmp_path),
+        "FAKE_LOG": str(log),
+        "FAKE_CMD": str(tmp_path / "train.sbatch"),
+        "MC_BAD_NODES_FILE": str(tmp_path / "bad_nodes.txt"),
+    }
+    p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env, timeout=60)
+    assert "SUB=6" in p.stdout, p.stdout + p.stderr
+    assert "scratch_init_failed" in (tmp_path / "bad_nodes.txt").read_text()
+    assert len(_sbatch(log.read_text().splitlines())) == 1
 
 
 def test_dry_run_prints_and_submits_nothing(tmp_path: Path):

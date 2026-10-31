@@ -15,7 +15,7 @@ add a new number rather than editing an old one when a decision changes, and say
 | [008](008-digit-rule-and-filtered-prompts.md) | The boxed-plus-digit validity rule, its training-set filter and the evaluation ceiling |
 | [009](009-scratch-checkpoints-quota.md) | /share1 is 25 GB: checkpoints on node-local scratch, small outputs mirrored, resubmissions pinned to the node |
 | [010](010-share1-is-login-node-local.md) | /share1 is a login-node-local disk: staged model/data and the durable run outputs live on /home2 |
-| [011](011-mixed-driver-generations.md) | The 2080 Ti nodes run mixed NVIDIA drivers; the cu130 wheels need >= 580: exclude list + a fail-fast guard in every job |
+| [011](011-mixed-driver-generations.md) | The 2080 Ti nodes run mixed NVIDIA drivers; Ada now uses cu129 with a >= 525 driver guard |
 | [012](012-research-qos-one-gpu-lora.md) | `research`/`low` = 1 GPU, 10 CPUs, 32 GB per user: LoRA + FSDP2 offload policy on one card (layout group, `MC_LAYOUT`), W&B online |
 | [013](013-jarvislabs-h100.md) | Both arms on Jarvislabs H100s in parallel: bf16, same LoRA, `hardware` config group, `-h100-` run names; the LoRA lr was silently 1e-6 on Ada |
 | [014](014-kaggle-t4.md) | Kaggle T4 support (fp16 Ada plan, CUDA 12.9 fallback, runs carried between 12-hour sessions on the HF Hub); use it for smoke tests and evaluations |
@@ -23,3 +23,4 @@ add a new number rather than editing an old one when a decision changes, and say
 | [016](016-h200-divergence-stop-and-evaluate.md) | Both H200 arms diverged (Mixed-CUTS from ~step 48, GRPO from ~step 64): stopped at 72/61 and evaluated at equal steps; GRPO step 40 is the best model |
 | [017](017-recipe-after-h200-divergence.md) | Recipe changes for both arms after the divergence, one section (and one commit) per change, so each can be ablated |
 | [018](018-ada-retrain-readiness.md) | Ada readiness for the 017 retrain: calibrated LoRA in the 2080 Ti offload layout, `-2080ti-` run names + a resume recipe check, 2 reward workers, every 10th checkpoint kept, stop on policy drift |
+| [019](019-nccl-p2p-disabled-on-2080ti.md) | Disable NCCL CUDA P2P for the 4-GPU 2080 Ti layout because the measured node topology exposes no peer-access pairs |

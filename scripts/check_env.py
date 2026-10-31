@@ -56,7 +56,7 @@ EXPECTED_IMPORTS = ["transfer_queue", "hydra", "omegaconf", "datasets", "wandb",
 
 # Hardware profiles (configs/train/hardware/, chosen by MC_HW_PROFILE from the env file).
 PROFILES = {
-    # RTX 2080 Ti. The 1080 Ti nodes (6,1) are unsupported by CUDA 13 and vLLM.
+    # RTX 2080 Ti. The 1080 Ti nodes (6,1) are unsupported by vLLM and this profile.
     "sm75": {
         "cc": (7, 5),
         "arch": "sm_75",
@@ -142,8 +142,8 @@ def check_pins(r: Report) -> None:
 
 
 def check_driver(r: Report) -> None:
-    """The pinned wheels are CUDA 13.0 builds: driver >= 580 (mixed generations on Ada, decision 011)."""
-    need = int(os.environ.get("MC_MIN_DRIVER_MAJOR", "580"))
+    """The pinned wheels are CUDA 12.9 builds: driver >= 525."""
+    need = int(os.environ.get("MC_MIN_DRIVER_MAJOR", "525"))
     drv = None
     try:
         text = Path("/proc/driver/nvidia/version").read_text()
@@ -168,11 +168,11 @@ def check_driver(r: Report) -> None:
     r.facts["nvidia_driver"] = drv
     major = int(drv.split(".")[0]) if drv[:1].isdigit() else 0
     if major >= need:
-        r.ok(f"nvidia driver {drv} (>= {need}, runs the cu130 wheels)")
+        r.ok(f"nvidia driver {drv} (>= {need}, runs the cu129 wheels)")
     else:
         r.fail(
             "nvidia driver",
-            f"{drv} < {need}: the cu130 wheels cannot initialise CUDA here; exclude this node (decision 011)",
+            f"{drv} < {need}: the cu129 wheels cannot initialise CUDA here",
         )
 
 
@@ -222,10 +222,10 @@ def check_gpu(r: Report) -> None:
         r.fail("cuda", "torch.cuda.is_available() is False (no GPU allocated, or driver/runtime mismatch)")
         return
     cuda_rt = torch.version.cuda or "?"
-    if cuda_rt.startswith("13."):
-        r.ok(f"torch CUDA runtime {cuda_rt} (default cu130 wheel)")
+    if cuda_rt.startswith("12.9"):
+        r.ok(f"torch CUDA runtime {cuda_rt} (cu129)")
     else:
-        r.warn("torch CUDA runtime", f"{cuda_rt}; the pinned default wheel is CUDA 13.0")
+        r.fail("torch CUDA runtime", f"{cuda_rt}; Ada requires the CUDA 12.9 wheel")
     prof_name, prof = hw_profile()
     r.facts["hw_profile"] = prof_name
     arch_list = torch.cuda.get_arch_list()
@@ -252,10 +252,16 @@ def check_gpu(r: Report) -> None:
         elif cc < (7, 0):
             r.fail(
                 f"gpu{i}",
-                f"{name} cc {cc} is below 7.0: unsupported by vLLM and CUDA 13 (did the job land on a 1080 Ti node? use -C 2080ti)",
+                f"{name} cc {cc} is below 7.0: unsupported by vLLM (did the job land on a 1080 Ti node? use -C 2080ti)",
             )
         elif prof["bf16"] and cc < (8, 0):
             r.fail(f"gpu{i}", f"{name} cc {cc} has no bf16: the {prof_name} profile needs cc >= 8.0")
+        elif not prof["bf16"]:
+            r.fail(
+                f"gpu{i}",
+                f"{name} cc {cc} does not match the {prof_name} profile ({prof['gpu']}); "
+                "the Slurm -C 2080ti constraint was not sufficient",
+            )
         else:
             r.warn(f"gpu{i}", f"{name} cc {cc}; profile {prof_name} is tuned for the {prof['gpu']}")
     if n:

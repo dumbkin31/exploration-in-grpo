@@ -12,10 +12,9 @@ vLLM logits processor, schedules mixed standard/CUTS rollout groups inside verl'
 diagnostics that say *why* a run behaves the way it does (advantage collapse, the Eq. 5 variance
 decomposition, candidate-set sizes), not just final accuracy.
 
-Two deliverables, each trained with **LoRA on one GPU**: an **H100 on Jarvislabs** (bf16, the arms in
-parallel; [013](docs/decisions/013-jarvislabs-h100.md), section 6b) or **one RTX 2080 Ti (11 GiB, sm_75, fp16
-only)** under SLURM on Ada (account `research`, [012](docs/decisions/012-research-qos-one-gpu-lora.md)); the
-original 4-GPU full-fine-tune layout stays selectable (`MC_LAYOUT=nlp_4gpu`):
+Two deliverables, trained with **LoRA**: an **H100 on Jarvislabs** (bf16, the arms in parallel;
+[013](docs/decisions/013-jarvislabs-h100.md), section 6b) or RTX 2080 Ti GPUs under SLURM on Ada
+(account `research`, QoS `medium`, `MC_LAYOUT=nlp_4gpu` for one distributed 4-GPU job):
 
 | Arm | Config | Group of 16 |
 |---|---|---|
@@ -54,8 +53,8 @@ Decisions the brief left open are recorded in [`docs/decisions/`](docs/decisions
 | Attention (rollout) | vLLM **`TRITON_ATTN`**, set explicitly | `FLASH_ATTN` and `FLASHINFER` require capability 8.0 in vLLM 0.24.0; XFORMERS no longer exists ([004](docs/decisions/004-attention-backend-and-engine-version.md)). |
 | Attention (training) | HF `sdpa`, `use_remove_padding: false` | FlashAttention-2 needs sm_80; `flash-attn` is not installed. |
 | Engine | vLLM V1 engine (V0 is gone); **Model Runner V1** is forced by the custom logits processor | never set `VLLM_USE_V2_MODEL_RUNNER`; the preflight and the job logs check it. |
-| Memory | 11 GiB on the card; **30 GB host RAM and 10 cores per job** (`research`/`low` caps: `-c 10 --mem-per-cpu=3000M`) | section 4: LoRA + the FSDP2 offload policy; full fine-tuning needs the 4-card layout (117 GB). |
-| SLURM | account `research` / QoS `low`: **per user 1 GPU, 10 CPUs, 32 GB, 1 node per job, 5 jobs, 4-day MaxWall**; `-A research --qos=low -p u22 -C 2080ti -N 1 --gres=gpu:1 -c 10 --mem-per-cpu=3000M` (`MaxMemPerCPU=3000`; `3G` is rejected); `nlp`/`normal` = 4 GPUs/job, 12 across the group; interactive `srun` capped at 6 h | all real runs are `make sbatch-*` (adds the layout flags + node exclude list); templates in `slurm/`; `MC_LAYOUT=nlp_1gpu` submits the same 1-GPU job on `nlp` (priority 40, 60 GB) and `MC_LAYOUT=nlp_4gpu` flips everything to the 4-GPU layout ([012](docs/decisions/012-research-qos-one-gpu-lora.md)). |
+| Memory | 11 GiB per card; **40 CPUs and 120 GB host RAM** for the 4-GPU job (`-c 40 --mem-per-cpu=3000M`) | LoRA + the FSDP2 offload policy keeps the base and masters in host RAM. |
+| SLURM | account `research` / QoS `medium`: **4 GPUs, 40 CPUs, 1 node**; `-A research --qos=medium -p u22 -C 2080ti -N 1 --gres=gpu:4 -c 40 --mem-per-cpu=3000M` (`MaxMemPerCPU=3000`; `3G` is rejected) | `make sbatch-train` with `MC_LAYOUT=nlp_4gpu` supplies these flags and the driver exclude list. |
 | NVIDIA driver | **mixed across the 2080 Ti nodes**: 580/595 on 7 of the 25 probed, 570 (CUDA 12.8) on 12, no module on 4 | the cu130 wheels need >= 580 (vLLM 0.24.0 has no cu128 wheel): `make sbatch-*` passes `-x $MC_SLURM_EXCLUDE`, and every job checks `/proc/driver/nvidia/version` before touching the run dir ([011](docs/decisions/011-mixed-driver-generations.md)). |
 | Storage | `/home2/$USER` 25 GB / 300k files NFS, the **only durable file system compute nodes see**; `/share1` is a local disk of the login node (measured: absent on the gnodes); `/scratch` node-local 1.8 TB, purged after ~7 days | section 3: code, venv, staged model/data and each run's small outputs on `/home2`; checkpoints on scratch ([009](docs/decisions/009-scratch-checkpoints-quota.md), [010](docs/decisions/010-share1-is-login-node-local.md)). |
 
@@ -95,7 +94,7 @@ Files: `requirements/base.txt` (hand pins, cluster), `requirements/dev.txt` (CPU
 /home2/$USER/                             NFS, 25 GB / 300k files per user, mounted on EVERY node
   mixed-cuts/ (this repo)                   code + .venv (~9.6 GB)
   mixed-cuts-data/                          MC_STAGE_ROOT (durable)
-    models/Qwen3-1.7B/                        staged weights (~4.8 GB)                     (make prefetch, login node)
+    models/Qwen3-0.6B/                        staged weights (~1.5 GB)                     (make prefetch, login node)
     raw/                                      Hub snapshots of the datasets (~0.3 GB)      (make prefetch)
     data/*.parquet + MANIFEST.json            verl-schema datasets                         (make sbatch-data)
     runs/<config>-s<seed>/                    MIRROR of each run (everything but checkpoints), every 10 min:
@@ -109,11 +108,11 @@ Files: `requirements/base.txt` (hand pins, cluster), `requirements/dev.txt` (CPU
 /share1/$USER/                            a local disk of the LOGIN NODE: not mounted on compute nodes, unused
 ```
 
-Why this split: one FSDP checkpoint is ~21 GB and `/home2`, the only durable file system compute nodes can
+Why this split: one full-fine-tune FSDP checkpoint is ~7 GB and `/home2`, the only durable file system compute nodes can
 see ([010](docs/decisions/010-share1-is-login-node-local.md)), allows 25 GB per user, so checkpoints stay
 on the node that wrote them ([009](docs/decisions/009-scratch-checkpoints-quota.md)). Consequences:
 resubmitting a run must land on the same node (`make sbatch-train` reads `node.txt` and adds `-w`); LoRA
-checkpoints are ~7.8 GB (full PEFT state dict), still too big for the home quota; if
+LoRA checkpoints are ~0.9 GB; if
 that node is lost, the curves and diagnostics survive in the mirror but the run restarts from step 0.
 
 Every `slurm/*.sbatch` does: `source configs/ada.env.sh` -> preflight (`scripts/check_env.py`, aborts
@@ -121,12 +120,15 @@ early) -> stage-in (model + parquet into `/scratch`) -> run, mirroring to `/home
 or on SLURM's `SIGUSR1` (sent 300 s before a kill): stop the GPU sampler, record the engine facts, copy this
 job's log next to the run, prune checkpoints, final mirror. Resubmitting the same `CONFIG` + `SEED` on the
 same node **resumes** from the newest checkpoint ([005](docs/decisions/005-run-naming-resume-and-checkpoints.md)).
+If node-local scratch initialization fails (for example, `ENOSPC` while creating `/scratch/$USER`), the job
+records the node in `bad_nodes.txt`, automatically resubmits using the existing bounded retry policy
+(`MC_AUTO_RESUBMIT=1`, up to `MC_RESUBMIT_MAX=5`), and excludes that node from the replacement job.
 All paths live in `configs/ada.env.sh`; nothing in `src/` hardcodes `/scratch` or `/home2`.
 
 ## 4. Memory plan: one 2080 Ti, LoRA, 30 GB of host RAM
 
-Model facts: 28 layers, hidden 2048, 16 query / 8 KV heads x 128, vocab 151,936, tied embeddings ->
-**1.72 B params**; fp16 weights **3.44 GB**; KV cache **112 KB/token**. Why one GPU and LoRA, with the verl
+Model facts: 28 layers, hidden 1024, 16 query / 8 KV heads x 128, vocab 151,936, tied embeddings ->
+**0.6 B params**; fp16 weights **~1.2 GB**; KV cache **112 KB/token**. Why one GPU and LoRA, with the verl
 source lines behind every claim: [012](docs/decisions/012-research-qos-one-gpu-lora.md). The 4-GPU full
 fine-tune of [002](docs/decisions/002-four-gpu-memory-layout.md) stays selectable with `MC_LAYOUT=nlp_4gpu`.
 
@@ -140,7 +142,7 @@ micro-batches of <= 6144 tokens packed by `use_dynamic_bsz`. GPU peak during the
 (vLLM asleep at level 2: weights and KV freed; fp16 logits + chunked fp32 log-softmax dominate).
 
 **Rollout**: one vLLM engine, TP=1, `gpu_memory_utilization 0.80` while the actor sits in host RAM:
-3.44 GB weights + ~1 GB activations/cudagraphs + ~4.3 GB KV (~39k tokens: 6 max-length or ~25 typical
+~1.2 GB weights + ~1 GB activations/cudagraphs + ~4.3 GB KV (~39k tokens: 6 max-length or ~25 typical
 sequences). Merged full weights are streamed to the engine after every optimizer step (`lora.merge: true`).
 
 **Host RAM** (30 GB cgroup): FSDP worker ~10.5 GB, vLLM ~4.5, driver ~2.5, agent/TransferQueue/reward/
@@ -174,7 +176,7 @@ above 0.02 or entropy above twice its minimum on two consecutive steps (`stabili
 git clone <this repo> ~/mixed-cuts && cd ~/mixed-cuts && cp .env.example .env   # add HF_TOKEN for GPQA
 curl -LsSf https://astral.sh/uv/install.sh | sh                                    # once, if uv is missing
 source configs/ada.env.sh
-make setup-login && make prefetch      # Qwen3-1.7B + datasets -> ~/mixed-cuts-data/{models,raw} (~5 GB on /home2)
+make setup-login && make prefetch      # Qwen3-0.6B + datasets -> ~/mixed-cuts-data/{models,raw} (~2 GB on /home2)
 
 # 1. build the environment ON A COMPUTE NODE; also builds the parquet data and runs the vLLM/verl tests.
 #    Always submit through make: it excludes the nodes whose NVIDIA driver is too old for the cu130 wheels (011).
@@ -183,7 +185,7 @@ git add requirements/lock.txt && git commit -m "lock cluster env"
 make sbatch-data                       # only if prefetch finished after the setup job ran (it builds the parquet + a full preflight)
 
 # 2. measure before committing compute (each job mirrors to ~/mixed-cuts-data/runs/<run>/). Every
-#    make sbatch-* target adds the layout's flags (-A research --qos=low --gres=gpu:1 -c 10 ...) + the exclude list.
+#    make sbatch-train with MC_LAYOUT=nlp_4gpu adds the layout's flags (-A research --qos=medium --gres=gpu:4 -c 40 ...) + the exclude list.
 #    A job that lands on an old-driver or dead-GPU node records it and resubmits itself elsewhere (up to 5
 #    times; MC_AUTO_RESUBMIT=0 turns this off; decision 011).
 make sbatch-bench                      # ~40 min: tokens/s at concurrency 1-64, KV size at util 0.80/0.85, TRITON_ATTN line
@@ -206,7 +208,7 @@ make sbatch-train CONFIG=math_mixed_cuts SEED=1
 #    LoRA runs keep adapter-only checkpoints (~0.9 GB) in the durable run dir on /home2 (012): merge and
 #    evaluate on any good node. (Full-FT runs: checkpoints sit on the node in node.txt; add -w $NODE / NODE=.)
 #    The merge srun counts against the user's 10 CPUs: run it while no training job of yours is running.
-srun -A research --qos=low -p u22 -C 2080ti -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh ~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints
+srun -A research --qos=medium -p u22 -C 2080ti -c 6 --mem-per-cpu=3000M -t 01:00:00 scripts/merge_ckpt.sh ~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints
 make sbatch-eval CKPT=~/mixed-cuts-data/runs/math_mixed_cuts-2080ti-s1/checkpoints/hf/global_step_100 SEED=0
 ```
 
@@ -241,7 +243,7 @@ bash jarvis/status.sh        # includes GPU-hours and INR spent so far (MC_GPU_R
 
 Run names are `math_grpo-h100-s1` and `math_mixed_cuts-h100-s1`; W&B runs of the same names in
 `anlp-mixed-cuts/mixed-cuts` log live. After a pause or a spot preemption, rerun `bash jarvis/start.sh`:
-each stopped arm resumes from its newest checkpoint (saved every step: 0.9 GB with LoRA, ~21 GB with the
+each stopped arm resumes from its newest checkpoint (saved every step: 0.9 GB with LoRA, ~7 GB with the
 full fine-tune, two kept per arm). Because a run resumes whatever checkpoints its run dir holds, start a new
 recipe under a new run name (`MC_RUN_TAG`, or another seed). Check the minutes per step after 3 steps
 against the budget in decision 013.
@@ -286,7 +288,10 @@ make plots                   # figures/*.png: reward, advantage collapse, satura
 `scripts/compare_runs.py --wandb` also writes the evaluation numbers into each run's W&B summary and logs
 the tables to a `comparison-<tag>` run. Compare only models evaluated on the same platform.
 
-## 7. Reproduction targets (CUTS paper, Qwen3-1.7B non-thinking, trained on MATH)
+## 7. Historical reproduction targets (CUTS paper, Qwen3-1.7B non-thinking, trained on MATH)
+
+The operational default is now Qwen3-0.6B. The table below preserves the paper/H200
+1.7B reference numbers and is not an expected target for 0.6B runs.
 
 Pass@1 (Table 1):
 
@@ -333,7 +338,7 @@ A few whole groups (standard and CUTS siblings side by side) are dumped per step
 
 ```
 configs/ada.env.sh         all cluster paths / env vars         configs/train/*.yaml   Hydra overrides on verl's ppo_trainer
-configs/train/layout/      research_1gpu (default), nlp_4gpu    configs/eval/*.yaml    eval decoding (paper validation settings)
+configs/train/layout/      research_1gpu (default), nlp_4gpu (4-GPU LoRA)    configs/eval/*.yaml    eval decoding (paper validation settings)
 configs/train/memory/      plan B LoRA (default), A, A'
 src/cuts/                  CUTS operator, state, stats channel, vLLM logits processor (verl-independent, CPU-tested)
 src/mixed_cuts/            verl integration: scheduler, agent loop hook, trainer, diagnostics, reward, GPQA parser,

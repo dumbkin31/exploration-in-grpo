@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Evaluate on MATH-500, AIME24, AIME25, AMC23 and GPQA-diamond, 16 samples per problem (decision 013).
 #
-#   bash jarvis/eval.sh base [gpu]                        # the untrained Qwen3-1.7B (reference row)
+#   bash jarvis/eval.sh base [gpu]                        # the untrained Qwen3-0.6B (reference row)
 #   bash jarvis/eval.sh math_grpo-h100-s1 [gpu] [step]    # a run's checkpoint (default: its newest)
 #
 # A run's LoRA-only checkpoint is merged into the base model in bf16 first (scripts/merge_ckpt.sh).
@@ -18,7 +18,7 @@ source configs/ada.env.sh
 export CUDA_VISIBLE_DEVICES="${GPU}" PATH="${MC_VENV_DIR}/bin:${PATH}"
 if [ "${TARGET}" = "base" ]; then
   CKPT="${MC_MODEL_DIR}"
-  OUT="${MC_RUNS_DIR}/base-qwen3-1.7b-${MC_RUN_TAG}/eval/base"   # per platform: bf16 H100 vs fp16 T4
+  OUT="${MC_RUNS_DIR}/base-qwen3-0.6b-${MC_RUN_TAG}/eval/base"   # per platform: bf16 H100 vs fp16 T4
 else
   CKDIR="${MC_RUNS_DIR}/${TARGET}/checkpoints"
   [ -d "${CKDIR}" ] || { echo "no checkpoints under ${CKDIR}" >&2; exit 1; }

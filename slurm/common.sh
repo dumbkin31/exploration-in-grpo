@@ -13,7 +13,7 @@
 #   MC_RUN_DIR     = live run dir: checkpoints/, metrics.jsonl, cuts_stats/, rollout_dumps/,
 #                    phases.jsonl, gpu_mem.jsonl, wandb/, jobs/<jobid>/
 #                    MC_CHECKPOINT_HOME=scratch (default): $MC_SCRATCH_RUNS_DIR/<run>, node-local,
-#                    because /home2 (the durable NFS) has a 25 GB quota and one checkpoint is ~21 GB
+#                    because /home2 (the durable NFS) has a 25 GB quota and full-fine-tune checkpoints are several GB
 #   MC_DURABLE_DIR = $MC_RUNS_DIR/<run> on /home2 (NFS, every node): everything except checkpoints, mirrored every
 #                    MC_MIRROR_INTERVAL seconds and at exit, plus node.txt (which node holds the
 #                    checkpoints; `make sbatch-train` pins resubmissions to it with -w)
@@ -30,19 +30,19 @@ export MC_REPO_ROOT="${MC_REPO_ROOT:-$(cd "${_MC_COMMON_DIR}/.." && pwd)}"
 mc_log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
 
 mc_check_driver() {
-  # The pinned wheels are CUDA 13.0 builds and need an NVIDIA driver >= MC_MIN_DRIVER_MAJOR (580); the
+  # The pinned wheels are CUDA 12.9 builds and need an NVIDIA driver >= MC_MIN_DRIVER_MAJOR (525); the
   # 2080 Ti nodes are mixed (docs/decisions/011). Runs before anything is written, so a bad node leaves no
   # node.txt behind. The node is recorded in MC_BAD_NODES_FILE, which `make sbatch-*` excludes from then on.
-  local drv major min="${MC_MIN_DRIVER_MAJOR:-580}"
+  local drv major min="${MC_MIN_DRIVER_MAJOR:-525}"
   drv="$(sed -n 's/.*Kernel Module *\([0-9.]*\).*/\1/p' /proc/driver/nvidia/version 2>/dev/null || true)"
   # containers (Jarvislabs) may not expose /proc/driver/nvidia: ask nvidia-smi instead
   [ -n "${drv}" ] || drv="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ' || true)"
   major="${drv%%.*}"
   if [ -z "${drv}" ] || ! [ "${major}" -ge "${min}" ] 2>/dev/null; then
-    mc_log "ERROR: $(hostname) has NVIDIA driver '${drv:-none}' (need >= ${min} for the cu130 wheels; decision 011)"
+    mc_log "ERROR: $(hostname) has NVIDIA driver '${drv:-none}' (need >= ${min} for the cu129 wheels)"
     mc_bad_node_exit "driver=${drv:-none}"
   fi
-  mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu130 wheels (>= ${min})"
+  mc_log "NVIDIA driver ${drv} on $(hostname): OK for the cu129 wheels (>= ${min})"
 }
 
 mc_check_cuda() {
@@ -68,6 +68,15 @@ mc_bad_node_exit() {
   fi
   mc_resubmit_elsewhere || mc_log "auto-resubmit failed: rerun the same make sbatch-* command (it now excludes this node)"
   exit 6
+}
+
+mc_init_run_dirs() {
+  mkdir -p "${MC_DURABLE_DIR}" \
+    || { mc_log "ERROR: cannot create ${MC_DURABLE_DIR} (is ${MC_STAGE_ROOT} mounted and writable here?)"; exit 3; }
+  if ! mkdir -p "${MC_RUN_DIR}" "${MC_JOB_DIR}" "${WANDB_DIR}" "${MC_SCRATCH_ROOT}/stage"; then
+    mc_log "ERROR: cannot initialize node-local scratch at ${MC_SCRATCH_ROOT} on $(hostname)"
+    mc_bad_node_exit "scratch_init_failed root=${MC_SCRATCH_ROOT}"
+  fi
 }
 
 mc_resubmit_elsewhere() {
@@ -167,10 +176,7 @@ mc_job_init() {
   export WANDB_RUN_ID="${MC_RUN_NAME}"
   export WANDB_RESUME="allow"
   export WANDB_NAME="${MC_RUN_NAME}"
-  mkdir -p "${MC_DURABLE_DIR}" \
-    || { mc_log "ERROR: cannot create ${MC_DURABLE_DIR} (is ${MC_STAGE_ROOT} mounted and writable here?)"; exit 3; }
-  mkdir -p "${MC_RUN_DIR}" "${MC_JOB_DIR}" "${WANDB_DIR}" "${MC_SCRATCH_ROOT}/stage" \
-    || { mc_log "ERROR: cannot create ${MC_RUN_DIR} (no writable node-local scratch on $(hostname)?)"; exit 3; }
+  mc_init_run_dirs
   mc_check_node_pin
   export PATH="${MC_VENV_DIR}/bin:${PATH}"
   export PYTHONUNBUFFERED=1
@@ -215,7 +221,7 @@ PY
 }
 
 mc_record_host_peak() {
-  # The research/low cgroup is 30 GB (decision 012) and kernel 5.15's cgroup v2 has no memory.peak, so
+  # The research/medium cgroup is 30 GB (decision 012) and kernel 5.15's cgroup v2 has no memory.peak, so
   # the GPU sampler sidecar (profile_memory.py --watch) also samples the job cgroup's memory.current;
   # the peak is the max over this job's samples. sstat's MaxRSS (largest single process) is kept beside it.
   local out="${MC_JOB_DIR}/host_mem_peak.txt" now="" peak="" rss=""
@@ -469,7 +475,7 @@ mc_train_main() {
   # Usage: mc_train_main <config-name> [extra hydra overrides...]; needs MC_SEED (default 42).
   local config="${1:?config name}"; shift || true
   export MC_SEED="${MC_SEED:-42}"
-  # MC_RUN_TAG keeps runs on other hardware apart: math_grpo-2080ti-s1 (Ada), math_grpo-h100-s1 (Jarvislabs)
+  # MC_RUN_TAG keeps runs on other hardware and model versions apart.
   mc_job_init "${MC_RUN_NAME:-${config}${MC_RUN_TAG:+-${MC_RUN_TAG}}-s${MC_SEED}}"
   mc_stage_in
   # Config-specific preflight (compose + invariants + chat template) now that the model is staged.
@@ -479,7 +485,7 @@ mc_train_main() {
   local extra=()
   [ -n "${MC_SAVE_FREQ:-}" ] && extra+=("save_freq=${MC_SAVE_FREQ}")
   [ -n "${MC_TOTAL_STEPS:-}" ] && extra+=("trainer.total_training_steps=${MC_TOTAL_STEPS}")
-  # layout/memory overrides of $MC_LAYOUT (configs/ada.env.sh); empty for the default research_1gpu
+  # layout/memory overrides of $MC_LAYOUT (configs/ada.env.sh); empty for the default nlp_4gpu
   if [ -n "${MC_TRAIN_OVERRIDES:-}" ]; then
     # shellcheck disable=SC2206
     extra+=(${MC_TRAIN_OVERRIDES})

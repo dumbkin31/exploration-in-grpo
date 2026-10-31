@@ -18,7 +18,7 @@ Invariants checked with --check (see the [checked] marks in configs/train/base_g
   * D2: rollout T=1.0/top_p=1.0, validation 1.0/0.8/20, non-thinking, KL low_var_kl+ (k3 value, k2 gradient) 1e-3
   * loss: seq-mean-token-mean, i.e. every rollout normalised by its own length (paper Eq. 2, decision 017)
   * layout: one node, TP == n_gpus_per_node == MC_SLURM_GPUS (1 GPU: LoRA, or full FT on the h100 profile; on sm75 also the FSDP2 offload
-    policy and the research/low host limits; 4 on nlp), sleep mode, gradient checkpointing, dynamic bsz
+    policy and the research/medium host limits; 4 on nlp), sleep mode, gradient checkpointing, dynamic bsz
     with token budgets >= max_prompt_length + max_response_length (or the documented micro-batch-1 fallback)
   * one seed interpolated into data/rollout/actor/ref; resume_mode auto; outputs under paths.run_dir
 """
@@ -40,7 +40,7 @@ TRAIN_CONFIG_DIR = REPO / "configs" / "train"
 # later config layer overrode the plan, as base_grpo.yaml once did with the LoRA lr (decision 013).
 PLAN_SCHEDULES = {
     # plan_b_lora and plan_b_lora_gpu; plan_b_lora_calibrated(_gpu) (decisions 017, 018)
-    "LoRA": ((1e-5, "constant"), (2e-6, "cosine")),
+    "LoRA": ((1e-5, "constant"), (2e-6, "cosine"), (5e-6, "cosine")),
     # plan_a_* (the paper's full-fine-tuning lr)
     "full fine-tune": ((1e-6, "constant"),),
 }
@@ -198,13 +198,21 @@ def check(cfg) -> list[str]:
         fail(
             f"ray_kwargs.ray_init.runtime_env.worker_process_setup_hook must be mixed_cuts.worker_hooks.install (sm_75 SDPA + LoRA sync without the CPU backup, decision 012): {hook}"
         )
+    env_vars = (ray_init.get("runtime_env") or {}).get("env_vars") or {}
+    if n_gpus > 1:
+        for variable in ("NCCL_P2P_DISABLE", "NCCL_SHM_DISABLE", "NCCL_IB_DISABLE"):
+            if env_vars.get(variable) != "1":
+                fail(
+                    f"4-GPU layouts must set ray_kwargs.ray_init.runtime_env.env_vars.{variable}=1 "
+                    "(the 2080 Ti nodes report no usable CUDA peer-access or shared-memory IPC paths, decision 019)"
+                )
     lora_rank = int(arr.model.get("lora_rank", 0) or 0)
     if n_gpus == 1:
-        # sm75 (research/low, Kaggle) trains LoRA (012); the h100 profile also allows the full fine-tune of
+        # sm75 (research/medium, Kaggle) trains LoRA (012); the h100 profile also allows the full fine-tune of
         # plan_a_fullft_gpu, which needs a 141 GB H200 (017)
         if lora_rank <= 0 and profile == "sm75":
             fail(
-                "the 1-GPU sm75 layouts train LoRA (memory=plan_b_lora_calibrated): on research/low full FT needs 27.6 GB of "
+                "the 1-GPU sm75 layouts train LoRA (memory=plan_b_lora_calibrated): on research/medium full FT needs 27.6 GB of "
                 "host RAM for the optimizer alone"
             )
         if profile == "sm75" and not arr.actor.fsdp_config.get("offload_policy"):
@@ -221,7 +229,7 @@ def check(cfg) -> list[str]:
             fail(
                 "the 1-GPU layout needs actor.checkpoint.save_lora_only=true: a full state-dict save gathers 6.9 GB on the host and OOM-kills the 30 GB cgroup at the weight sync"
             )
-        if profile == "sm75":  # research/low: 10 CPUs and a 30 GB host cgroup (012)
+        if profile == "sm75":  # research/medium: 10 CPUs and a 30 GB host cgroup (012)
             if int(ray_init.get("object_store_memory") or 0) > 6_000_000_000:
                 fail(
                     f"ray object_store_memory {ray_init.get('object_store_memory')} > 6 GB on the 30 GB host budget"

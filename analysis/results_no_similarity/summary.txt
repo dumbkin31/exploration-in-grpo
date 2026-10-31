@@ -1,0 +1,26 @@
+=== A. mean pairwise similarity, steps <= 48 (before the collapse), mean [95% CI over groups]
+    higher = more similar = LESS diverse
+  grpo     std-std   groups= 192  lcp_frac=0.041 [0.036,0.046]  dup=0.000 [0.000,0.000]
+  mixed    cuts-cuts groups= 192  lcp_frac=0.048 [0.042,0.054]  dup=0.000 [0.000,0.000]
+  mixed    std-cuts  groups= 192  lcp_frac=0.052 [0.046,0.058]  dup=0.000 [0.000,0.000]
+  mixed    std-std   groups= 192  lcp_frac=0.066 [0.058,0.075]  dup=0.000 [0.000,0.001]
+
+=== B. Mixed-CUTS: is the CUTS half more diverse than the standard half? (paired by group)
+  mixed    lcp_frac   median(cuts-cuts - std-std) = -0.0102   Wilcoxon p = 6.15e-13   (n=192)   negative = CUTS rollouts are more diverse
+  mixed    dup        median(cuts-cuts - std-std) = +0.0000   Wilcoxon p = 0.157   (n=192)   negative = CUTS rollouts are more diverse
+
+=== C. same prompt, same step: GRPO std-std vs Mixed std-std (both use standard sampling)
+  matched (step, prompt) groups between grpo and mixed: 49
+  lcp_frac   median(mixed - grpo) = +0.0168   Wilcoxon p = 1.79e-05
+  dup        median(mixed - grpo) = +0.0000   Wilcoxon p = nan
+
+=== D. all-correct groups vs mixed-outcome groups (saturation): std-std similarity
+  grpo     all_correct=False groups= 123  lcp_frac=0.033 [0.028,0.038]  dup=0.000 [0.000,0.000]
+  grpo     all_correct=True  groups=  69  lcp_frac=0.055 [0.045,0.067]  dup=0.000 [0.000,0.000]
+  mixed    all_correct=False groups= 146  lcp_frac=0.054 [0.047,0.061]  dup=0.000 [0.000,0.000]
+  mixed    all_correct=True  groups=  46  lcp_frac=0.105 [0.081,0.130]  dup=0.002 [0.000,0.004]
+
+=== E. exact-duplicate rate per subset, steps <= 48
+  grpo     std   unique_frac=1.000 [1.000,1.000]
+  mixed    cuts  unique_frac=1.000 [1.000,1.000]
+  mixed    std   unique_frac=0.999 [0.997,1.000]

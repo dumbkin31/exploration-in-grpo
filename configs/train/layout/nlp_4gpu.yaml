@@ -1,8 +1,7 @@
 # @package _global_
-# Layout: one node with 4x RTX 2080 Ti on the shared `nlp` account (QoS normal; 12 GPUs group-wide).
-# The original layout of docs/decisions/002: one TP=4 vLLM replica, FSDP2 over 4 ranks, full fine-tune
-# with memory=plan_a_fullft_offload (120 GB host RAM). Select with MC_LAYOUT=nlp_4gpu (configs/ada.env.sh
-# then passes `layout=nlp_4gpu memory=plan_a_fullft_offload` and the 4-GPU sbatch flags).
+# Layout: one node with 4x RTX 2080 Ti on the `research` account (QoS medium).
+# This is one distributed LoRA job: one TP=4 vLLM replica and FSDP2 over 4 ranks. Select with
+# MC_LAYOUT=nlp_4gpu; configs/ada.env.sh supplies the LoRA memory plan and matching 4-GPU sbatch flags.
 trainer:
   n_gpus_per_node: 4
 actor_rollout_ref:
@@ -19,6 +18,15 @@ ray_kwargs:
   ray_init:
     num_cpus: 40
     object_store_memory: 16000000000 # 16 GB cap; Ray's default (30% of RAM) collides with CPU offload
+    runtime_env:
+      env_vars:
+        # The 2080 Ti node topology exposes no CUDA peer-access pairs; prevent NCCL from
+        # selecting CUDA P2P or shared-memory IPC paths during FSDP2 state-dict broadcast.
+        NCCL_P2P_DISABLE: "1"
+        NCCL_SHM_DISABLE: "1"
+        NCCL_IB_DISABLE: "1"
+        NCCL_DEBUG: "WARN"
+      worker_process_setup_hook: mixed_cuts.worker_hooks.install
 transfer_queue:
   backend:
     SimpleStorage:

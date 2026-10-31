@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH -J mc-resume-test
 #SBATCH -A research
-#SBATCH --qos=low
+#SBATCH --qos=medium
 #SBATCH -p u22
 #SBATCH -C 2080ti
 #SBATCH -N 1
@@ -17,6 +17,7 @@
 #   make sbatch-resume-test                     # phase 1 (kills itself at step 15, resubmits)
 #   ...the second job runs to step 30 and checks the invariants with scripts/check_resume.py
 set -euo pipefail
+module load u22/python/3.12.15
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 export MC_SEED="${MC_SEED:-7}"
 export MC_RUN_NAME="${MC_RUN_NAME:-resume-test-s${MC_SEED}}"   # SAME dir for both phases

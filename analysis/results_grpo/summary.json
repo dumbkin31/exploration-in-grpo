@@ -1,0 +1,1012 @@
+{
+  "totals": [
+    0,
+    3136
+  ],
+  "correctness": [
+    0,
+    2397.0
+  ],
+  "validity": [
+    0,
+    3127
+  ],
+  "comparison": {
+    "by_step": {},
+    "overall": {}
+  },
+  "std_self_similarity": {
+    "by_prompt": {
+      "0295bb07-4ae7-48c9-abc5-92d0ba93a611": {
+        "cosine_similarity": 0.8518587335944175,
+        "ngram_overlap": 0.589100704465108
+      },
+      "0418fb18-ba2a-4521-8ce6-708eacb9e221": {
+        "cosine_similarity": 0.8536056339740753,
+        "ngram_overlap": 0.6611188768927236
+      },
+      "042ee55f-32e1-4d6c-a4d4-7020bfa83161": {
+        "cosine_similarity": 0.8732217818498611,
+        "ngram_overlap": 0.6240964784476309
+      },
+      "043a182c-27e3-4b4c-8c2f-5ecfd3e632e8": {
+        "cosine_similarity": 0.9170728842417399,
+        "ngram_overlap": 0.7696444405111132
+      },
+      "05720673-89d0-445c-ad36-f4b987284cec": {
+        "cosine_similarity": 0.8960486595829328,
+        "ngram_overlap": 0.7907762516395958
+      },
+      "066d14c0-8549-4f32-95de-383023f3fa3a": {
+        "cosine_similarity": 0.9172717784841855,
+        "ngram_overlap": 0.7828710299266163
+      },
+      "068aaa3a-d2ad-4ff4-bce8-9b7e3b9296d8": {
+        "cosine_similarity": 0.9220544730623563,
+        "ngram_overlap": 0.8324730389746203
+      },
+      "08ddc8a6-cfeb-4f99-8dbf-37f5d6c47241": {
+        "cosine_similarity": 0.8361534292499224,
+        "ngram_overlap": 0.7263688585047662
+      },
+      "09b9bfca-8da2-4c7b-8137-2938e4a9f5d5": {
+        "cosine_similarity": 0.8903732374310493,
+        "ngram_overlap": 0.5177175879207077
+      },
+      "0a3df390-83f3-486a-87d6-6dbf3344debb": {
+        "cosine_similarity": 0.8609390969077746,
+        "ngram_overlap": 0.5936631091203662
+      },
+      "0cc25446-b4c8-4840-9fc6-3556a05e5fcb": {
+        "cosine_similarity": 0.8549529492855072,
+        "ngram_overlap": 0.5739849193890562
+      },
+      "1089fc0e-2564-461e-8279-6a661f3f915d": {
+        "cosine_similarity": 0.8854668582479159,
+        "ngram_overlap": 0.6658662272902437
+      },
+      "145c62eb-7b86-4d56-ac58-09bef9a10b66": {
+        "cosine_similarity": 0.8528805315494538,
+        "ngram_overlap": 0.6065986559040728
+      },
+      "14b4fd80-a2e8-4990-9425-1cced9d4e254": {
+        "cosine_similarity": 0.8728252142667771,
+        "ngram_overlap": 0.6999934231851195
+      },
+      "168496f8-32fb-47bd-9f03-bf7b120a5357": {
+        "cosine_similarity": 0.8956310212612152,
+        "ngram_overlap": 0.6657952894589625
+      },
+      "17df8144-a755-4949-b1e6-b6b1bb6899b0": {
+        "cosine_similarity": 0.8791378085811933,
+        "ngram_overlap": 0.5840465626020167
+      },
+      "19e813c1-ee8a-49e8-b018-312227125394": {
+        "cosine_similarity": 0.7840292513370514,
+        "ngram_overlap": 0.43913473541550807
+      },
+      "1b32442e-28b1-4dc9-9b28-87cd14241cb6": {
+        "cosine_similarity": 0.9138786926865577,
+        "ngram_overlap": 0.748180666166193
+      },
+      "1b416b43-12ed-4e45-9c05-3062562613e3": {
+        "cosine_similarity": 0.8830396349231402,
+        "ngram_overlap": 0.6165763962389086
+      },
+      "1f201a1d-972a-436c-8a01-b0495b57e3b6": {
+        "cosine_similarity": 0.807567731042703,
+        "ngram_overlap": 0.6823136748869982
+      },
+      "21950326-3483-451d-a1f1-420608bf7bac": {
+        "cosine_similarity": 0.9129185527563095,
+        "ngram_overlap": 0.7606195534095836
+      },
+      "21a0fde5-7180-460e-aa99-8758867f785b": {
+        "cosine_similarity": 0.8948033233483632,
+        "ngram_overlap": 0.7284854909152582
+      },
+      "21efc652-cae8-4610-af25-c862dc8ca34d": {
+        "cosine_similarity": 0.8923421810070674,
+        "ngram_overlap": 0.5721950343113583
+      },
+      "2222b2e3-8c17-4d37-a9b2-578fed7b9831": {
+        "cosine_similarity": 0.873773508767287,
+        "ngram_overlap": 0.6255144988046718
+      },
+      "22296202-78d4-4e4d-9770-9316a6866464": {
+        "cosine_similarity": 0.8615284388264021,
+        "ngram_overlap": 0.7077430489523499
+      },
+      "23e59a53-cd0f-4b4f-9f65-d2a3b8a15b08": {
+        "cosine_similarity": 0.85926523655653,
+        "ngram_overlap": 0.46445588134817156
+      },
+      "2439202d-3c52-4153-8fec-77fad0e2d391": {
+        "cosine_similarity": 0.8705123166243235,
+        "ngram_overlap": 0.6481737457519294
+      },
+      "25e428df-d228-41a5-b643-513d06798fba": {
+        "cosine_similarity": 0.8423041174809138,
+        "ngram_overlap": 0.619760978165666
+      },
+      "26fc08f0-d80c-4765-9ed0-2b5677794438": {
+        "cosine_similarity": 0.8549271146456401,
+        "ngram_overlap": 0.5993791942844908
+      },
+      "2a0c593c-bd1b-417c-a5c8-327248806dbc": {
+        "cosine_similarity": 0.8434699426094691,
+        "ngram_overlap": 0.7120514165950876
+      },
+      "2d10cc82-9379-4a93-a4ce-3ed0a9bcf66a": {
+        "cosine_similarity": 0.9176219716668129,
+        "ngram_overlap": 0.6337438270060127
+      },
+      "2d29050c-5d9c-42d3-af09-7d1d6e0a0f4e": {
+        "cosine_similarity": 0.8425575609008471,
+        "ngram_overlap": 0.5201475120699485
+      },
+      "2f03dbdf-d1cc-4d3c-bbdf-c403945f783f": {
+        "cosine_similarity": 0.7952237258354823,
+        "ngram_overlap": 0.5351753965978292
+      },
+      "2f4729cf-545a-4815-ac0c-c8212dafa2cd": {
+        "cosine_similarity": 0.8599469194809596,
+        "ngram_overlap": 0.6311069113666444
+      },
+      "2fe0cbd9-4f73-4c35-982d-c59778b0faf8": {
+        "cosine_similarity": 0.8947604065140088,
+        "ngram_overlap": 0.6950038397975009
+      },
+      "349ccd11-55fe-4f84-bd89-6de78394e4b2": {
+        "cosine_similarity": 0.8826141779621443,
+        "ngram_overlap": 0.6953682441277053
+      },
+      "34ce0ff2-60bd-4052-92ba-c45821f66462": {
+        "cosine_similarity": 0.9150500297546387,
+        "ngram_overlap": 0.7528825808056218
+      },
+      "359182d9-71e0-42b2-a7ec-98374167c59e": {
+        "cosine_similarity": 0.7972773750623067,
+        "ngram_overlap": 0.5869007325980512
+      },
+      "35a885ae-ae4c-4bd9-a358-f6677d28be30": {
+        "cosine_similarity": 0.9148387069503466,
+        "ngram_overlap": 0.7125364113907218
+      },
+      "37e9b6a9-98f0-4385-a556-b991245573b0": {
+        "cosine_similarity": 0.9173706079522769,
+        "ngram_overlap": 0.6663321204853422
+      },
+      "39137d49-89fd-47d2-804f-4935b8d53064": {
+        "cosine_similarity": 0.9014527296026548,
+        "ngram_overlap": 0.5866519117187239
+      },
+      "3919a09f-8bcc-4f89-b2cd-f23e5a637439": {
+        "cosine_similarity": 0.9294255341092745,
+        "ngram_overlap": 0.6719459321739996
+      },
+      "3d8697b8-d11c-4c45-ae99-d054a4250f2d": {
+        "cosine_similarity": 0.9376205613215765,
+        "ngram_overlap": 0.7349878802771088
+      },
+      "4008b365-0a7a-4616-b709-94ac9938c85a": {
+        "cosine_similarity": 0.843519109984239,
+        "ngram_overlap": 0.5777580586270273
+      },
+      "41664afa-f919-471d-bff0-8b2e6974328a": {
+        "cosine_similarity": 0.8741003607710203,
+        "ngram_overlap": 0.6691253623358168
+      },
+      "41bc41c5-d2fd-4dde-bca5-f8fde882d8e4": {
+        "cosine_similarity": 0.8194598669807116,
+        "ngram_overlap": 0.6714904323425067
+      },
+      "4472da54-9b61-4c89-ac71-e4dde5a35efb": {
+        "cosine_similarity": 0.8565535485744477,
+        "ngram_overlap": 0.5726832817148054
+      },
+      "44d65abd-15ed-46d0-a163-e5ed013eff60": {
+        "cosine_similarity": 0.9704520483811696,
+        "ngram_overlap": 0.8361437144494829
+      },
+      "45789a3c-cb28-4b00-9d52-3da6f66c0948": {
+        "cosine_similarity": 0.7706703578432401,
+        "ngram_overlap": 0.5259786178426953
+      },
+      "469a45b9-3b65-4659-82a9-5b1d9242038f": {
+        "cosine_similarity": 0.9093341708183289,
+        "ngram_overlap": 0.7192003540662754
+      },
+      "478b2489-bfda-4e7e-9341-ddcb98ed568a": {
+        "cosine_similarity": 0.892838687201341,
+        "ngram_overlap": 0.7174672438877255
+      },
+      "48724e18-a3ae-4e5d-a775-6a36ef103084": {
+        "cosine_similarity": 0.7118589346607526,
+        "ngram_overlap": 0.4613384150698636
+      },
+      "4915e1d8-5fdf-4b70-a8c9-92ca8282e668": {
+        "cosine_similarity": 0.8533676207065582,
+        "ngram_overlap": 0.5215893682766565
+      },
+      "4952dfaa-1a99-497d-8169-d4c9214656f8": {
+        "cosine_similarity": 0.8837191934386889,
+        "ngram_overlap": 0.6086397264309897
+      },
+      "49a62281-0b91-4bb8-87bd-ce973e828e32": {
+        "cosine_similarity": 0.9358524764577548,
+        "ngram_overlap": 0.8685580136751301
+      },
+      "4a481c1e-c1fb-4f46-b941-a88c002a6a7a": {
+        "cosine_similarity": 0.9234769334395726,
+        "ngram_overlap": 0.6517423178250354
+      },
+      "4bb41d22-bb9a-46ce-8067-36a983dcc976": {
+        "cosine_similarity": 0.8858150169253349,
+        "ngram_overlap": 0.5769434177622397
+      },
+      "4dbb149e-766a-4838-a15c-f7384a22b8d7": {
+        "cosine_similarity": 0.9249969268838565,
+        "ngram_overlap": 0.7550579948470322
+      },
+      "4f34f601-7e40-4310-b778-d8ce95ba58d1": {
+        "cosine_similarity": 0.879217179119587,
+        "ngram_overlap": 0.6062180594957927
+      },
+      "52fd15be-98f9-4f83-8eae-4412436bab0b": {
+        "cosine_similarity": 0.794385043780009,
+        "ngram_overlap": 0.554167387306309
+      },
+      "539f7b76-9e08-4865-9d17-1e30ea01014e": {
+        "cosine_similarity": 0.8576816245913506,
+        "ngram_overlap": 0.5791824826684188
+      },
+      "56512677-ced5-4532-9db7-b6b473666ccc": {
+        "cosine_similarity": 0.9270484839876493,
+        "ngram_overlap": 0.8195983371357947
+      },
+      "5845499b-11a2-4efe-aa78-10fd1ce004ff": {
+        "cosine_similarity": 0.893666130801042,
+        "ngram_overlap": 0.6285717318213886
+      },
+      "588a5829-bac9-4daa-843c-c37f90a1a357": {
+        "cosine_similarity": 0.8957699581980705,
+        "ngram_overlap": 0.7249313330067231
+      },
+      "590b2651-bd4e-4a27-bb82-6f527fb556d3": {
+        "cosine_similarity": 0.8881480107704799,
+        "ngram_overlap": 0.7021609081420961
+      },
+      "5923b4f5-b603-45d7-9337-27b2c3137647": {
+        "cosine_similarity": 0.8934782122572263,
+        "ngram_overlap": 0.7000883208264691
+      },
+      "5d2570a9-0878-4ddc-833d-df0883e40a68": {
+        "cosine_similarity": 0.9343585312366486,
+        "ngram_overlap": 0.7431805754077414
+      },
+      "5d2c041b-9e75-45f3-b800-4aeb17fdd586": {
+        "cosine_similarity": 0.9142611766854922,
+        "ngram_overlap": 0.7111997415402752
+      },
+      "5eecda6e-3b15-4978-a223-74e1148684e9": {
+        "cosine_similarity": 0.8639356131354968,
+        "ngram_overlap": 0.4762089134621659
+      },
+      "5ff34140-0c7d-4daf-bf57-d757424baa2f": {
+        "cosine_similarity": 0.8812609915932019,
+        "ngram_overlap": 0.6015717546600899
+      },
+      "61a146ea-19f9-48bb-a63b-422badc8ea65": {
+        "cosine_similarity": 0.8345323363939922,
+        "ngram_overlap": 0.615250667076008
+      },
+      "65d87e8e-cfc9-464d-b65e-903a06f19692": {
+        "cosine_similarity": 0.9415466705958049,
+        "ngram_overlap": 0.8246057814969141
+      },
+      "66ff97d5-95ea-4bd5-a26d-acb6bbeaf8cd": {
+        "cosine_similarity": 0.8697936937212944,
+        "ngram_overlap": 0.5305112274801669
+      },
+      "68395670-1620-4459-bab7-92cd74373901": {
+        "cosine_similarity": 0.8763884370525677,
+        "ngram_overlap": 0.7476162214162126
+      },
+      "6c7fbd6c-f0d1-4f30-8d0f-d30173b618c1": {
+        "cosine_similarity": 0.8987293496727944,
+        "ngram_overlap": 0.7653887165771484
+      },
+      "6cbf2af8-9e5e-4aa7-a73e-d2dffce56d80": {
+        "cosine_similarity": 0.9516465122501055,
+        "ngram_overlap": 0.8165506215017536
+      },
+      "70a797e7-f0be-46c7-b8d7-af47dfb0f593": {
+        "cosine_similarity": 0.9109561438361804,
+        "ngram_overlap": 0.6310346292840907
+      },
+      "73ecc11d-4130-4e85-80bd-f1ab2b7b74e3": {
+        "cosine_similarity": 0.9215685312946638,
+        "ngram_overlap": 0.7194277969101255
+      },
+      "742fbf2d-9b48-452b-b145-773238a72c03": {
+        "cosine_similarity": 0.910037346680959,
+        "ngram_overlap": 0.6181314583032655
+      },
+      "750b0000-247a-449a-a2dd-e56e7505f3a5": {
+        "cosine_similarity": 0.7706751654545466,
+        "ngram_overlap": 0.5570238126544207
+      },
+      "77d5b92e-f97e-4f95-b24b-a752d418cc00": {
+        "cosine_similarity": 0.880754268169403,
+        "ngram_overlap": 0.7036563789843702
+      },
+      "77e72e2c-cad9-4920-9727-3ae60bbfee33": {
+        "cosine_similarity": 0.8103043576081593,
+        "ngram_overlap": 0.5584658761239548
+      },
+      "78dcd272-4d2c-4e47-89f9-5c40de89a12b": {
+        "cosine_similarity": 0.8071001251538594,
+        "ngram_overlap": 0.5953722297646251
+      },
+      "78e92a50-c8d3-4f3e-8e6c-5d09c94a6de5": {
+        "cosine_similarity": 0.8958375270167986,
+        "ngram_overlap": 0.572259193271616
+      },
+      "7956b584-4812-4aba-b1fa-e020dde018dd": {
+        "cosine_similarity": 0.9028678198655447,
+        "ngram_overlap": 0.6828245198404017
+      },
+      "79ba51dc-142b-4e2d-91e8-d2305b69b987": {
+        "cosine_similarity": 0.9085436716675759,
+        "ngram_overlap": 0.6835011606832799
+      },
+      "79d875a0-e5af-4970-9001-02fd3b938341": {
+        "cosine_similarity": 0.8653809006015459,
+        "ngram_overlap": 0.73315409946368
+      },
+      "79ecc87f-f50a-40c7-998a-6a08fef394d9": {
+        "cosine_similarity": 0.822473622361819,
+        "ngram_overlap": 0.5444871499490811
+      },
+      "7a7d4359-4241-478d-aef3-afb170499223": {
+        "cosine_similarity": 0.9288555408517519,
+        "ngram_overlap": 0.667096355914182
+      },
+      "7b0c206c-13c9-42f7-8bfc-31fb6a43c655": {
+        "cosine_similarity": 0.9117179080843926,
+        "ngram_overlap": 0.7018553726215011
+      },
+      "7b5a9c23-3379-405d-93f5-7869d1516ac0": {
+        "cosine_similarity": 0.9236201703548431,
+        "ngram_overlap": 0.7291866801736855
+      },
+      "7c94c720-0a46-415c-baea-5d14ae39143a": {
+        "cosine_similarity": 0.8797840610146522,
+        "ngram_overlap": 0.6778651950236506
+      },
+      "7cb6ec7a-df39-4b99-87b8-d80255ddc59c": {
+        "cosine_similarity": 0.8833393479386965,
+        "ngram_overlap": 0.6206565450776473
+      },
+      "7d0a1437-35e4-4bd3-aa3d-eb2cc714eae4": {
+        "cosine_similarity": 0.9225157802303632,
+        "ngram_overlap": 0.7455464552448617
+      },
+      "7d0e2f29-0a47-4cab-948f-267dc86c428b": {
+        "cosine_similarity": 0.909799975156784,
+        "ngram_overlap": 0.7573964815740253
+      },
+      "80110646-5bfc-4466-9cb9-ac8a638828cd": {
+        "cosine_similarity": 0.927811722457409,
+        "ngram_overlap": 0.7927087154779239
+      },
+      "8236eb40-5dbf-44b1-ae46-8c60dc8a84f5": {
+        "cosine_similarity": 0.8253954112529754,
+        "ngram_overlap": 0.6279873754912321
+      },
+      "8466d33f-7ba9-49de-b74f-effd43129212": {
+        "cosine_similarity": 0.8932254329323769,
+        "ngram_overlap": 0.6437800606289218
+      },
+      "84b29c88-984a-4979-b8ce-053a390d2c88": {
+        "cosine_similarity": 0.8902964845299721,
+        "ngram_overlap": 0.7196478189385223
+      },
+      "88e0844c-7c37-4efa-a183-a6e13c223090": {
+        "cosine_similarity": 0.8902158692479134,
+        "ngram_overlap": 0.7522800396632476
+      },
+      "895bc3db-d527-408e-bf14-828311f5a4e7": {
+        "cosine_similarity": 0.9312325676282247,
+        "ngram_overlap": 0.772284957071129
+      },
+      "8b7a84c2-f723-421c-b318-02fde6628101": {
+        "cosine_similarity": 0.8272930234670639,
+        "ngram_overlap": 0.6005102608567152
+      },
+      "8b801dcc-cc6e-4cf9-9dc9-44a18c824e51": {
+        "cosine_similarity": 0.8512777552008629,
+        "ngram_overlap": 0.569613631687254
+      },
+      "8b93f649-803c-4ba3-89ff-108d3457ba4f": {
+        "cosine_similarity": 0.8773465558886528,
+        "ngram_overlap": 0.6228220526537417
+      },
+      "8bddb48d-49e7-4053-b787-168e39b242c0": {
+        "cosine_similarity": 0.8934534241755804,
+        "ngram_overlap": 0.705646841006948
+      },
+      "8c1a43fb-31b3-4ada-9bb4-ab7ec222ca5d": {
+        "cosine_similarity": 0.9127570321162541,
+        "ngram_overlap": 0.7275318394132693
+      },
+      "8c847ddd-6d23-4706-ac5a-244579fbb6c5": {
+        "cosine_similarity": 0.911113981405894,
+        "ngram_overlap": 0.7662277348702952
+      },
+      "8c84d523-eacb-413b-95e2-f36a2de205d1": {
+        "cosine_similarity": 0.8172617783149083,
+        "ngram_overlap": 0.5392851415399545
+      },
+      "8d57533d-f1e6-4d96-b589-b02652d5e2bb": {
+        "cosine_similarity": 0.9102981299161911,
+        "ngram_overlap": 0.774360501302037
+      },
+      "8d7ef432-8c26-4dd9-8dc2-488155b0c728": {
+        "cosine_similarity": 0.8056031669179599,
+        "ngram_overlap": 0.4357181111902151
+      },
+      "8d9fd665-e893-42d5-88dc-72c4268dcac8": {
+        "cosine_similarity": 0.8252875914176305,
+        "ngram_overlap": 0.5560884679763606
+      },
+      "8e47552f-8d2f-4536-9f3d-8ba5202fe80c": {
+        "cosine_similarity": 0.8672796294093132,
+        "ngram_overlap": 0.5410478837153915
+      },
+      "917a7148-6509-492f-9968-72ad4e4ef6c2": {
+        "cosine_similarity": 0.9001838768521945,
+        "ngram_overlap": 0.7078335286782599
+      },
+      "9184169f-836e-4dec-9728-df873e63e74a": {
+        "cosine_similarity": 0.888368439177672,
+        "ngram_overlap": 0.6246305205772328
+      },
+      "92a558f2-0f80-430a-9175-366be5d427a2": {
+        "cosine_similarity": 0.848296815653642,
+        "ngram_overlap": 0.5919494981496755
+      },
+      "94a535af-8631-4184-9470-bca998efbe36": {
+        "cosine_similarity": 0.8572164853413899,
+        "ngram_overlap": 0.5479354502063082
+      },
+      "95818922-6fd3-4f84-a791-6610bfed1b46": {
+        "cosine_similarity": 0.8978951573371887,
+        "ngram_overlap": 0.6692580881043397
+      },
+      "9648cc1b-c46c-4c2c-8714-4d465f8d0a0b": {
+        "cosine_similarity": 0.8726471732060115,
+        "ngram_overlap": 0.724870115510336
+      },
+      "96b404af-9f4c-43b8-89c1-c6e25e17e88b": {
+        "cosine_similarity": 0.9334875548879306,
+        "ngram_overlap": 0.699930105164234
+      },
+      "98c78f44-d577-4ecc-b182-7e5554c0ab45": {
+        "cosine_similarity": 0.836755699912707,
+        "ngram_overlap": 0.6428639256781169
+      },
+      "9a08c9d2-be4b-4c19-b5cc-c16ea07b1260": {
+        "cosine_similarity": 0.7970667506257693,
+        "ngram_overlap": 0.536063599560174
+      },
+      "9ad02bfe-ded5-4002-8ce3-a3a2f4eef3dd": {
+        "cosine_similarity": 0.863077796002229,
+        "ngram_overlap": 0.7404594843181104
+      },
+      "9aef0a5e-fb9d-4432-9834-540d0d16625e": {
+        "cosine_similarity": 0.8215057889620463,
+        "ngram_overlap": 0.45999962355911256
+      },
+      "9f2541e6-716d-4fd2-8114-33218942064f": {
+        "cosine_similarity": 0.9365806375940641,
+        "ngram_overlap": 0.814830339447629
+      },
+      "a02bc475-62f4-4d05-a2f6-bd2016747e79": {
+        "cosine_similarity": 0.9224664613604545,
+        "ngram_overlap": 0.7793274277031138
+      },
+      "a03c52b7-ee7e-4a28-89ff-73e2e34b38ac": {
+        "cosine_similarity": 0.9292902911702792,
+        "ngram_overlap": 0.7436849341831729
+      },
+      "a1be4ef2-5141-4b4a-8b28-5f6301372bf4": {
+        "cosine_similarity": 0.8421206618348758,
+        "ngram_overlap": 0.4904883485206716
+      },
+      "a4ef2763-999d-44b2-ac81-484c76be3ee4": {
+        "cosine_similarity": 0.9601385881503423,
+        "ngram_overlap": 0.8694232942810491
+      },
+      "a6b02efe-90fc-4917-9c45-5275f7078602": {
+        "cosine_similarity": 0.887497645119826,
+        "ngram_overlap": 0.5833340345422845
+      },
+      "a8f457be-0c6c-42cc-a7b2-0dd6f126ea82": {
+        "cosine_similarity": 0.8702237904071808,
+        "ngram_overlap": 0.5972804981522291
+      },
+      "aa37e3ae-f82d-4ffb-a58c-211e15aeeae3": {
+        "cosine_similarity": 0.9039048537611961,
+        "ngram_overlap": 0.5911492356422561
+      },
+      "aa5a4e11-8504-404f-b2bc-d15c5cf1ba2e": {
+        "cosine_similarity": 0.9040736421942711,
+        "ngram_overlap": 0.6418151379562786
+      },
+      "aae30cf4-d309-4d7b-b3fb-c8b1d4d58f0b": {
+        "cosine_similarity": 0.9009704465667406,
+        "ngram_overlap": 0.6639456426422811
+      },
+      "ac0eef84-1523-4595-901e-0c83ac67b2d0": {
+        "cosine_similarity": 0.9291618833939235,
+        "ngram_overlap": 0.7802242520671734
+      },
+      "af3f4666-18bd-4dd0-ba38-aa5fe68412fd": {
+        "cosine_similarity": 0.8852693647146225,
+        "ngram_overlap": 0.6196826259306888
+      },
+      "afd2bb1c-89c7-4d9d-ac00-c0d3b4b88439": {
+        "cosine_similarity": 0.88245829641819,
+        "ngram_overlap": 0.6862154963158218
+      },
+      "b07be3a4-6f23-4a50-9b75-ca74e9b8e5a0": {
+        "cosine_similarity": 0.914385957022508,
+        "ngram_overlap": 0.6644902912759598
+      },
+      "b0b21519-2e04-4718-ad0a-4b7577ecfe84": {
+        "cosine_similarity": 0.9312732731302579,
+        "ngram_overlap": 0.5033819279990878
+      },
+      "b3fd09a7-7a9e-43cc-8efe-6eb89b8011f5": {
+        "cosine_similarity": 0.8860453257958094,
+        "ngram_overlap": 0.7292403112348687
+      },
+      "b430bfc1-bfc0-45f2-a515-4b6ff1665fe3": {
+        "cosine_similarity": 0.8817129095395406,
+        "ngram_overlap": 0.7255604841557783
+      },
+      "b651031f-92c0-4e59-a6b4-225ecfd9b0eb": {
+        "cosine_similarity": 0.9551465734839439,
+        "ngram_overlap": 0.8090071974814308
+      },
+      "b759738d-3f42-480a-a47a-047e68861f12": {
+        "cosine_similarity": 0.8975281392534574,
+        "ngram_overlap": 0.7685495039358413
+      },
+      "b7e8ae91-2f36-41ad-a73b-adcf91954687": {
+        "cosine_similarity": 0.8864402020970981,
+        "ngram_overlap": 0.7193293536328954
+      },
+      "b80c0700-a7bf-4203-9c93-b3608fa7a361": {
+        "cosine_similarity": 0.9214405695597331,
+        "ngram_overlap": 0.7680932353777729
+      },
+      "bb35abfb-8863-4788-916e-8fde1db03f9d": {
+        "cosine_similarity": 0.8878430694341659,
+        "ngram_overlap": 0.6845341069368438
+      },
+      "bd1165d1-fcbd-4e15-8e32-a769d6133187": {
+        "cosine_similarity": 0.8106827730933825,
+        "ngram_overlap": 0.4507542651391048
+      },
+      "bf1edf6e-73be-4d9c-afc5-4f9470068ca5": {
+        "cosine_similarity": 0.9306605105598768,
+        "ngram_overlap": 0.6589131773510022
+      },
+      "c3f53aed-b1c9-4647-8060-2c9fe0aa0c53": {
+        "cosine_similarity": 0.9565999915202459,
+        "ngram_overlap": 0.7931565372397744
+      },
+      "c4f13cab-a701-4daa-916e-98ef8a847389": {
+        "cosine_similarity": 0.8923708195487658,
+        "ngram_overlap": 0.687359540079265
+      },
+      "c7c6b2da-3c3d-4502-a056-1c5fc5e91887": {
+        "cosine_similarity": 0.9374948466817538,
+        "ngram_overlap": 0.8071416312398171
+      },
+      "c7de888f-044a-4c48-84d2-b54a806f6ae0": {
+        "cosine_similarity": 0.8283232326308886,
+        "ngram_overlap": 0.6566540696219909
+      },
+      "c88d005e-392c-4172-9595-60b64941dc72": {
+        "cosine_similarity": 0.8239735946059227,
+        "ngram_overlap": 0.5835235608469406
+      },
+      "cb6b5f3f-21ea-4b60-895e-004b9132b859": {
+        "cosine_similarity": 0.9164282709360123,
+        "ngram_overlap": 0.7036370084639901
+      },
+      "cdb143b1-092b-4bb3-a66b-4c496cdc0be1": {
+        "cosine_similarity": 0.832774377365907,
+        "ngram_overlap": 0.5556832731151466
+      },
+      "ce27d8ff-8ab6-4e96-91d9-e9f8b467f3e5": {
+        "cosine_similarity": 0.9415534193317096,
+        "ngram_overlap": 0.7769930260385007
+      },
+      "cef30bd0-3b7d-4803-915e-f7000cf93a68": {
+        "cosine_similarity": 0.8975403582056364,
+        "ngram_overlap": 0.5891852136788015
+      },
+      "d1d6f068-5540-4b69-aa4a-1e046684cd48": {
+        "cosine_similarity": 0.8670678034424781,
+        "ngram_overlap": 0.5266828018174665
+      },
+      "d24a6875-7257-47dd-ad7c-e043fa9dd69b": {
+        "cosine_similarity": 0.8762699335813522,
+        "ngram_overlap": 0.676972345405877
+      },
+      "d81fd0b3-b2dc-4966-9ce0-d8eb1f365c82": {
+        "cosine_similarity": 0.8941944127281507,
+        "ngram_overlap": 0.5658764824791703
+      },
+      "daa8a85f-7aa5-43e2-94c5-73910c9ed8a7": {
+        "cosine_similarity": 0.8732975383599599,
+        "ngram_overlap": 0.7372128667082551
+      },
+      "dafa19c1-5343-4680-880e-a41f403989b7": {
+        "cosine_similarity": 0.8602337355415026,
+        "ngram_overlap": 0.636551320297315
+      },
+      "db8628f5-6d4c-4981-bfd3-fbea496c999d": {
+        "cosine_similarity": 0.8648864090442657,
+        "ngram_overlap": 0.6404497305066061
+      },
+      "dbbecb12-e7d7-4ef5-a515-cfea36a2c372": {
+        "cosine_similarity": 0.9074321016669273,
+        "ngram_overlap": 0.6694140964421964
+      },
+      "dc8762e6-765e-4564-ad88-a7a749a76d38": {
+        "cosine_similarity": 0.9373735909660658,
+        "ngram_overlap": 0.7783317101424035
+      },
+      "dce7968a-42f8-42e5-a461-3719a1a6cab2": {
+        "cosine_similarity": 0.8444592833518982,
+        "ngram_overlap": 0.6388332116950625
+      },
+      "dd193844-9f5f-4cb8-9f1c-320a3d4c0bc5": {
+        "cosine_similarity": 0.9493434304992358,
+        "ngram_overlap": 0.7496957151046624
+      },
+      "de50fdfc-31a8-4cdb-9730-18fdb8aaa734": {
+        "cosine_similarity": 0.9469611962636312,
+        "ngram_overlap": 0.7140443301753234
+      },
+      "df397c4f-d0e9-454e-8580-c350c9ece465": {
+        "cosine_similarity": 0.8901017586390177,
+        "ngram_overlap": 0.7255785047683309
+      },
+      "df9e454e-d82f-43d2-8b31-b1c238fd7277": {
+        "cosine_similarity": 0.8280236994226774,
+        "ngram_overlap": 0.555987026255967
+      },
+      "e2ac63fb-ed29-468d-aefd-38bdc5ca2773": {
+        "cosine_similarity": 0.9469565376639366,
+        "ngram_overlap": 0.7460930345024441
+      },
+      "e3440fe9-a235-4189-b64d-2dc6efc2040a": {
+        "cosine_similarity": 0.8967846607168516,
+        "ngram_overlap": 0.6504599373026788
+      },
+      "e378948f-cdb3-49df-ba4c-179919f29a89": {
+        "cosine_similarity": 0.9313290372490883,
+        "ngram_overlap": 0.7380758455883332
+      },
+      "e3c7968f-5c1a-42fa-9f23-536962bb0ede": {
+        "cosine_similarity": 0.9119352961579958,
+        "ngram_overlap": 0.8092654634696846
+      },
+      "e5cd63ba-0624-49b5-9e57-dde1dc327a5d": {
+        "cosine_similarity": 0.9455444261431694,
+        "ngram_overlap": 0.7602752739869196
+      },
+      "e76dca93-adc2-4395-ab78-e16012312795": {
+        "cosine_similarity": 0.8831064119935036,
+        "ngram_overlap": 0.5626164993450721
+      },
+      "e7751493-1ffa-4f00-8bf6-098112779e00": {
+        "cosine_similarity": 0.9014601334929466,
+        "ngram_overlap": 0.7060850763476321
+      },
+      "e9a7db70-e5c9-4c9b-ae70-bae1f9b0c513": {
+        "cosine_similarity": 0.9072891329725583,
+        "ngram_overlap": 0.6596958454176208
+      },
+      "ea50e2af-240e-487d-89ae-fe363f67ddcd": {
+        "cosine_similarity": 0.8706718216339747,
+        "ngram_overlap": 0.7428126127778311
+      },
+      "eb80754e-2016-4ae2-9f30-f5d425266332": {
+        "cosine_similarity": 0.8581410467624664,
+        "ngram_overlap": 0.6372787416592139
+      },
+      "ec1401d8-8b92-47a1-83f3-5d9754a3952f": {
+        "cosine_similarity": 0.8343233396609624,
+        "ngram_overlap": 0.580639199952453
+      },
+      "ec567d44-7df8-4dd5-b5e6-344c2c214adc": {
+        "cosine_similarity": 0.8570671980579694,
+        "ngram_overlap": 0.7282298512148616
+      },
+      "ee5f2b8d-9ac7-4a7b-94be-16b4077a3b5e": {
+        "cosine_similarity": 0.9079117968678474,
+        "ngram_overlap": 0.6394235119909797
+      },
+      "ee6afd47-b6e4-4854-9e5e-2fb2c5553c1d": {
+        "cosine_similarity": 0.9017615665992101,
+        "ngram_overlap": 0.710853538534145
+      },
+      "f0bbde1b-6e6c-4506-ae7f-89bde622b0d3": {
+        "cosine_similarity": 0.9211305504043897,
+        "ngram_overlap": 0.8205250217214918
+      },
+      "f1894329-d2e9-4052-b2dc-1834fc6f380f": {
+        "cosine_similarity": 0.7690703868865967,
+        "ngram_overlap": 0.4966191151355576
+      },
+      "f1a87322-c004-4e4f-8587-15de5d7ef5c7": {
+        "cosine_similarity": 0.8706637233495712,
+        "ngram_overlap": 0.7925701828788105
+      },
+      "f4b313fa-a5fc-4439-b1de-6fa7a1822359": {
+        "cosine_similarity": 0.839814708630244,
+        "ngram_overlap": 0.5564598192899279
+      },
+      "f5f15548-7f7d-4a64-ad95-a8898cec3c6e": {
+        "cosine_similarity": 0.8956293096144994,
+        "ngram_overlap": 0.7331069421310146
+      },
+      "f93e328a-f677-4b6d-bbd1-db3c1f8df1b0": {
+        "cosine_similarity": 0.9312460660934448,
+        "ngram_overlap": 0.736045036295157
+      },
+      "fa2911ec-ff96-4240-b173-e7180b0fb871": {
+        "cosine_similarity": 0.8802099044124285,
+        "ngram_overlap": 0.6489909346176846
+      },
+      "fbb13907-cf44-42e9-8617-0ca5824aa8be": {
+        "cosine_similarity": 0.9449225202202797,
+        "ngram_overlap": 0.8300073740398265
+      },
+      "fc09292a-5709-41e8-8759-42ed782aab0e": {
+        "cosine_similarity": 0.9033371100823084,
+        "ngram_overlap": 0.7612217969528715
+      },
+      "fcdba746-aeb6-43ca-8256-851c214d5327": {
+        "cosine_similarity": 0.9197917277614276,
+        "ngram_overlap": 0.7248755188012431
+      },
+      "fdc847c1-ae5f-4912-8d78-58df6e9a9085": {
+        "cosine_similarity": 0.8990351468324661,
+        "ngram_overlap": 0.7187147357554676
+      },
+      "fe0dd361-4bff-4df3-88f5-5690ad383036": {
+        "cosine_similarity": 0.9628704806168874,
+        "ngram_overlap": 0.8366159964134875
+      },
+      "fe88b741-5eaf-45e2-869b-0f698cdecab8": {
+        "cosine_similarity": 0.8334099347392718,
+        "ngram_overlap": 0.5236943217925315
+      }
+    },
+    "by_step": {
+      "1": {
+        "cosine_similarity": 0.8694867247094711,
+        "ngram_overlap": 0.6697267706664322
+      },
+      "2": {
+        "cosine_similarity": 0.9080460086464882,
+        "ngram_overlap": 0.6632504546346617
+      },
+      "3": {
+        "cosine_similarity": 0.8779868713269631,
+        "ngram_overlap": 0.6343444545449738
+      },
+      "4": {
+        "cosine_similarity": 0.8377206670741241,
+        "ngram_overlap": 0.6371790305624371
+      },
+      "5": {
+        "cosine_similarity": 0.8635298979779085,
+        "ngram_overlap": 0.6216842849983296
+      },
+      "6": {
+        "cosine_similarity": 0.8637740747382243,
+        "ngram_overlap": 0.6148170597352528
+      },
+      "7": {
+        "cosine_similarity": 0.8746222149580717,
+        "ngram_overlap": 0.6182374658061435
+      },
+      "8": {
+        "cosine_similarity": 0.8846614667524894,
+        "ngram_overlap": 0.68888291957453
+      },
+      "9": {
+        "cosine_similarity": 0.8366272003700336,
+        "ngram_overlap": 0.5850715716417814
+      },
+      "10": {
+        "cosine_similarity": 0.8802562098950147,
+        "ngram_overlap": 0.6434438763028325
+      },
+      "11": {
+        "cosine_similarity": 0.8981299019108216,
+        "ngram_overlap": 0.707915357933396
+      },
+      "12": {
+        "cosine_similarity": 0.8986822473506133,
+        "ngram_overlap": 0.6713592827942346
+      },
+      "13": {
+        "cosine_similarity": 0.8966176025569439,
+        "ngram_overlap": 0.6919460259184333
+      },
+      "14": {
+        "cosine_similarity": 0.9134278139720361,
+        "ngram_overlap": 0.7658446663211674
+      },
+      "15": {
+        "cosine_similarity": 0.871092510347565,
+        "ngram_overlap": 0.5864226880194285
+      },
+      "16": {
+        "cosine_similarity": 0.8772634704907735,
+        "ngram_overlap": 0.597921730824653
+      },
+      "17": {
+        "cosine_similarity": 0.9004143892476956,
+        "ngram_overlap": 0.7027999592833422
+      },
+      "18": {
+        "cosine_similarity": 0.9059371508657932,
+        "ngram_overlap": 0.7279971218994806
+      },
+      "19": {
+        "cosine_similarity": 0.8947540712853272,
+        "ngram_overlap": 0.6687372440681781
+      },
+      "20": {
+        "cosine_similarity": 0.8926405925303698,
+        "ngram_overlap": 0.679694308906015
+      },
+      "21": {
+        "cosine_similarity": 0.885544066503644,
+        "ngram_overlap": 0.6773987202127881
+      },
+      "22": {
+        "cosine_similarity": 0.8722433348496755,
+        "ngram_overlap": 0.6306897046907636
+      },
+      "23": {
+        "cosine_similarity": 0.8807220373302698,
+        "ngram_overlap": 0.6543812563708289
+      },
+      "24": {
+        "cosine_similarity": 0.8683119025081396,
+        "ngram_overlap": 0.6618659567538726
+      },
+      "25": {
+        "cosine_similarity": 0.8900856940696636,
+        "ngram_overlap": 0.7105967411171361
+      },
+      "26": {
+        "cosine_similarity": 0.9281626352419455,
+        "ngram_overlap": 0.7444097950668158
+      },
+      "27": {
+        "cosine_similarity": 0.9002420065303643,
+        "ngram_overlap": 0.6778565528095957
+      },
+      "28": {
+        "cosine_similarity": 0.8980710960924625,
+        "ngram_overlap": 0.7379945360533581
+      },
+      "29": {
+        "cosine_similarity": 0.9250536374747753,
+        "ngram_overlap": 0.751408646574006
+      },
+      "30": {
+        "cosine_similarity": 0.865621930733323,
+        "ngram_overlap": 0.5883249438065251
+      },
+      "31": {
+        "cosine_similarity": 0.8976098692665497,
+        "ngram_overlap": 0.696846111085539
+      },
+      "32": {
+        "cosine_similarity": 0.8686608579009771,
+        "ngram_overlap": 0.6202415232619594
+      },
+      "33": {
+        "cosine_similarity": 0.8434172190725804,
+        "ngram_overlap": 0.5813356991033909
+      },
+      "34": {
+        "cosine_similarity": 0.8810765417913596,
+        "ngram_overlap": 0.6270240908220214
+      },
+      "35": {
+        "cosine_similarity": 0.8228603800137838,
+        "ngram_overlap": 0.6029779830371382
+      },
+      "36": {
+        "cosine_similarity": 0.8819619463135798,
+        "ngram_overlap": 0.7180484603291148
+      },
+      "37": {
+        "cosine_similarity": 0.8908746762822072,
+        "ngram_overlap": 0.7100148504899655
+      },
+      "38": {
+        "cosine_similarity": 0.8871475661794345,
+        "ngram_overlap": 0.7187396746685724
+      },
+      "39": {
+        "cosine_similarity": 0.8776966114838918,
+        "ngram_overlap": 0.5970042340042068
+      },
+      "40": {
+        "cosine_similarity": 0.8621818275501331,
+        "ngram_overlap": 0.5975282116214077
+      },
+      "41": {
+        "cosine_similarity": 0.9066087814668814,
+        "ngram_overlap": 0.6472539340061159
+      },
+      "42": {
+        "cosine_similarity": 0.8886512541522582,
+        "ngram_overlap": 0.6697029298066004
+      },
+      "43": {
+        "cosine_similarity": 0.918266378591458,
+        "ngram_overlap": 0.7242918825207494
+      },
+      "44": {
+        "cosine_similarity": 0.8591117983063062,
+        "ngram_overlap": 0.6355592047675932
+      },
+      "45": {
+        "cosine_similarity": 0.8818316074709097,
+        "ngram_overlap": 0.6497963484879868
+      },
+      "46": {
+        "cosine_similarity": 0.895361253619194,
+        "ngram_overlap": 0.692392725386615
+      },
+      "47": {
+        "cosine_similarity": 0.8587792667249838,
+        "ngram_overlap": 0.6304037186291507
+      },
+      "48": {
+        "cosine_similarity": 0.9110913172364234,
+        "ngram_overlap": 0.7679920925837824
+      },
+      "49": {
+        "cosine_similarity": 0.9072550815840562,
+        "ngram_overlap": 0.7176305189625514
+      }
+    },
+    "overall": {
+      "cosine_similarity": 0.8836770135377134,
+      "ngram_overlap": 0.665652802478895
+    }
+  },
+  "output_length_score_correlation": {
+    "pearson": -0.3293532017314166,
+    "spearman": -0.3960204821311817
+  }
+}

@@ -19,7 +19,10 @@ KEYS = (
     "MC_LAYOUT",
     "MC_TRAIN_OVERRIDES",
     "MC_CHECKPOINT_HOME",
+    "MC_MODEL_NAME",
     "MC_RUN_TAG",
+    "MC_SLURM_CONSTRAINT",
+    "CUDA_DEVICE_ORDER",
     "WANDB_PROJECT",
 )
 
@@ -40,14 +43,17 @@ def _source(tmp_path: Path, **env: str) -> dict[str, str]:
     return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
 
 
-def test_ada_is_the_default_and_unchanged(tmp_path: Path):
+def test_ada_uses_the_four_gpu_layout_by_default(tmp_path: Path):
     v = _source(tmp_path)
     assert v["MC_SITE"] == "ada" and v["MC_HW_PROFILE"] == "sm75"
-    assert v["MC_LAYOUT"] == "research_1gpu"
-    assert v["MC_TRAIN_OVERRIDES"] == "memory=plan_b_lora_calibrated", "the 017 LoRA schedule (decision 018)"
-    assert v["MC_RUN_TAG"] == "2080ti", (
-        "<config>-2080ti-s<seed>: not the September attempt's math_grpo-s1 (018)"
+    assert v["MC_LAYOUT"] == "nlp_4gpu"
+    assert v["MC_TRAIN_OVERRIDES"] == "layout=nlp_4gpu memory=plan_b_lora_calibrated"
+    assert v["MC_MODEL_NAME"] == "Qwen/Qwen3-0.6B"
+    assert v["MC_RUN_TAG"] == "2080ti-qwen3-0.6b", (
+        "<config>-2080ti-qwen3-0.6b-s<seed>: separate from the 1.7B runs"
     )
+    assert v["MC_SLURM_CONSTRAINT"] == "2080ti"
+    assert v["CUDA_DEVICE_ORDER"] == "PCI_BUS_ID"
 
 
 def test_jarvis_selects_the_h100_setup(tmp_path: Path):
@@ -59,11 +65,12 @@ def test_jarvis_selects_the_h100_setup(tmp_path: Path):
         UV_PYTHON_INSTALL_DIR=str(tmp_path / "uvpy"),
     )
     assert v["MC_SITE"] == "jarvis" and v["MC_HW_PROFILE"] == "h100" and v["MC_LAYOUT"] == "h100_1gpu"
+    assert v["MC_MODEL_NAME"] == "Qwen/Qwen3-0.6B"
     assert v["MC_TRAIN_OVERRIDES"] == "layout=h100_1gpu memory=plan_a_fullft_gpu hardware=h100", (
         "full fine-tuning is the default recipe (decision 017)"
     )
     assert v["MC_CHECKPOINT_HOME"] == "durable"
-    assert v["MC_RUN_TAG"] == "h100", "run names math_grpo-h100-s1 / math_mixed_cuts-h100-s1"
+    assert v["MC_RUN_TAG"] == "h100-qwen3-0.6b"
     assert v["WANDB_PROJECT"] == "mixed-cuts"
 
 
@@ -86,9 +93,9 @@ def test_ada_memory_plan_is_chosen_by_mc_memory_plan(tmp_path: Path, layout: str
     assert v["MC_TRAIN_OVERRIDES"] == "memory=plan_b_lora", "the H200 recipe stays reproducible"
 
 
-def test_ada_full_finetune_layout_ignores_mc_memory_plan(tmp_path: Path):
+def test_ada_four_gpu_layout_selects_lora_memory_plan(tmp_path: Path):
     v = _source(tmp_path, MC_LAYOUT="nlp_4gpu", MC_MEMORY_PLAN="plan_b_lora")
-    assert v["MC_TRAIN_OVERRIDES"] == "layout=nlp_4gpu memory=plan_a_fullft_offload"
+    assert v["MC_TRAIN_OVERRIDES"] == "layout=nlp_4gpu memory=plan_b_lora"
 
 
 def test_kaggle_selects_the_t4_setup(tmp_path: Path):
@@ -100,10 +107,11 @@ def test_kaggle_selects_the_t4_setup(tmp_path: Path):
         UV_PYTHON_INSTALL_DIR=str(tmp_path / "uvpy"),
     )
     assert v["MC_SITE"] == "kaggle" and v["MC_HW_PROFILE"] == "sm75" and v["MC_LAYOUT"] == "kaggle_t4"
+    assert v["MC_MODEL_NAME"] == "Qwen/Qwen3-0.6B"
     assert v["MC_TRAIN_OVERRIDES"] == "layout=kaggle_t4", (
         "the Ada LoRA plan and fp16 profile are the defaults"
     )
-    assert v["MC_CHECKPOINT_HOME"] == "durable" and v["MC_RUN_TAG"] == "t4"
+    assert v["MC_CHECKPOINT_HOME"] == "durable" and v["MC_RUN_TAG"] == "t4-qwen3-0.6b"
 
 
 def test_preflight_profiles():

@@ -38,7 +38,7 @@ SYNTHETIC = [
 
 
 def _nvidia_smi_cmd() -> list[str]:
-    """Only this job's GPUs: research/low jobs share a 4-GPU node with other users (decision 012)."""
+    """Only this job's GPUs: research/medium jobs share a 4-GPU node with other users (decision 012)."""
     cmd = ["nvidia-smi", "--query-gpu=index,memory.used", "--format=csv,noheader,nounits"]
     vis = os.environ.get("CUDA_VISIBLE_DEVICES")
     if vis and not vis.startswith("MIG"):
@@ -209,7 +209,7 @@ def main() -> int:
 
     info["peak_mib"] = poller.stop()
     info["results"] = results
-    kv_per_token_kib = 112  # Qwen3-1.7B: 2 x 28 layers x 8 kv heads x 128 dims x 2 bytes (whole model)
+    kv_per_token_kib = 112  # Qwen3-0.6B: 2 x 28 layers x 8 kv heads x 128 dims x 2 bytes (whole model)
     info["note"] = (
         f"KV cache is ~{kv_per_token_kib} KiB/token across all TP ranks; with gpu_memory_utilization="
         f"{args.gpu_memory_utilization} and tp={args.tp} the engine log line 'GPU KV cache size: N tokens' gives "

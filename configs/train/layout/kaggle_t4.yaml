@@ -4,8 +4,8 @@
 # as Ada's research_1gpu, which is where their memory behaviour was measured: ~18 GB anonymous + ~11 GB
 # pinned host memory per run, so ONE training run per session (the second T4 can evaluate).
 #
-# Rollout budget: the actor lives in pinned host RAM, so vLLM gets 0.80 x ~15 GiB = ~12 GiB: 3.4 GB fp16
-# weights + ~1 GB activations/graphs + ~7.5 GB KV = ~65k tokens (Qwen3-1.7B: 112 KiB per token).
+# Rollout budget: the actor lives in pinned host RAM, so vLLM gets 0.80 x ~15 GiB = ~12 GiB: ~1.2 GB fp16
+# ~1.2 GB weights + ~1 GB activations/graphs + ~7.5 GB KV = ~65k tokens (Qwen3-0.6B: 112 KiB per token).
 trainer:
   n_gpus_per_node: 1
 actor_rollout_ref:

@@ -45,10 +45,17 @@ setup-login: ## tiny download-only env for `make prefetch` on the CentOS 7 login
 	@echo "login env ready: .venv-login (used automatically by make prefetch)"
 
 setup: ## FULL cluster env. Run ONLY inside a 2080 Ti allocation (sbatch slurm/setup_env.sbatch)
-	@. $(ENV_FILE); \
+	@module load u22/python/3.12.15; . $(ENV_FILE); \
 	  if [ -z "$$SLURM_JOB_ID" ]; then echo "ERROR: run inside a SLURM allocation on a 2080ti node, never on the login node"; exit 1; fi; \
-	  $(UV) venv --python $(PYTHON_VER) $$MC_VENV_DIR && \
-	  $(UV) pip install --python $$MC_VENV_DIR/bin/python -r requirements/base.txt && \
+	  $(UV) venv --clear --python $(PYTHON_VER) $$MC_VENV_DIR && \
+	  TMP=$$(mktemp -d) && trap 'rm -rf "$$TMP"' EXIT && \
+	  grep -v -E '^(vllm==|torch==|torchvision==|torchaudio==)' requirements/base.txt > "$$TMP/base-no-cuda.txt" && \
+	  $(UV) pip install --python $$MC_VENV_DIR/bin/python \
+	    --extra-index-url https://download.pytorch.org/whl/cu129 \
+	    --index-strategy unsafe-best-match \
+	    "torch==2.11.0+cu129" "torchvision==0.26.0+cu129" "torchaudio==2.11.0+cu129" \
+	    "vllm @ https://github.com/vllm-project/vllm/releases/download/v0.24.0/vllm-0.24.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl" \
+	    -r "$$TMP/base-no-cuda.txt" && \
 	  $(UV) pip install --python $$MC_VENV_DIR/bin/python --no-deps "verl @ $(VERL_URL)" && \
 	  $(UV) pip install --python $$MC_VENV_DIR/bin/python --no-deps -e . && \
 	  $$MC_VENV_DIR/bin/python scripts/check_env.py --no-staged && \
@@ -78,20 +85,20 @@ check-env: preflight ## alias of preflight
 COMPOSE = $(PY) scripts/compose_config.py
 COMPOSE_FLAGS = --check $(if $(VERL_CONFIG_DIR),--verl-config-dir $(VERL_CONFIG_DIR),)
 compose-check: ## compose every training config (Hydra) and assert the CUTS/layout/hardware-profile invariants (Ada sm75 + Jarvislabs h100)
-	@for c in base_grpo smoke smoke_maxlen math_grpo math_mixed_cuts; do MC_HW_PROFILE=sm75 $(COMPOSE) $$c $(COMPOSE_FLAGS) || exit 1; done
-	@for c in smoke smoke_maxlen math_grpo math_mixed_cuts; do MC_HW_PROFILE=sm75 MC_SLURM_GPUS=1 $(COMPOSE) $$c $(COMPOSE_FLAGS) memory=plan_b_lora_calibrated || exit 1; done   # the Ada default (MC_MEMORY_PLAN, 018)
-	@MC_HW_PROFILE=sm75 MC_SLURM_GPUS=4 $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) layout=nlp_4gpu memory=plan_a_fullft_offload   # MC_SLURM_GPUS: the guard compares the layout with the sbatch request
+	@for c in base_grpo smoke smoke_maxlen math_grpo math_mixed_cuts; do MC_HW_PROFILE=sm75 MC_SLURM_GPUS=4 $(COMPOSE) $$c $(COMPOSE_FLAGS) || exit 1; done
+	@for c in smoke smoke_maxlen math_grpo math_mixed_cuts; do MC_HW_PROFILE=sm75 MC_SLURM_GPUS=1 $(COMPOSE) $$c $(COMPOSE_FLAGS) layout=research_1gpu memory=plan_b_lora_calibrated || exit 1; done   # one-GPU fallback (018)
+	@MC_HW_PROFILE=sm75 MC_SLURM_GPUS=4 $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) layout=nlp_4gpu memory=plan_b_lora_calibrated   # MC_SLURM_GPUS: the guard compares the layout with the sbatch request
 	@for m in plan_a_fullft_gpu plan_b_lora_calibrated_gpu plan_b_lora_gpu; do for c in smoke math_grpo math_mixed_cuts; do MC_HW_PROFILE=h100 MC_SLURM_GPUS=1 $(COMPOSE) $$c $(COMPOSE_FLAGS) layout=h100_1gpu memory=$$m hardware=h100 || exit 1; done; done   # Jarvislabs (013, 017)
 	@for c in smoke math_grpo math_mixed_cuts; do MC_HW_PROFILE=sm75 MC_SLURM_GPUS=1 $(COMPOSE) $$c $(COMPOSE_FLAGS) layout=kaggle_t4 || exit 1; done   # Kaggle T4 (014)
 	@echo "== negative case: 1 GPU + plan A must be refused =="; \
-	  if MC_HW_PROFILE=sm75 MC_SLURM_GPUS=1 $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) memory=plan_a_fullft_offload >/dev/null 2>&1; then echo "FAIL: compose-check accepted 1 GPU + plan A"; exit 1; else echo "== refused: OK =="; fi
+	  if MC_HW_PROFILE=sm75 MC_SLURM_GPUS=1 $(COMPOSE) math_mixed_cuts $(COMPOSE_FLAGS) layout=research_1gpu memory=plan_a_fullft_offload >/dev/null 2>&1; then echo "FAIL: compose-check accepted 1 GPU + plan A"; exit 1; else echo "== refused: OK =="; fi
 
 # ------------------------------------------------------------------------ data
-prefetch: ## LOGIN NODE (has internet): download Qwen3-1.7B + datasets into $$MC_STAGE_ROOT (idempotent)
+prefetch: ## LOGIN NODE (has internet): download Qwen3-0.6B + datasets into $$MC_STAGE_ROOT (idempotent)
 	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py
 
-prefetch-base: ## also stage Qwen3-1.7B-Base (+3.4 GB of the 25 GB /home2 quota; only if you will train it)
-	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --skip-model --extra-model Qwen/Qwen3-1.7B-Base
+prefetch-base: ## also stage Qwen3-0.6B-Base; only if you will train it
+	@. $(ENV_FILE); PYX=$$( [ -x .venv-login/bin/python ] && echo .venv-login/bin/python || echo $(PY) ); $$PYX scripts/prefetch.py --skip-model --extra-model Qwen/Qwen3-0.6B-Base
 
 data: ## build parquet files in verl schema (MATH, DAPO deduped, eval sets, smoke subsets)
 	@. $(ENV_FILE); $(PY) scripts/prepare_data.py
@@ -117,12 +124,14 @@ plots: ## training-curve figures for the report: make plots [RUNS_DIR=...] [RUNS
 	@. $(ENV_FILE); $(PY) scripts/plot_runs.py $(if $(RUNS_DIR),--runs-dir $(RUNS_DIR),) $(if $(RUNS),--runs $(RUNS),)
 
 # ------------------------------------------------------------------ sbatch wrappers
-# mc_sbatch_args (configs/ada.env.sh) = account/QoS/GPUs/CPUs/memory of $MC_LAYOUT + the node exclude list;
+# mc_sbatch_args (configs/ada.env.sh) = account/QoS/GPUs/CPUs/memory of $MC_LAYOUT + the node exclude list.
+# Setup and data explicitly use the one-GPU fallback; training, smoke, evaluation and benchmarks use
+# the default four-GPU nlp_4gpu layout.
 # CLI flags override the #SBATCH headers, which carry the research_1gpu defaults for hand submission.
 sbatch-setup: ## submit the environment build job (venv, lock, tests, compose-check, data)
-	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/setup_env.sbatch
+	@MC_LAYOUT=research_1gpu; . $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/setup_env.sbatch
 sbatch-data: ## build the parquet data on a compute node (if the setup job ran before prefetch finished)
-	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/data.sbatch
+	@MC_LAYOUT=research_1gpu; . $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/data.sbatch
 sbatch-bench: ## submit the rollout benchmark (TP=1 sweep; TP=4 too under MC_LAYOUT=nlp_4gpu)
 	@. $(ENV_FILE); sbatch $$(mc_sbatch_args) slurm/bench_rollout.sbatch
 sbatch-smoke: ## submit the smoke test (2 steps + the GPU tests in the same allocation); SMOKE_CONFIG=smoke_maxlen for the max-length stress test

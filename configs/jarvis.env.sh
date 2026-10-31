@@ -24,7 +24,7 @@ export MC_VENV_DIR="${MC_VENV_DIR:-${MC_REPO_ROOT}/.venv}"               # under
 export MC_PYTHON_VERSION="${MC_PYTHON_VERSION:-3.12}"
 
 # --- model + data + runs -------------------------------------------------------
-export MC_MODEL_NAME="${MC_MODEL_NAME:-Qwen/Qwen3-1.7B}"
+export MC_MODEL_NAME="${MC_MODEL_NAME:-Qwen/Qwen3-0.6B}"
 export MC_MODELS_DIR="${MC_MODELS_DIR:-${MC_STAGE_ROOT}/models}"
 export MC_MODEL_DIR="${MC_MODEL_DIR:-${MC_MODELS_DIR}/$(basename "${MC_MODEL_NAME}")}"
 export MC_DATA_DIR="${MC_DATA_DIR:-${MC_STAGE_ROOT}/data}"
@@ -38,7 +38,7 @@ export MC_BAD_NODES_FILE="${MC_BAD_NODES_FILE:-${MC_STAGE_ROOT}/bad_nodes.txt}"
 export MC_MIN_DRIVER_MAJOR="${MC_MIN_DRIVER_MAJOR:-580}"   # the pinned torch/vLLM wheels are CUDA 13.0 builds
 
 # --- run naming: the H100 runs are new W&B runs, separate from the Ada attempts -------------------
-export MC_RUN_TAG="${MC_RUN_TAG:-h100}"  # run name <config>-h100-s<seed> (slurm/common.sh::mc_train_main)
+export MC_RUN_TAG="${MC_RUN_TAG:-h100-qwen3-0.6b}"  # run name <config>-h100-qwen3-0.6b-s<seed>
 
 # --- caches (instance-local; rebuilt when missing) -----------------------------------------------
 export MC_CACHE_ROOT="${MC_CACHE_ROOT:-${MC_SCRATCH_ROOT}/cache}"
