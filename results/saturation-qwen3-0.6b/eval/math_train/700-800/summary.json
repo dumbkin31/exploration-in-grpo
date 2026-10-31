@@ -1,0 +1,124 @@
+{
+  "math_train": {
+    "benchmark": "math_train",
+    "config": {
+      "benchmarks": [
+        "math500",
+        "aime24",
+        "aime25",
+        "amc23",
+        "gpqa_diamond"
+      ],
+      "bootstrap_seed": 0,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "engine": {
+        "attention_config": {
+          "backend": "TRITON_ATTN"
+        },
+        "dtype": "float16",
+        "enforce_eager": false,
+        "gpu_memory_utilization": 0.85,
+        "max_model_len": 6144,
+        "seed": 0,
+        "tensor_parallel_size": 1
+      },
+      "k_values": [
+        1,
+        4,
+        16
+      ],
+      "n_samples": 16,
+      "reward": {
+        "timeout": 30
+      },
+      "sampling": {
+        "max_tokens": 5000,
+        "seed": 0,
+        "temperature": 1.0,
+        "top_k": 20,
+        "top_p": 0.8
+      },
+      "seed": 0
+    },
+    "digit_rule_ceiling": 1.0,
+    "frac_truncated": 0.00125,
+    "frac_valid_responses": 0.989375,
+    "generation_seconds": 878.4346418380737,
+    "mean_response_chars": 978.1225,
+    "mean_response_tokens": 414.655625,
+    "mean_response_tokens_correct": 335.88721136767316,
+    "mean_response_tokens_incorrect": 601.7721518987341,
+    "metrics": {
+      "frac_no_answer": 0.001875,
+      "frac_no_answer_ci95": [
+        0.0,
+        0.004375
+      ],
+      "frac_no_answer_std_over_problems": 0.01066170131826999,
+      "maj@1": 0.68,
+      "maj@16": 0.82,
+      "maj@16_agreement": 0.758125,
+      "maj@16_agreement_ci95": [
+        0.70875,
+        0.809375
+      ],
+      "maj@16_agreement_std_over_problems": 0.25025846014670516,
+      "maj@16_ci95": [
+        0.74,
+        0.89
+      ],
+      "maj@16_std_over_problems": 0.38418745424597095,
+      "maj@1_agreement": 1.0,
+      "maj@1_agreement_ci95": [
+        1.0,
+        1.0
+      ],
+      "maj@1_agreement_std_over_problems": 0.0,
+      "maj@1_ci95": [
+        0.59,
+        0.77
+      ],
+      "maj@1_std_over_problems": 0.466476151587624,
+      "maj@4": 0.77,
+      "maj@4_agreement": 0.7875,
+      "maj@4_agreement_ci95": [
+        0.735,
+        0.84
+      ],
+      "maj@4_agreement_std_over_problems": 0.2678035660703569,
+      "maj@4_ci95": [
+        0.69,
+        0.85
+      ],
+      "maj@4_std_over_problems": 0.4208325082500163,
+      "n_problems": 100,
+      "n_samples": 16,
+      "pass@1": 0.70375,
+      "pass@16": 0.96,
+      "pass@16_ci95": [
+        0.92,
+        0.99
+      ],
+      "pass@16_std_over_problems": 0.19595917942265423,
+      "pass@1_ci95": [
+        0.6374687499999999,
+        0.7681406249999999
+      ],
+      "pass@1_std_over_problems": 0.32984608152894584,
+      "pass@4": 0.8737307692307692,
+      "pass@4_ci95": [
+        0.819471978021978,
+        0.9253888736263737
+      ],
+      "pass@4_std_over_problems": 0.2793435848469074
+    },
+    "n_problems": 100,
+    "n_samples": 16,
+    "notes": "math_train: 100 problems; one problem = 1.0 pp of pass@1. Read the bootstrap 95% CIs.",
+    "parquet": "/kaggle/working/saturation-qwen3-0.6b/chunks/math_train-700-800/math_train.parquet",
+    "pp_per_problem": 1.0,
+    "timestamp": 1793366175.7689192
+  }
+}

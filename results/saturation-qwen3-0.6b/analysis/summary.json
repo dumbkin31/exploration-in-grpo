@@ -1,0 +1,39 @@
+{
+  "math_train": {
+    "dataset": "math_train",
+    "num_datapoints": 1600,
+    "total_rollouts_per_datapoint": [
+      16
+    ],
+    "histogram": {
+      "0": 74,
+      "1": 43,
+      "2": 45,
+      "3": 30,
+      "4": 33,
+      "5": 26,
+      "6": 46,
+      "7": 33,
+      "8": 36,
+      "9": 70,
+      "10": 63,
+      "11": 72,
+      "12": 83,
+      "13": 91,
+      "14": 131,
+      "15": 175,
+      "16": 549
+    },
+    "metrics": {
+      "all_correct_count": 549,
+      "all_correct_frac": 0.3431,
+      "all_wrong_count": 74,
+      "all_wrong_frac": 0.0462,
+      "zero_variance_collapsed_count": 623,
+      "zero_variance_collapsed_frac": 0.3894,
+      "at_least_15_correct_count": 724,
+      "at_least_15_correct_frac": 0.4525,
+      "mean_accuracy": 0.7326
+    }
+  }
+}
